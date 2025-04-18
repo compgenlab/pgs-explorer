@@ -265,6 +265,9 @@
                     <i class="fas fa-th me-2"></i>Heatmap Visualization
                 </h5>
                 <div>
+                    <button class="btn btn-sm btn-outline-primary me-2" id="generateInteractive" disabled>
+                        <i class="fas fa-magic me-1"></i>Generate Interactive Plot
+                    </button>
                     <button class="btn btn-sm btn-outline-primary me-2" id="downloadPngBtn" disabled>
                         <i class="fas fa-external-link-alt me-1"></i>View in New Tab
                     </button>
@@ -420,6 +423,39 @@
             window.open(filePath, '_blank');
         });
         
+        $('#generateInteractive').on('click', function() {
+            const filePath = $(this).attr('data-filepath');
+            const plotType = $(this).attr('plot-type')
+            if (!filePath) return;
+            const requestData = {
+                plot_type: filePath,
+                plot_url: plotType
+            };
+
+            // Send API request
+            $.ajax({
+                url: '/api/generate_heatmap',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(requestData),
+                success: function(response) {
+                    if (!response || !response.file_path) {
+                        showAlert('Error: Invalid response from server', 'danger');
+                        return;
+                    }
+                    window.open(response.plot_url, '_blank');
+                },
+                error: function(xhr, status, error) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                    } catch (e) {
+                        showAlert('Error generating heatmap: ' + error, 'danger');
+                    }
+                }
+            });
+        });
+
         // Initialize color picker
         $('#subcohortColor').on('input', function() {
             $('#colorPreview').css('background-color', $(this).val());
@@ -928,6 +964,7 @@
                     // Enable download buttons
                     $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                     $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'heatmap');
                     
                     // Show cohort info in the alert
                     const cohortInfo = selectedCohort !== "ALL" ? 
@@ -1020,6 +1057,7 @@
                     // Enable download buttons 
                     $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                     $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'umap')
                     
                     // Show cohort info in the alert
                     const cohortInfo = selectedCohort !== "ALL" ? 
@@ -1112,6 +1150,7 @@
                     // Enable download buttons 
                     $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                     $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'svd')
                 },
                 error: function(error) {
                     // Hide loading spinner and show error
@@ -1133,5 +1172,6 @@
         }
         
     });
+
 </script>
 {% endblock %}
