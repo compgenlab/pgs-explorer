@@ -1,0 +1,1137 @@
+{% extends "base.html" %}
+
+{% block title %}PGS Visualizer - Multivariate Analysis{% endblock %}
+
+{% block head %}
+<style>
+    .form-container {
+        background: #f8f9fa;
+        border-radius: 8px;
+        padding: 20px;
+        margin-bottom: 20px;
+    }
+    
+    #heatmapContainer {
+        min-height: 800px;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .stats-card {
+        height: 100%;
+    }
+    
+    .spinner-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 300px;
+    }
+    
+    .alert-container {
+        margin: 20px 0;
+    }
+    .opacity-50 {
+        opacity: 0.5;
+    }
+    .pe-none {
+        pointer-events: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-body">
+                <h1 class="card-title">
+                    <i class="fas fa-th text-primary me-2"></i>PGS Multivariate Analysis
+                </h1>
+                <p class="lead">
+                    Generate interactive visualizations to explore patterns across PGS IDs and samples using heatmaps, dimensionality reduction, and component analysis.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <!-- Configuration panel -->
+        <div class="card shadow mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="plotType" class="form-label">Plot Type</label>
+                    <select class="form-select" id="plotType" name="plotType" required>
+                        <option value="heatmap" selected>Heatmap</option>
+                        <option value="umap">UMAP</option>
+                        <option value="svd">SVD Analysis</option>
+                    </select>
+                    <div class="form-text">Select visualization type</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="viewType" class="form-label">UMAP Perspective</label>
+                    <select class="form-select" id="viewType" name="viewType">
+                        <option value="sample" selected>Sample-centered (samples as points)</option>
+                        <option value="score">Score-centered (PGS scores as points)</option>
+                    </select>
+                    <div class="form-text">Choose whether points represent samples or PGS scores</div>
+                </div>
+
+                <div class="mb-3" id="svdPlotTypeContainer" style="display: none;">
+                    <label for="svdPlotType" class="form-label">SVD Plot Type</label>
+                    <select class="form-select" id="svdPlotType" name="svdPlotType">
+                        <option value="combined" selected>Combined SVD Dashboard</option>
+                        <option value="scree">Scree Plot</option>
+                        <option value="biplot">Biplot</option>
+                        <option value="component_weights">Component Weights</option>
+                        <option value="heatmap">Component Heatmap</option>
+                    </select>
+                    <div class="form-text">Choose SVD visualization type</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="stdDevThreshold" class="form-label">Std Dev Threshold</label>
+                    <input type="number" class="form-control" id="stdDevThreshold" name="stdDevThreshold" 
+                        value="3.0" min="1.0" max="10.0" step="0.1">
+                    <div class="form-text">Outlier capping threshold (standard deviations)</div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="nNeighbors" class="form-label">Neighbors</label>
+                    <input type="number" class="form-control" id="nNeighbors" name="nNeighbors" 
+                        value="15" min="1" max="10" step="1">
+                    <div class="form-text">Number of neighbors</div>
+                </div>
+                                
+                <div class="mb-3">
+                    <label for="minDist" class="form-label">Min Distance</label>
+                    <input type="number" class="form-control" id="minDist" name="minDist" 
+                        value="0.1" min="0" max="1" step="0.01">
+                    <div class="form-text">Closeness of points</div>
+                </div>
+
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="dendrogramView" name="dendrogramView">
+                        <label class="form-check-label" for="dendrogramView">Include Dendrogram</label>
+                    </div>
+                </div>
+                
+                <div class="mb-3" id="biplotControlsContainer" style="display: none;">
+                    <h6 class="mb-3 border-bottom pb-2">Biplot Visualization Controls</h6>
+
+                    <label for="biplotPerspective" class="form-label">Biplot Perspective</label>
+                    <select class="form-select" id="biplotPerspective" name="biplotPerspective">
+                        <option value="sample" selected>Sample-centered (samples as points)</option>
+                        <option value="score">Score-centered (PGS scores as points)</option>
+                    </select>
+                    <div class="form-text">Choose whether points represent samples or scores</div>
+                    
+                    <div class="mt-3">
+                        <label for="maxVectors" class="form-label">Max vectors to display: <span id="maxVectorsValue">20</span></label>
+                        <input type="range" class="form-range" id="maxVectors" min="5" max="100" value="20">
+                        <div class="d-flex justify-content-between">
+                            <small>5</small>
+                            <small>100</small>
+                        </div>
+                        <div class="form-text">Limit the number of vectors for better readability</div>
+                    </div>
+                    <hr class="mt-4 mb-3">
+
+                </div>
+                <div class="mb-3">
+                    <label for="scoreType" class="form-label">Score Type</label>
+                    <select class="form-select" id="scoreType" name="scoreType" required>
+                        <option value="" selected disabled>Select Score Type</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="cohortSelection" class="form-label">Sample Cohort</label>
+                    <select class="form-select" id="cohortSelection">
+                        <option value="ALL" selected>All Samples</option>
+                        <!-- Will be populated from permanent cohorts -->
+                    </select>
+                    <div class="form-text">Filter samples by population cohort</div>
+                </div>
+                
+                <div class="d-grid mt-4">
+                    <button type="submit" class="btn btn-primary" id="generateButton">
+                        <i class="fas fa-chart-area me-1"></i> Generate Plot
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- PGS Management panel -->
+        <div class="card shadow mb-4">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-dna me-2"></i>PGS Management
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="selectAllPgs">
+                        <label class="form-check-label" for="selectAllPgs">
+                            Use all available PGS IDs
+                        </label>
+                    </div>
+                </div>
+                
+                <div id="manualPgsSelection">
+                    <div class="mb-3">
+                        <label for="pgsIdsInput" class="form-label">Add PGS IDs</label>
+                        <textarea class="form-control" id="pgsIdsInput" rows="3" placeholder="Enter PGS IDs, one per line"></textarea>
+                        <!-- <div class="form-text">Maximum of <span id="maxPgsValue"></span> PGS IDs will be used.</div> -->
+                    </div>
+                    
+                    <div class="d-grid">
+                        <button type="button" class="btn btn-success" id="addPgsBtn">
+                            <i class="fas fa-plus me-1"></i> Add PGS IDs
+                        </button>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <h6 class="mb-3">Selected PGS IDs</h6>
+                <div id="pgsList" class="mb-3" style="max-height: 300px; overflow-y: auto;">
+                    <div class="text-center text-muted py-3" id="noPgs">
+                        No PGS IDs added yet
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Subcohort Management panel -->
+        <div class="card shadow" id="subcohortManagementPanel">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-users me-2"></i>Subcohort Management
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="subcohortName" class="form-label">Subcohort Name</label>
+                    <input type="text" class="form-control" id="subcohortName" placeholder="e.g., Cases">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="subcohortColor" class="form-label">Subcohort Color</label>
+                    <div class="input-group">
+                        <input type="color" class="form-control form-control-color" id="subcohortColor" value="#e41a1c">
+                        <span id="colorPreview" style="background-color: #e41a1c; width: 30px; border: 1px solid #dee2e6; border-radius: 0.25rem;"></span>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="sampleIdsInput" class="form-label">Sample IDs</label>
+                    <textarea class="form-control" id="sampleIdsInput" rows="6" placeholder="Enter sample IDs, one per line"></textarea>
+                </div>
+                
+                <div class="d-grid">
+                    <button type="button" class="btn btn-success" id="addSubcohortBtn">
+                        <i class="fas fa-plus me-1"></i> Add Subcohort
+                    </button>
+                </div>
+                
+                <hr>
+                
+                <h6 class="mb-3">Active Subcohorts</h6>
+                <div id="subcohortsList" class="mb-3">
+                    <div class="text-center text-muted py-3" id="noSubcohorts">
+                        No subcohorts added yet
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-9">
+        <!-- Heatmap visualization -->
+        <div class="card shadow">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-th me-2"></i>Heatmap Visualization
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary me-2" id="downloadPngBtn" disabled>
+                        <i class="fas fa-external-link-alt me-1"></i>View in New Tab
+                    </button>
+                    <button class="btn btn-sm btn-outline-primary" id="downloadHtmlBtn" disabled>
+                        <i class="fas fa-code me-1"></i>Download HTML
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="heatmapContainer">
+                    <div class="spinner-container" id="loadingSpinner" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                        <div class="text-center p-4">
+                            <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                        </div>
+                    </div>
+                    <div id="heatmapPlot" style="display: none;"></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Statistics section -->
+        <!-- <div class="card shadow mt-4" id="statsCard" style="display: none;">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>Heatmap Statistics
+                </h5>
+            </div>
+        </div> -->
+    </div>
+</div>
+
+<div class="alert-container" id="alertContainer"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    const MAX_PGS_IDS = 5500;
+    $(document).ready(function() {
+        // Update the max PGS ID display
+        $('#maxPgsValue').text(MAX_PGS_IDS);
+        let heatmapPlot = null;
+        let pgsScores = []; 
+        let selectedCohort = "ALL"; 
+        let subcohorts = [];
+
+        // Define preset colors
+        const PRESET_COLORS = [
+            "#e41a1c",  // Red
+            "#377eb8",  // Blue
+            "#4daf4a",  // Green
+            "#984ea3",  // Purple
+            "#ff7f00",  // Orange
+            "#FFD700",  // Gold
+            "#a65628",  // Brown
+            "#f781bf",  // Pink
+            "#999999"   // Gray
+        ];
+
+        loadPermanentCohorts();
+        updatePlotTypeControls()
+ 
+        // Add event handler for cohort selection changes
+        $('#plotType').on('change', function() {
+            updatePlotTypeControls()
+        });
+
+        $('#svdPlotType').on('change', function() {
+            updatePlotTypeControls();
+        });
+        
+        // Add listener for the range slider
+        $('#maxVectors').on('input', function() {
+            $('#maxVectorsValue').text($(this).val());
+        });
+
+        // Add event handler for cohort selection changes
+        $('#cohortSelection').on('change', function() {
+            selectedCohort = $(this).val();
+            // Clear any existing heatmap
+            $('#heatmapPlot').hide();
+            if ($('#plotPlaceholder').length === 0) {
+                $('#heatmapContainer').append(`
+                    <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                        <div class="text-center p-4">
+                            <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                        </div>
+                    </div>
+                `);
+            }
+            $('#plotPlaceholder').show();
+        });
+        
+        // Add subcohort button handler
+        $('#addSubcohortBtn').on('click', function() {
+            addSubcohort();
+        });
+
+        // Add PGS button click handler
+        $('#addPgsBtn').on('click', function() {
+            addPgsIds();
+        });
+        
+        // Form submission - Update to include selected PGS IDs
+        $('#generateButton').on('click', function(e) {
+            e.preventDefault();
+            console.log('Form submitted - generate visualization clicked');
+            
+            if (pgsScores.length === 0 && !$('#selectAllPgs').is(':checked')){
+                showAlert('Please add at least one PGS ID', 'warning');
+                return;
+            }
+            
+            // Get the plot type
+            const plotType = $('#plotType').val();
+            
+            // Call appropriate function based on plot type
+            switch (plotType) {
+                case 'heatmap':
+                    generateHeatmap();
+                    break;
+                case 'umap':
+                    generateUmap();
+                    break;
+                case 'svd':
+                    generateSVD();
+                    break;
+            }
+        });
+
+        // Download HTML button
+        $('#downloadHtmlBtn').on('click', function() {
+            const filePath = $(this).attr('data-filepath');
+            if (!filePath) return;
+            
+            // Create a link to download the file
+            const link = document.createElement('a');
+            link.href = filePath;
+            link.download = `heatmap_${$('#scoreType').val()}_${new Date().toISOString().slice(0, 10)}.html`;
+            link.click();
+        });
+
+        // Open in new window button
+        $('#downloadPngBtn').on('click', function() {
+            const filePath = $(this).attr('data-filepath');
+            if (!filePath) return;
+            window.open(filePath, '_blank');
+        });
+        
+        // Initialize color picker
+        $('#subcohortColor').on('input', function() {
+            $('#colorPreview').css('background-color', $(this).val());
+        });
+
+        // Initial setup for the PGS selection
+        $('#selectAllPgs').change(function() {
+            if($(this).is(':checked')) {
+                // Hide the manual PGS selection area
+                $('#manualPgsSelection').hide();
+                // Clear any previously entered PGS IDs
+                $('#pgsIdsInput').val('');
+                // Update the PGS list to show "All PGS IDs will be used"
+                $('#pgsList').html('<div class="alert alert-info">All available PGS IDs will be used</div>');
+                $('#noPgs').hide();
+                populateScoreTypeDropdown();
+            } else {
+                // Show the manual PGS selection area
+                $('#manualPgsSelection').show();
+                // Reset the PGS list
+                $('#pgsList').html('');
+                $('#noPgs').show();
+            }
+        });
+
+
+        // Function to load permanent cohorts
+        function loadPermanentCohorts() {
+            $.ajax({
+                url: '/api/permanent_cohorts',
+                type: 'GET',
+                success: function(data) {
+                    if (data.cohorts && data.cohorts.length > 0) {
+                        // Populate cohort dropdown
+                        const cohortSelect = $('#cohortSelection');
+                        
+                        data.cohorts.forEach(function(cohort) {
+                            cohortSelect.append(`<option value="${cohort.name}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`);
+                        });
+                    }
+                },
+                error: function(xhr) {
+                    console.log('Error loading permanent cohorts:', xhr.status);
+                }
+            });
+        }
+        
+        function updatePlotTypeControls() {
+            const plotType = $('#plotType').val();
+            const svdPlotType = $('#svdPlotType').val();
+            
+            // First, hide all specialized controls
+            $('#nNeighbors').parent().hide();
+            $('#minDist').parent().hide();
+            $('#dendrogramView').parent().hide();
+            $('#stdDevThreshold').parent().hide();
+            $('#viewType').parent().hide();
+            $('#svdPlotTypeContainer').hide();
+            $('#biplotControlsContainer').hide();
+            $('#subcohortManagementPanel').hide();
+            
+            if (plotType === 'heatmap') {
+                // Show heatmap-specific controls
+                $('#dendrogramView').parent().show();
+                $('#stdDevThreshold').parent().show();
+                $('#subcohortManagementPanel').show();
+            } 
+            else if (plotType === 'umap') {
+                // Show UMAP-specific controls
+                $('#nNeighbors').parent().show();
+                $('#minDist').parent().show();
+                $('#viewType').parent().show();
+            } 
+            else if (plotType === 'svd') {
+                // Show SVD-specific controls
+                $('#svdPlotTypeContainer').show();
+                
+                // Show biplot perspective controls only for biplot or combined views
+                if (svdPlotType === 'biplot' || svdPlotType === 'combined') {
+                    $('#biplotControlsContainer').show();
+                }
+            }
+        }
+   
+        function populateScoreTypeDropdown() {
+            const scoreTypes = [
+                'SUM',
+                'Z_MostSimilarPop',
+                'Z_norm1',
+                'Z_norm2',
+                'percentile_MostSimilarPop'
+            ];
+            
+            const $scoreTypeSelect = $('#scoreType');
+            $scoreTypeSelect.empty(); // Clear existing options
+            
+            // Add the default "Select Score Type" option
+            $scoreTypeSelect.append($('<option>', {
+                value: '',
+                text: 'Select Score Type',
+                selected: true,
+                disabled: true
+            }));
+            
+            // Add the score type options
+            scoreTypes.forEach(scoreType => {
+                $scoreTypeSelect.append($('<option>', {
+                    value: scoreType,
+                    text: scoreType
+                }));
+            });
+        }
+        
+        // Function to add PGS IDs
+        function addPgsIds() {
+            const pgsIdsText = $('#pgsIdsInput').val().trim();
+            if (!pgsIdsText) {
+                showAlert('Please enter at least one PGS ID', 'warning');
+                return;
+            }
+            
+            const pgsIds = pgsIdsText.split('\n').map(id => id.trim()).filter(id => id);
+            if (pgsIds.length === 0) {
+                showAlert('Please enter valid PGS IDs', 'warning');
+                return;
+            }
+            
+            // Show loading
+            $('#pgsList').html('<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p>Validating PGS IDs...</p></div>');
+            
+            // Validate PGS IDs
+            validatePgsIds(pgsIds);
+        }
+        
+        // Function to validate PGS IDs
+        async function validatePgsIds(pgsIds) {
+            const validPgsIds = [];
+            const invalidPgsIds = [];
+            
+            for (const pgsId of pgsIds) {
+                try {
+                    const response = await $.ajax({
+                        url: `/api/score_types/${pgsId}`,
+                        type: 'GET'
+                    });
+                    
+                    if (response.score_types && response.score_types.length > 0) {
+                        // Check if this PGS ID is already added
+                        if (!pgsScores.some(p => p.id === pgsId)) {
+                            validPgsIds.push({
+                                id: pgsId,
+                                scoreTypes: response.score_types
+                            });
+                        }
+                    } else {
+                        invalidPgsIds.push(pgsId);
+                    }
+                } catch (error) {
+                    invalidPgsIds.push(pgsId);
+                }
+            }
+            
+            // Add valid PGS IDs
+            if (validPgsIds.length > 0) {
+                addValidPgsIds(validPgsIds);
+            }
+            
+            // Show notification
+            if (invalidPgsIds.length > 0) {
+                showAlert(`Added ${validPgsIds.length} PGS IDs. ${invalidPgsIds.length} invalid IDs: ${invalidPgsIds.join(', ')}`, 'warning');
+            } else if (validPgsIds.length > 0) {
+                showAlert(`Added ${validPgsIds.length} PGS IDs successfully`, 'success');
+            } else {
+                showAlert('No new valid PGS IDs to add', 'info');                
+            }
+            
+            // Clear input
+            $('#pgsIdsInput').val('');
+
+            // Update PGS list
+            updatePgsList();
+
+            // Update score types dropdown
+            updateScoreTypes();
+        }
+        
+        // Function to add valid PGS IDs to the list
+        function addValidPgsIds(validPgsIds) {
+            // Clear "No PGS" message if it's the first PGS
+            if (pgsScores.length === 0) {
+                $('#pgsList').empty();
+            }
+            
+            validPgsIds.forEach((pgs, index) => {
+                const pgsId = pgs.id;
+                const color = PRESET_COLORS[pgsScores.length % PRESET_COLORS.length];
+                
+                // Create UI element
+                const pgsRow = $(`
+                    <div class="cohort-row" data-pgs-id="${pgsId}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge rounded-pill me-2" style="background-color: ${color};">&nbsp;</span>
+                                <strong>${pgsId}</strong>
+                            </div>
+                            <div>
+                                <i class="fas fa-times delete-pgs" data-pgs-id="${pgsId}" style="cursor: pointer; color: #dc3545;"></i>
+                            </div>
+                        </div>
+                    </div>
+                `);
+                
+                // Add to UI
+                $('#pgsList').append(pgsRow);
+                
+                // Add to array
+                pgsScores.push({
+                    id: pgsId,
+                    scoreTypes: pgs.scoreTypes
+                });
+                
+                // Add event listener for delete button
+                pgsRow.find('.delete-pgs').on('click', function() {
+                    const pgsId = $(this).data('pgs-id');
+                    deletePgs(pgsId);
+                });
+            });
+        }
+        
+        // Function to delete a PGS ID
+        function deletePgs(pgsId) {
+            // Remove from UI
+            $(`.cohort-row[data-pgs-id="${pgsId}"]`).remove();
+            
+            // Remove from array
+            pgsScores = pgsScores.filter(p => p.id !== pgsId);
+            
+            // Show "No PGS" message if no PGS left
+            if (pgsScores.length === 0) {
+                $('#pgsList').html('<div class="text-center text-muted py-3" id="noPgs">No PGS IDs added yet</div>');
+            }
+            
+            // Update score types
+            updateScoreTypes();
+            
+            showAlert('PGS ID removed', 'info');
+        }
+        
+        // Function to update PGS list UI
+        function updatePgsList() {
+            const pgsList = $('#pgsList');
+            pgsList.empty();
+            
+            if (pgsScores.length === 0) {
+                pgsList.html('<div class="text-center text-muted py-3" id="noPgs">No PGS IDs added yet</div>');
+                return;
+            }
+            
+            pgsScores.forEach((pgs, index) => {
+                const color = PRESET_COLORS[index % PRESET_COLORS.length];
+                
+                const pgsRow = $(`
+                    <div class="cohort-row" data-pgs-id="${pgs.id}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="badge rounded-pill me-2" style="background-color: ${color};">&nbsp;</span>
+                                <strong>${pgs.id}</strong>
+                            </div>
+                            <div>
+                                <i class="fas fa-times delete-pgs" data-pgs-id="${pgs.id}" style="cursor: pointer; color: #dc3545;"></i>
+                            </div>
+                        </div>
+                    </div>
+                `);
+                
+                pgsList.append(pgsRow);
+                
+                // Add event listener for delete button
+                pgsRow.find('.delete-pgs').on('click', function() {
+                    const pgsId = $(this).data('pgs-id');
+                    deletePgs(pgsId);
+                });
+            });
+        }
+        
+        // Function to update score types dropdown based on common score types
+        function updateScoreTypes() {
+            const scoreTypeSelect = $('#scoreType');
+            scoreTypeSelect.empty();
+            
+            if (pgsScores.length === 0) {
+                scoreTypeSelect.append('<option value="" selected disabled>Select Score Type</option>');
+                return;
+            }
+            
+            // Find common score types across all selected PGS IDs
+            let commonScoreTypes = [...pgsScores[0].scoreTypes];
+            
+            for (let i = 1; i < pgsScores.length; i++) {
+                commonScoreTypes = commonScoreTypes.filter(type => 
+                    pgsScores[i].scoreTypes.includes(type)
+                );
+            }
+            
+            scoreTypeSelect.append('<option value="" selected disabled>Select Score Type</option>');
+            
+            if (commonScoreTypes.length === 0) {
+                scoreTypeSelect.append('<option value="" disabled>No common score types</option>');
+            } else {
+                commonScoreTypes.forEach(type => {
+                    scoreTypeSelect.append(`<option value="${type}">${type}</option>`);
+                });
+            }
+        }
+        
+        // Function to add a subcohort
+        function addSubcohort() {
+            const name = $('#subcohortName').val().trim();
+            const color = $('#subcohortColor').val();
+            const sampleIdsText = $('#sampleIdsInput').val().trim();
+            
+            if (!name) {
+                showAlert('Please enter a name for the subcohort', 'warning');
+                return;
+            }
+            
+            if (!sampleIdsText) {
+                showAlert('Please enter at least one sample ID', 'warning');
+                return;
+            }
+            
+            const sampleIds = sampleIdsText.split('\n').map(id => id.trim()).filter(id => id);
+            
+            if (sampleIds.length === 0) {
+                showAlert('Please enter valid sample IDs', 'warning');
+                return;
+            }
+            
+            // Check for duplicate subcohort name
+            if (subcohorts.some(sc => sc.name === name)) {
+                showAlert(`A subcohort with name "${name}" already exists`, 'warning');
+                return;
+            }
+            
+            // Add to subcohorts array
+            subcohorts.push({
+                name: name,
+                color: color,
+                sampleIds: sampleIds,
+                active: true
+            });
+            
+            // Update UI
+            updateSubcohortsList();
+            
+            // Clear input fields
+            $('#subcohortName').val('');
+            $('#sampleIdsInput').val('');
+            
+            // Pick next color in preset list
+            const presetColors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf'];
+            $('#subcohortColor').val(presetColors[subcohorts.length % presetColors.length]);
+            $('#colorPreview').css('background-color', $('#subcohortColor').val());
+            
+            showAlert(`Added subcohort "${name}" with ${sampleIds.length} samples`, 'success');
+            updateSubcohortSelects();
+        }
+        
+        // Function to update the subcohorts list UI
+        function updateSubcohortsList() {
+            const subcohortsList = $('#subcohortsList');
+            subcohortsList.empty();
+            
+            if (subcohorts.length === 0) {
+                subcohortsList.html('<div class="text-center text-muted py-3" id="noSubcohorts">No subcohorts added yet</div>');
+                return;
+            }
+            
+            subcohorts.forEach((subcohort, index) => {
+                const subcohortRow = $(`
+                    <div class="subcohort-row" data-subcohort-id="${index}">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div>
+                                <span class="color-indicator" style="background-color: ${subcohort.color};"></span>
+                                <strong>${subcohort.name}</strong>
+                            </div>
+                            <div>
+                                <div class="form-check form-switch d-inline-block me-2">
+                                    <input class="form-check-input subcohort-toggle" type="checkbox" 
+                                        id="subcohort-${index}" data-subcohort-id="${index}" ${subcohort.active ? 'checked' : ''}>
+                                </div>
+                                <i class="fas fa-times delete-subcohort" data-subcohort-id="${index}" 
+                                style="cursor: pointer; color: #dc3545;"></i>
+                            </div>
+                        </div>
+                        <div>
+                            <small class="text-muted">${subcohort.sampleIds.length} samples</small>
+                        </div>
+                    </div>
+                `);
+                
+                // Add event listeners
+                subcohortRow.find('.subcohort-toggle').on('change', function() {
+                    const subcohortId = parseInt($(this).data('subcohort-id'));
+                    subcohorts[subcohortId].active = $(this).prop('checked');
+                    
+                    // If we have data, regenerate the plot
+                    if (baseData) {
+                        renderPlot();
+                    }
+                });
+                
+                subcohortRow.find('.delete-subcohort').on('click', function() {
+                    const subcohortId = parseInt($(this).data('subcohort-id'));
+                    deleteSubcohort(subcohortId);
+                });
+                
+                subcohortsList.append(subcohortRow);
+            });
+        }
+        
+        // Function to delete a subcohort
+        function deleteSubcohort(subcohortId) {
+            subcohorts.splice(subcohortId, 1);
+            updateSubcohortsList();
+            
+            // If we have data, regenerate the plot
+            if (baseData) {
+                renderPlot();
+            }
+            
+            showAlert('Subcohort removed', 'info');
+            updateSubcohortSelects();
+        }
+
+        // Populate subcohort selects when subcohorts are added
+        function updateSubcohortSelects() {
+            const subcohort1Select = $('#subcohort1Select');
+            const subcohort2Select = $('#subcohort2Select');
+            
+            subcohort1Select.empty();
+            subcohort2Select.empty();
+            
+            subcohort1Select.append('<option value="" selected disabled>Select subcohort</option>');
+            subcohort2Select.append('<option value="" selected disabled>Select subcohort</option>');
+            
+            subcohorts.forEach((subcohort, index) => {
+                subcohort1Select.append(`<option value="${index}">${subcohort.name}</option>`);
+                subcohort2Select.append(`<option value="${index}">${subcohort.name}</option>`);
+            });
+        }
+        
+        // Function to generate heatmap
+        function generateHeatmap() {
+            const scoreType = $('#scoreType').val();
+            const stdDevThreshold = parseFloat($('#stdDevThreshold').val());
+            const compactView = $('#compactView').is(':checked');
+            // Get active subcohorts
+            const activeSubcohorts = subcohorts.filter(sc => sc.active);
+
+            if (!scoreType) {
+                showAlert('Please select a score type', 'danger');
+                return;
+            }
+            
+            // Show loading
+            $('#loadingSpinner').show();
+            $('#heatmapPlot').hide();
+            if($('#plotPlaceholder').length > 0) {
+                $('#plotPlaceholder').remove();
+            }
+            $('#alertContainer').empty();
+            
+            // Get selected PGS IDs
+            const selectedPgsIds = pgsScores.map(p => p.id);
+
+            // Prepare request data with cohort information
+            const requestData = {
+                score_type: scoreType,
+                max_pgs_ids: MAX_PGS_IDS,
+                std_dev_threshold: stdDevThreshold,
+                compact_view: compactView,
+                pgs_ids: selectedPgsIds,
+                cohort: selectedCohort !== "ALL" ? selectedCohort : null, 
+                subcohorts: activeSubcohorts
+            };
+            
+            // Send API request
+            $.ajax({
+                url: '/api/generate_heatmap',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(requestData),
+                success: function(response) {
+                    $('#loadingSpinner').hide();
+
+                    if (!response || !response.file_path) {
+                        showAlert('Error: Invalid response from server', 'danger');
+                        return;
+                    }
+                    
+                    // Create an iframe to display the heatmap
+                    const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                    $('#heatmapPlot').html(iframe).show();
+                    
+                    // Enable download buttons
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    
+                    // Show cohort info in the alert
+                    const cohortInfo = selectedCohort !== "ALL" ? 
+                        `Filtered to ${selectedCohort} cohort` : 
+                        'Showing all samples';
+                    
+                    showAlert(`Heatmap generated successfully. ${cohortInfo}`, 'success');
+                },
+                error: function(xhr, status, error) {
+                    $('#loadingSpinner').hide();
+                    
+                    // Restore placeholder if needed
+                    if($('#plotPlaceholder').length === 0) {
+                        $('#heatmapContainer').append(`
+                            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                                <div class="text-center p-4">
+                                    <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                                    <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                                </div>
+                            </div>
+                        `);
+                    }
+                    $('#plotPlaceholder').show();
+                    
+                    console.error("AJAX error:", status, error);
+                    console.error("Response status:", xhr.status);
+                    console.error("Response text:", xhr.responseText);
+                    
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                    } catch (e) {
+                        showAlert('Error generating heatmap: ' + error, 'danger');
+                    }
+                }
+            });
+        }
+
+        // Function to generate UMAP plot
+        function generateUmap() {
+            const scoreType = $('#scoreType').val();
+            const nNeighbors = parseInt($('#nNeighbors').val() || 15); // Default value: 15
+            const minDist = parseFloat($('#minDist').val() || 0.1);    // Default value: 0.1
+            const viewType = $('#viewType').val();
+
+            if (!scoreType) {
+                showAlert('Please select a score type', 'danger');
+                return;
+            }
+            
+            // Show loading
+            $('#loadingSpinner').show();
+            $('#heatmapPlot').hide();
+            if($('#plotPlaceholder').length > 0) {
+                $('#plotPlaceholder').remove();
+            }
+            $('#alertContainer').empty();
+            
+            // Get selected PGS IDs
+            const selectedPgsIds = pgsScores.map(p => p.id);
+
+            // Prepare request data with cohort information
+            const requestData = {
+                score_type: scoreType,
+                n_neighbors: nNeighbors,
+                min_dist: minDist,
+                pgs_ids: selectedPgsIds,
+                cohort: selectedCohort !== "ALL" ? selectedCohort : null,
+                view_type: viewType
+            };
+            
+            // Send API request
+            $.ajax({
+                url: '/api/generate_umap',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(requestData),
+                success: function(response) {
+                    $('#loadingSpinner').hide();
+
+                    if (!response || !response.file_path) {
+                        showAlert('Error: Invalid response from server', 'danger');
+                        return;
+                    }
+                    
+                    // Create an iframe to display the UMAP plot
+                    const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                    $('#heatmapPlot').html(iframe).show();
+                    
+                    // Enable download buttons 
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    
+                    // Show cohort info in the alert
+                    const cohortInfo = selectedCohort !== "ALL" ? 
+                        `Filtered to ${selectedCohort} cohort` : 
+                        'Showing all samples';
+                    
+                    showAlert(`UMAP plot generated successfully. ${cohortInfo}`, 'success');
+                },
+                error: function(xhr, status, error) {
+                    $('#loadingSpinner').hide();
+                    
+                    // Restore placeholder if needed
+                    if($('#plotPlaceholder').length === 0) {
+                        $('#heatmapContainer').append(`
+                            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                                <div class="text-center p-4">
+                                    <i class="fas fa-project-diagram fa-3x text-muted mb-3"></i>
+                                    <p class="text-muted">Add PGS IDs, select a score type, and click "Generate UMAP" to visualize the data.</p>
+                                </div>
+                            </div>
+                        `);
+                    }
+                    $('#plotPlaceholder').show();
+                    
+                    console.error("AJAX error:", status, error);
+                    console.error("Response status:", xhr.status);
+                    console.error("Response text:", xhr.responseText);
+                    
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                    } catch (e) {
+                        showAlert('Error generating UMAP plot: ' + error, 'danger');
+                    }
+                }
+            });
+        }
+   
+        // SVD generation function
+        function generateSVD() {
+            // Show loading spinner
+            $('#loadingSpinner').show();
+            if($('#plotPlaceholder').length > 0) {
+                $('#plotPlaceholder').remove();
+            }
+
+            // Get parameters
+            const scoreType = $('#scoreType').val();
+            const svdPlotType = $('#svdPlotType').val();
+            const cohort = $('#cohortSelection').val();
+
+            // Get biplot-specific parameters if applicable
+            let perspective = 'sample';  // Default value
+            let maxVectors = 20;         // Default value
+            
+            if (svdPlotType === 'biplot' || svdPlotType === 'combined') {
+                perspective = $('#biplotPerspective').val();
+                maxVectors = parseInt($('#maxVectors').val());
+            }
+
+
+            // Get selected PGS IDs
+            let pgsIds = [];
+            if (!$('#selectAllPgs').is(':checked')) {
+                pgsIds = pgsScores.map(p => p.id);
+                console.log(pgsIds.length)
+            }
+            
+            // Make API request
+            $.ajax({
+                url: '/api/generate_svd_image',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({
+                    score_type: scoreType,
+                    pgs_ids: pgsIds.length > 0 ? pgsIds : null,
+                    cohort: cohort,
+                    plot_type: svdPlotType,
+                    perspective: perspective,
+                    max_vectors: maxVectors
+                }),
+                success: function(response) {
+                    // Hide loading spinner
+                    $('#loadingSpinner').hide();
+                    
+                    // Display the SVD visualization
+                    $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
+                    $('#heatmapPlot').show();
+                    
+                    // Enable download buttons 
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                },
+                error: function(error) {
+                    // Hide loading spinner and show error
+                    $('#loadingSpinner').hide();
+                    alert('Error generating SVD visualization: ' + error.responseJSON.detail);
+                }
+            });
+        }
+        
+        // Show alert message
+        function showAlert(message, type) {
+            const alert = `
+                <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+            `;
+            $('#alertContainer').html(alert);
+        }
+        
+    });
+</script>
+{% endblock %}

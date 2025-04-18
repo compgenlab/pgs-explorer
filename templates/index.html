@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+
+{% block title %}PGS Visualizer - Home{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-body">
+                <h1 class="card-title mb-4">
+                    <i class="fas fa-dna text-primary me-2"></i>PGS Visualizer
+                </h1>
+                <p class="lead">
+                    Welcome to the PGS Visualizer, a tool for exploring and visualizing Polygenic Score data.
+                </p>
+                <p>
+                    This application provides interactive visualizations for exploring patterns in polygenic score data across different samples and score types.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 shadow">
+            <div class="card-body text-center">
+                <i class="fas fa-chart-area fa-4x text-primary mb-3"></i>
+                <h3 class="card-title">Distribution Analysis</h3>
+                <p class="card-text">
+                    Compare score distributions across different cohorts or PGS IDs with interactive charts.
+                </p>
+                <a href="/distribution" class="btn btn-primary mt-3">
+                    <i class="fas fa-chart-area me-1"></i> Explore Distributions
+                </a>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 shadow">
+            <div class="card-body text-center">
+                <i class="fas fa-info-circle fa-4x text-primary mb-3"></i>
+                <h3 class="card-title">Subcohorts</h3>
+                <p class="card-text">
+                    Generate multi-distributions for groups within cohorts and analyze odds-ratio. 
+                </p>
+                <a href="/subcohorts" class="btn btn-primary mt-3">
+                    <i class="fas fa-info-circle me-1"></i> Analyze Subcohorts
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4 mb-4">
+        <div class="card h-100 shadow">
+            <div class="card-body text-center">
+                <i class="fas fa-th fa-4x text-primary mb-3"></i>
+                <h3 class="card-title">Multivariate Analysis</h3>
+                <p class="card-text">
+                    Generate interactive visualizations to explore patterns across PGS IDs and samples using heatmaps, dimensionality reduction, and component analysis.                </p>
+                <a href="/multivariate" class="btn btn-primary mt-3">
+                    <i class="fas fa-th me-1"></i> Explore Patterns
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

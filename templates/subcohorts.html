@@ -1,0 +1,2461 @@
+{% extends "base.html" %}
+
+{% block title %}PGS Visualizer - Subcohort Analysis{% endblock %}
+
+{% block head %}
+<style>
+    #plotContainer {
+        min-height: 600px;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 20px;
+    }
+    
+    .subcohort-row {
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 10px;
+    }
+    
+    .color-indicator {
+        display: inline-block;
+        width: 20px;
+        height: 20px;
+        border-radius: 4px;
+        vertical-align: middle;
+        margin-right: 5px;
+    }
+    
+    .spinner-container {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 300px;
+    }
+    
+    .alert-container {
+        margin: 20px 0;
+    }
+    
+    #percentileTable {
+        max-height: 400px;
+        overflow-y: auto;
+        margin-top: 20px;
+    }
+    
+    #percentileTable table {
+        width: 100%;
+        border-collapse: collapse;
+    }
+    
+    #percentileTable th, #percentileTable td {
+        padding: 8px;
+        border: 1px solid #dee2e6;
+    }
+    
+    #percentileTable th {
+        background-color: #f8f9fa;
+        position: sticky;
+        top: 0;
+        cursor: pointer;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-body">
+                <h1 class="card-title">
+                    <i class="fas fa-layer-group text-primary me-2"></i>PGS Subcohort Analysis
+                </h1>
+                <p class="lead">
+                    Analyze and visualize custom subcohorts within your population data.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-3">
+        <!-- Configuration panel -->
+        <div class="card shadow mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Configuration</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="pgsId" class="form-label">PGS ID</label>
+                    <select class="form-select" id="pgsId" required>
+                        <option value="" selected disabled>Select PGS ID</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="scoreType" class="form-label">Score Type</label>
+                    <select class="form-select" id="scoreType" required>
+                        <option value="" selected disabled>Select Score Type</option>
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="baseCohort" class="form-label">Base Cohort</label>
+                    <select class="form-select" id="baseCohort" required>
+                        <option value="" selected disabled>Select Base Cohort</option>
+                        <!-- <option value="ALL">All Samples</option> -->
+                    </select>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="plotTitle" class="form-label">Plot Title</label>
+                    <input type="text" class="form-control" id="plotTitle" placeholder="Enter plot title">
+                </div>
+                    <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="normalizeBins" name="normalizeBins">
+                    <label class="form-check-label" for="normalizeBins">Normalize Bins?</label>
+                    <div class="form-text">Normalizes bin heights.</div>
+                </div>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-primary" id="generateButton">
+                        <i class="fas fa-chart-area me-1"></i> Generate Plot
+                    </button>
+                </div>
+
+            </div>
+        </div>
+        
+        <!-- Odds-Ratio panel -->
+        <div class="card shadow mb-3">
+            <div class="card-header">
+                <h5 class="mb-0">Odds Ratio</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="displayOR" name="displayOR">
+                        <label class="form-check-label" for="displayOR">Calculate OR?</label>
+                        <div class="form-text">Will only work with exactly 2 subcohorts.</div>
+                    </div>
+                </div>
+                
+                <div id="orOptionsContainer" class="mb-3" style="display: none;">
+                    <!-- Option 1: Histogram bin (Cumulative only) -->
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByBin" value="bin" checked>
+                        <label class="form-check-label" for="orByBin">
+                            Calculate by histogram bin (cumulative)
+                        </label>
+                    </div>
+                    
+                    <div class="mb-3 ms-4 orBinOptions">
+                        <label for="binSize" class="form-label">Bin Size</label>
+                        <input type="number" class="form-control" id="binSize" name="binSize" 
+                            value="30" min="1" max="100" step="1">
+                    </div>
+                    
+                    <!-- Option 2: Quantiles (Cumulative only) -->
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByQuantile" value="quantile">
+                        <label class="form-check-label" for="orByQuantile">
+                            Calculate by quantile (cumulative)
+                        </label>
+                    </div>
+                    
+                    <div class="mb-3 ms-4 orQuantileOptions" style="display: none;">
+                        <label for="quantileCount" class="form-label">Number of Quantiles</label>
+                        <input type="number" class="form-control" id="quantileCount" name="quantileCount" 
+                            value="10" min="2" max="100" step="1">
+                    </div>
+                    
+                    <!-- Option 3: Threshold -->
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByThreshold" value="threshold">
+                        <label class="form-check-label" for="orByThreshold">
+                            Calculate by threshold
+                        </label>
+                    </div>
+                    
+                    <div class="mb-3 ms-4 orThresholdOptions" style="display: none;">
+                        <label for="thresholdValue" class="form-label">Threshold Value</label>
+                        <input type="number" class="form-control" id="thresholdValue" name="thresholdValue" 
+                            value="0" step="any">
+                    </div>
+                    
+                    <!-- NEW Option 4: Decile vs Baseline -->
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByDecileBaseline" value="decileBaseline">
+                        <label class="form-check-label" for="orByDecileBaseline">
+                            Calculate by decile vs baseline (1st decile)
+                        </label>
+                    </div>
+                    
+                    <div class="mb-3 ms-4 orDecileBaselineOptions" style="display: none;">
+                        <label for="decileCount" class="form-label">Number of Deciles</label>
+                        <input type="number" class="form-control" id="decileCount" name="decileCount" 
+                            value="10" min="2" max="20" step="1">
+                        <div class="form-text">Divides data into equal-sized groups and compares each to the 1st decile.</div>
+                    </div>
+                    
+                    <!-- NEW Option 5: Decile vs Cumulative -->
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByDecileCumulative" value="decileCumulative">
+                        <label class="form-check-label" for="orByDecileCumulative">
+                            Calculate by decile vs all lower deciles
+                        </label>
+                    </div>
+                    
+                    <div class="mb-3 ms-4 orDecileCumulativeOptions" style="display: none;">
+                        <label for="decileCount" class="form-label">Number of Deciles</label>
+                        <input type="number" class="form-control" id="decileCount" name="decileCount" 
+                            value="10" min="2" max="20" step="1">
+                        <div class="form-text">Divides data into equal-sized groups and compares each to all lower groups combined.</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Subcohort Management panel -->
+        <div class="card shadow">
+            <div class="card-header">
+                <h5 class="mb-0">Subcohort Management</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="subcohortName" class="form-label">Subcohort Name</label>
+                    <input type="text" class="form-control" id="subcohortName" placeholder="e.g., Cases">
+                </div>
+                
+                <div class="mb-3">
+                    <label for="subcohortColor" class="form-label">Subcohort Color</label>
+                    <div class="input-group">
+                        <input type="color" class="form-control form-control-color" id="subcohortColor" value="#e41a1c">
+                        <span id="colorPreview" style="background-color: #e41a1c; width: 30px; border: 1px solid #dee2e6; border-radius: 0.25rem;"></span>
+                    </div>
+                </div>
+                
+                <div class="mb-3">
+                    <label for="sampleIdsInput" class="form-label">Sample IDs</label>
+                    <textarea class="form-control" id="sampleIdsInput" rows="6" placeholder="Enter sample IDs, one per line"></textarea>
+                </div>
+                
+                <div class="d-grid">
+                    <button type="button" class="btn btn-success" id="addSubcohortBtn">
+                        <i class="fas fa-plus me-1"></i> Add Subcohort
+                    </button>
+                </div>
+                
+                <hr>
+                
+                <h6 class="mb-3">Active Subcohorts</h6>
+                <div id="subcohortsList" class="mb-3">
+                    <div class="text-center text-muted py-3" id="noSubcohorts">
+                        No subcohorts added yet
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-9">
+        <!-- Visualization section -->
+        <div class="card shadow mb-3">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-chart-area me-2"></i>Distribution Visualization
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" id="downloadSvgBtn" disabled>
+                        <i class="fas fa-download me-1"></i>Download Plot
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="plotContainer">
+                    <div class="spinner-container" id="loadingSpinner" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                    </div>
+                    <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                        <div class="text-center p-4">
+                            <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                            <p class="text-muted">Select a PGS ID, score type, and base cohort, then add subcohorts to generate visualizations.</p>
+                        </div>
+                    </div>
+                    <!-- We'll replace this SVG with an iframe to show the Plotly visualization -->
+                    <svg id="plotSvg" width="100%" height="700" style="display: none;"></svg>
+                </div>
+            </div>
+        </div>
+        <!-- Percentile table section -->
+        <div class="card shadow">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">
+                    <i class="fas fa-table me-2"></i>Subcohort Scores & Percentiles
+                </h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" id="downloadTableBtn" disabled>
+                        <i class="fas fa-download me-1"></i>Download CSV
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="mb-3 row">
+                    <div class="col-md-4">
+                        <label for="percentileInput" class="form-label">Filter Percentile</label>
+                        <input type="number" class="form-control" id="percentileInput" min="0" max="100" step="1" placeholder="Enter value (0-100)">
+                    </div>
+                    <div class="col-md-4">
+                        <label for="percentileFilter" class="form-label">Condition</label>
+                        <select class="form-control" id="percentileFilter">
+                            <option value="above">Above</option>
+                            <option value="below">Below</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 d-flex align-items-end">
+                        <button type="button" class="btn btn-outline-primary" id="applyFilterBtn">
+                            Apply Filter
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="percentileTable"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="alert-container" id="alertContainer"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://d3js.org/d3.v6.min.js"></script>
+<script>
+    $(document).ready(function() {
+    // State variables
+    let subcohorts = [];
+    let baseData = null;
+    let tableData = [];
+    let originalTableData = []; 
+    let currentSvg = null;
+    let currentXScale = null;
+    let currentMargin = null;
+    let currentHeight = null;
+
+    // Initialize color picker
+    $('#subcohortColor').on('input', function() {
+        $('#colorPreview').css('background-color', $(this).val());
+    });
+    
+    // Fetch PGS list
+    $.get('/api/pgs_list', function(data) {
+        const pgsSelect = $('#pgsId');
+        pgsSelect.empty();
+        pgsSelect.append('<option value="" selected disabled>Select PGS ID</option>');
+        
+        data.pgs.forEach(function(pgsId) {
+            pgsSelect.append(`<option value="${pgsId}">${pgsId}</option>`);
+        });
+    }).fail(function() {
+        showAlert('Failed to load PGS list', 'danger');
+    });
+    
+    // Load cohorts
+    $.get('/api/permanent_cohorts', function(data) {
+        const cohortSelect = $('#baseCohort');
+        
+        data.cohorts.forEach(function(cohort) {
+            cohortSelect.append(`<option value="${cohort.name}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`);
+        });
+    }).fail(function() {
+        showAlert('Failed to load cohorts', 'danger');
+    });
+    
+    // Handle PGS selection change
+    $('#pgsId').on('change', function() {
+        const pgsId = $(this).val();
+        if (pgsId) {
+            fetchScoreTypes(pgsId);
+        }
+    });
+    
+    // Initialize threshold type change handler
+    $('#thresholdType').on('change', function() {
+        const thresholdType = $(this).val();
+        if (thresholdType === 'percentile') {
+            $('#thresholdHint').text('Enter percentile (0-100)');
+        } else {
+            $('#thresholdHint').text('Enter score value');
+        }
+    });
+    
+    // Add subcohort button handler
+    $('#addSubcohortBtn').on('click', function() {
+        addSubcohort();
+    });
+    
+    // Generate button handler
+    $('#generateButton').on('click', function() {
+        generatePlot();
+    });
+    
+    // Apply percentile filter button handler
+    $('#applyFilterBtn').on('click', function() {
+        applyPercentileFilter();
+    });
+    
+    // Download SVG button handler
+    $('#downloadSvgBtn').on('click', function() {
+        downloadPlotAsSvg();
+    });
+    
+    // Download table button handler
+    $('#downloadTableBtn').on('click', function() {
+        downloadTableAsCsv();
+    });
+    
+    // Show/hide OR options when checkbox is toggled
+    $('#displayOR').change(function() {
+        if(this.checked) {
+            $('#orOptionsContainer').show();
+        } else {
+            $('#orOptionsContainer').hide();
+        }
+    });
+    
+    // Show/hide specific OR calculation options based on radio selection
+    $('input[name="orCalculationType"]').change(function() {
+        // Hide all option sets first
+        $('.orBinOptions, .orQuantileOptions, .orThresholdOptions, .orDecileBaselineOptions, .orDecileCumulativeOptions').hide();
+        
+        // Show the selected option set
+        if ($('#orByBin').is(':checked')) {
+            $('.orBinOptions').show();
+        } else if ($('#orByQuantile').is(':checked')) {
+            $('.orQuantileOptions').show();
+        } else if ($('#orByThreshold').is(':checked')) {
+            $('.orThresholdOptions').show();
+        } else if ($('#orByDecileBaseline').is(':checked')) {
+            $('.orDecileBaselineOptions').show();
+        } else if ($('#orByDecileCumulative').is(':checked')) {
+            $('.orDecileCumulativeOptions').show();
+        }
+    });
+    $('input[name="orCalculationType"]:checked').change();
+    // Function to add a subcohort
+    function addSubcohort() {
+        const name = $('#subcohortName').val().trim();
+        const color = $('#subcohortColor').val();
+        const sampleIdsText = $('#sampleIdsInput').val().trim();
+        
+        if (!name) {
+            showAlert('Please enter a name for the subcohort', 'warning');
+            return;
+        }
+        
+        if (!sampleIdsText) {
+            showAlert('Please enter at least one sample ID', 'warning');
+            return;
+        }
+        
+        const sampleIds = sampleIdsText.split('\n').map(id => id.trim()).filter(id => id);
+        
+        if (sampleIds.length === 0) {
+            showAlert('Please enter valid sample IDs', 'warning');
+            return;
+        }
+        
+        // Check for duplicate subcohort name
+        if (subcohorts.some(sc => sc.name === name)) {
+            showAlert(`A subcohort with name "${name}" already exists`, 'warning');
+            return;
+        }
+        
+        // Add to subcohorts array
+        subcohorts.push({
+            name: name,
+            color: color,
+            sampleIds: sampleIds,
+            active: true
+        });
+        
+        // Update UI
+        updateSubcohortsList();
+        
+        // Clear input fields
+        $('#subcohortName').val('');
+        $('#sampleIdsInput').val('');
+        
+        // Pick next color in preset list
+        const presetColors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf'];
+        $('#subcohortColor').val(presetColors[subcohorts.length % presetColors.length]);
+        $('#colorPreview').css('background-color', $('#subcohortColor').val());
+        
+        showAlert(`Added subcohort "${name}" with ${sampleIds.length} samples`, 'success');
+        updateSubcohortSelects();
+    }
+    
+    // Function to update the subcohorts list UI
+    function updateSubcohortsList() {
+        const subcohortsList = $('#subcohortsList');
+        subcohortsList.empty();
+        
+        if (subcohorts.length === 0) {
+            subcohortsList.html('<div class="text-center text-muted py-3" id="noSubcohorts">No subcohorts added yet</div>');
+            return;
+        }
+        
+        subcohorts.forEach((subcohort, index) => {
+            const subcohortRow = $(`
+                <div class="subcohort-row" data-subcohort-id="${index}">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <span class="color-indicator" style="background-color: ${subcohort.color};"></span>
+                            <strong>${subcohort.name}</strong>
+                        </div>
+                        <div>
+                            <div class="form-check form-switch d-inline-block me-2">
+                                <input class="form-check-input subcohort-toggle" type="checkbox" 
+                                    id="subcohort-${index}" data-subcohort-id="${index}" ${subcohort.active ? 'checked' : ''}>
+                            </div>
+                            <i class="fas fa-times delete-subcohort" data-subcohort-id="${index}" 
+                               style="cursor: pointer; color: #dc3545;"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <small class="text-muted">${subcohort.sampleIds.length} samples</small>
+                    </div>
+                </div>
+            `);
+            
+            // Add event listeners
+            subcohortRow.find('.subcohort-toggle').on('change', function() {
+                const subcohortId = parseInt($(this).data('subcohort-id'));
+                subcohorts[subcohortId].active = $(this).prop('checked');
+                
+                // If we have data, regenerate the plot
+                if (baseData) {
+                    renderPlot();
+                }
+            });
+            
+            subcohortRow.find('.delete-subcohort').on('click', function() {
+                const subcohortId = parseInt($(this).data('subcohort-id'));
+                deleteSubcohort(subcohortId);
+            });
+            
+            subcohortsList.append(subcohortRow);
+        });
+    }
+    
+    // Function to delete a subcohort
+    function deleteSubcohort(subcohortId) {
+        subcohorts.splice(subcohortId, 1);
+        updateSubcohortsList();
+        
+        // If we have data, regenerate the plot
+        if (baseData) {
+            renderPlot();
+        }
+        
+        showAlert('Subcohort removed', 'info');
+        updateSubcohortSelects();
+    }
+    
+
+
+    // Function to generate the plot using the backend
+    function generatePlot() {
+        const pgsId = $('#pgsId').val();
+        const scoreType = $('#scoreType').val();
+        const baseCohort = $('#baseCohort').val();
+        
+        // Validation
+        if (!pgsId) {
+            showAlert('Please select a PGS ID', 'warning');
+            return;
+        }
+        
+        if (!scoreType) {
+            showAlert('Please select a Score Type', 'warning');
+            return;
+        }
+        
+        if (!baseCohort) {
+            showAlert('Please select a Base Cohort', 'warning');
+            return;
+        }
+        
+        // Get active subcohorts and format them correctly
+        const formattedSubcohorts = subcohorts.filter(sc => sc.active).map(sc => ({
+            name: sc.name,
+            color: sc.color,
+            sample_ids: sc.sampleIds,  // Convert camelCase to snake_case
+            active: sc.active
+        }));
+        
+        // Show loading spinner
+        $('#plotPlaceholder').hide();
+        $('#plotSvg').hide();
+        $('#plotIframe').remove();
+        $('#loadingSpinner').show();
+        
+        // Prepare request data
+        const requestData = {
+            pgs_id: pgsId,
+            score_type: scoreType,
+            base_cohort: baseCohort,
+            plot_title: $('#plotTitle').val().trim() || `Distribution of ${pgsId} - ${scoreType}`,
+            normalize_bins: $('#normalizeBins').is(':checked'),
+            subcohorts: formattedSubcohorts,
+            display_or: $('#displayOR').is(':checked'),
+            or_calculation_type: getSelectedORCalculationType(),
+            bin_size: parseInt($('#binSize').val()) || 30,
+            quantile_count: parseInt($('#quantileCount').val()) || 10,
+            threshold_value: parseFloat($('#thresholdValue').val()) || 0,
+            decile_count: parseInt($('#decileCount').val()) || 10
+        };
+        
+        console.log("Sending request:", JSON.stringify(requestData, null, 2));
+        
+        // Make API request
+        $.ajax({
+            url: '/api/generate_subcohort_plot',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                // Hide loading spinner
+                $('#loadingSpinner').hide();
+                
+                // Create iframe to display the plot
+                const iframe = $('<iframe>', {
+                    id: 'plotIframe',
+                    src: response.plot_url,
+                    width: '100%',
+                    height: '700px',
+                    frameborder: 0
+                });
+                
+                // Add iframe to the container
+                $('#plotContainer').append(iframe);
+                
+                // Enable download buttons
+                $('#downloadSvgBtn').prop('disabled', false);
+                $('#downloadTableBtn').prop('disabled', false);
+                
+                // Update download SVG button to link to the plot URL
+                $('#downloadSvgBtn').off('click').on('click', function() {
+                    window.open(response.plot_url, '_blank');
+                });
+                
+                // Update table data
+                tableData = response.table_data;
+                originalTableData = [...tableData]; // Keep a copy for filtering
+                renderPercentileTable(tableData);
+            },
+            error: function(xhr, status, error) {
+                $('#loadingSpinner').hide();
+                $('#plotPlaceholder').show();
+                
+                console.error("Error details:", xhr.responseText);
+                
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    showAlert(response.detail || 'Error generating plot', 'danger');
+                } catch (e) {
+                    showAlert(`Error generating plot: ${status} - ${error}`, 'danger');
+                }
+            }
+        });
+    }
+    // Helper function to get the selected OR calculation type
+    function getSelectedORCalculationType() {
+        if ($('#orByBin').is(':checked')) {
+            return 'bin';
+        } else if ($('#orByQuantile').is(':checked')) {
+            return 'quantile';
+        } else if ($('#orByThreshold').is(':checked')) {
+            return 'threshold';
+        } else if ($('#orByDecileBaseline').is(':checked')) {
+            return 'decileBaseline';
+        } else if ($('#orByDecileCumulative').is(':checked')) {
+            return 'decileCumulative';
+        }
+        return null;
+    }
+
+    // Function to render percentile table
+    function renderPercentileTable(data) {
+        if (data.length === 0) {
+            $('#percentileTable').html('<div class="text-center text-muted py-3">No subcohort data available</div>');
+            return;
+        }
+        
+        const tableHtml = `
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th data-sort="sample">Sample ID</th>
+                        <th data-sort="score">Score</th>
+                        <th data-sort="percentile">Percentile</th>
+                        <th data-sort="subcohort">Subcohort</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.slice(0, 1000).map(row => `
+                    <tr>
+                        <td>${row.SAMPLE_ID}</td>
+                        <td>${row.SCORE}</td>
+                        <td>${row.PERCENTILE}</td>
+                        <td>${row.SUBCOHORT}</td>
+                    </tr>
+                `).join('')}
+                </tbody>
+            </table>
+            <div class="text-muted mt-2">
+                Showing ${Math.min(data.length, 1000)} of ${data.length} records
+            </div>
+        `;
+        
+        $('#percentileTable').html(tableHtml);
+        
+        // Add sort functionality
+        $('#percentileTable th').on('click', function() {
+            const sortKey = $(this).data('sort');
+            sortTable(sortKey);
+        });
+    }
+
+    // Function to apply percentile filter
+    function applyPercentileFilter() {
+        const percentileValue = parseFloat($('#percentileInput').val());
+        const filterType = $('#percentileFilter').val();
+        
+        if (isNaN(percentileValue) || percentileValue < 0 || percentileValue > 100) {
+            showAlert('Please enter a valid percentile value between 0 and 100', 'warning');
+            return;
+        }
+        
+        // Filter the data
+        const filteredData = originalTableData.filter(row => {
+            const rowPercentile = parseFloat(row.PERCENTILE);
+            if (filterType === 'above') {
+                return rowPercentile >= percentileValue;
+            } else {
+                return rowPercentile <= percentileValue;
+            }
+        });
+        
+        // Update table data and re-render
+        tableData = filteredData;
+        renderPercentileTable(tableData);
+        
+        showAlert(`Showing ${filteredData.length} records ${filterType} ${percentileValue}%`, 'info');
+    }
+
+    // Function to download table as CSV
+    function downloadTableAsCsv() {
+        if (tableData.length === 0) {
+            showAlert('No data to download', 'warning');
+            return;
+        }
+        
+        // Create CSV content
+        let csvContent = 'Sample ID,Score,Percentile,Subcohort\n';
+        
+        tableData.forEach(row => {
+            csvContent += `${row.SAMPLE_ID},${row.SCORE},${row.PERCENTILE},${row.SUBCOHORT}\n`;
+        });
+        
+        // Create download link
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'subcohort_data.csv';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Clean up
+        URL.revokeObjectURL(url);
+    }
+
+
+
+    // Function to sort table
+    function sortTable(sortKey) {
+        const sortOrder = $('#percentileTable').data('sort-order') === 'asc' ? 'desc' : 'asc';
+        $('#percentileTable').data('sort-order', sortOrder);
+        
+        // Sort the table data
+        tableData.sort((a, b) => {
+            let valA, valB;
+            
+            if (sortKey === 'sample') {
+                valA = a.SAMPLE_ID;
+                valB = b.SAMPLE_ID;
+            } else if (sortKey === 'score') {
+                valA = parseFloat(a.SCORE);
+                valB = parseFloat(b.SCORE);
+            } else if (sortKey === 'percentile') {
+                valA = parseFloat(a.PERCENTILE);
+                valB = parseFloat(b.PERCENTILE);
+            } else if (sortKey === 'subcohort') {
+                valA = a.SUBCOHORT;
+                valB = b.SUBCOHORT;
+            }
+            
+            if (sortOrder === 'asc') {
+                return valA > valB ? 1 : -1;
+            } else {
+                return valA < valB ? 1 : -1;
+            }
+        });
+        
+        // Re-render the table
+        renderPercentileTable(tableData);
+    }
+
+
+    // // Function to generate the plot
+    // function generatePlot() {
+    //     const pgsId = $('#pgsId').val();
+    //     const scoreType = $('#scoreType').val();
+    //     const baseCohort = $('#baseCohort').val();
+        
+    //     // Validation
+    //     if (!pgsId) {
+    //         showAlert('Please select a PGS ID', 'warning');
+    //         return;
+    //     }
+        
+    //     if (!scoreType) {
+    //         showAlert('Please select a Score Type', 'warning');
+    //         return;
+    //     }
+        
+    //     if (!baseCohort) {
+    //         showAlert('Please select a Base Cohort', 'warning');
+    //         return;
+    //     }
+        
+    //     // Show loading spinner
+    //     $('#plotPlaceholder').remove();
+    //     $('#plotSvg').hide();
+    //     $('#loadingSpinner').show();
+        
+    //     let cohortData = { sample_ids: [], color: '#1f77b4', name: baseCohort };
+
+    //     if (baseCohort === 'ALL') {
+    //         // For "ALL" case, set the cohort name to a known file path
+    //         $.ajax({
+    //             url: '/api/permanent_cohorts',
+    //             type: 'GET',
+    //             async: false, // Synchronous request to simplify flow
+    //             success: function(data) {
+    //                 const cohort = data.cohorts.find(c => c.name === 'ALL');
+    //                 if (cohort) {
+    //                     cohortData.sample_ids = cohort.sample_ids;
+    //                 } else {
+    //                     showAlert('Could not load ALL samples. Please create an ALL.txt file in the cohorts directory.', 'warning');
+    //                 }
+    //             }
+    //         });
+    //     } else {
+    //         // Fetch sample IDs for the selected named cohort
+    //         $.ajax({
+    //             url: '/api/permanent_cohorts',
+    //             type: 'GET',
+    //             async: false, // Synchronous request to simplify flow
+    //             success: function(data) {
+    //                 const cohort = data.cohorts.find(c => c.name === baseCohort);
+    //                 if (cohort) {
+    //                     cohortData.sample_ids = cohort.sample_ids;
+    //                 }
+    //             }
+    //         });
+    //     }
+        
+    //     // Make API request with detailed sample information
+    //     $.ajax({
+    //         url: `/api/multi_cohort_distribution_with_ids/${pgsId}/${scoreType}`,
+    //         type: 'POST',
+    //         contentType: 'application/json',
+    //         data: JSON.stringify([cohortData]),
+    //         success: function(response) {
+    //             // Hide loading spinner
+    //             $('#loadingSpinner').hide();
+                
+    //             // Store base data for reuse
+    //             baseData = response.cohorts[0];
+                
+    //             // Enable download buttons
+    //             $('#downloadSvgBtn').prop('disabled', false);
+    //             $('#downloadTableBtn').prop('disabled', false);
+                
+    //             // Render the plot
+    //             renderPlot();
+    //         },
+    //         error: function(xhr) {
+    //             $('#loadingSpinner').hide();
+    //             $('#plotPlaceholder').show();
+                
+    //             try {
+    //                 const response = JSON.parse(xhr.responseText);
+    //                 showAlert(response.detail || 'Error generating plot', 'danger');
+    //             } catch (e) {
+    //                 showAlert('Error generating plot. Please try again.', 'danger');
+    //             }
+    //         }
+    //     });
+    // }
+    
+    // Function to render the plot
+    function renderPlot() {
+        if (!baseData) {
+            showAlert('No data to plot', 'warning');
+            $('#plotPlaceholder').show();
+            return;
+        }
+        
+        // Get active subcohorts
+        const activeSubcohorts = subcohorts.filter(sc => sc.active);
+        
+        // Clear SVG
+        const svg = d3.select('#plotSvg');
+        svg.selectAll('*').remove();
+        
+        // Set dimensions
+        const containerWidth = $('#plotContainer').width();
+        const width = containerWidth;
+        const height = 650;
+        const margin = { top: 50, right: 200, bottom: 50, left: 60 };
+        
+        // Set title
+        const plotTitle = $('#plotTitle').val().trim() || `Distribution of ${$('#pgsId').val()} - ${$('#scoreType').val()}`;
+        
+        // Draw base cohort density
+        renderDensityPlot(svg, [baseData], width, height, margin, plotTitle);
+        
+        // Process and draw subcohorts
+        const subcohortData = [];
+        tableData = []; // Reset table data
+        
+        activeSubcohorts.forEach(subcohort => {
+            // Find matching samples
+            const matchingSamples = baseData.samples.filter(sample => 
+                subcohort.sampleIds.includes(sample.SAMPLE_ID)
+            );
+            
+            if (matchingSamples.length === 0) {
+                console.warn(`No matching samples found for subcohort: ${subcohort.name}`);
+                return;
+            }
+            
+            // Extract scores
+            const scores = matchingSamples.map(sample => sample.SCORE);
+            
+            // Calculate percentiles relative to base distribution
+            const baseScores = baseData.values;
+            matchingSamples.forEach(sample => {
+                const percentile = calculatePercentile(sample.SCORE, baseScores);
+                tableData.push({
+                    "SAMPLE_ID": sample.SAMPLE_ID,
+                    "SCORE": sample.SCORE.toFixed(4),
+                    "PERCENTILE": percentile.toFixed(2),
+                    "SUBCOHORT": subcohort.name
+                });
+            });
+            
+            // Add to subcohort data
+            subcohortData.push({
+                values: scores,
+                color: subcohort.color,
+                name: subcohort.name
+            });
+        });
+        
+        // Draw subcohort histograms
+        renderHistograms(svg, subcohortData, width, height, margin);
+        
+        // Show SVG
+        $('#plotSvg').show();
+        
+        // Update table
+        originalTableData = [...tableData]; // Keep a copy for filtering
+        renderPercentileTable(tableData);
+    }
+    
+    // Function to render density plot
+    function renderDensityPlot(svg, data, width, height, margin, title) {
+        // Calculate domain
+        const allValues = data.flatMap(d => d.values);
+        const xMin = d3.min(allValues);
+        const xMax = d3.max(allValues);
+        
+        // Create scales
+        const x = d3.scaleLinear()
+            .domain([xMin - 0.1 * (xMax - xMin), xMax + 0.1 * (xMax - xMin)])
+            .range([margin.left, width - margin.right]);
+        
+        // Store references for later use
+        currentSvg = svg;
+        currentXScale = x;
+        currentMargin = margin;
+        currentHeight = height;
+        // Create kernel density estimator
+        const kde = kernelDensityEstimator(epanechnikovKernel(0.5), x.ticks(100));
+        
+        // Calculate max y value across all densities
+        let yMax = 0;
+        data.forEach(d => {
+            const density = kde(d.values);
+            const maxDensity = d3.max(density, d => d[1]);
+            yMax = Math.max(yMax, maxDensity);
+        });
+        
+        const y = d3.scaleLinear()
+            .domain([0, yMax * 1.1])
+            .range([height - margin.bottom, margin.top]);
+        
+        // Draw axes
+        svg.append('g')
+            .attr('transform', `translate(0,${height - margin.bottom})`)
+            .call(d3.axisBottom(x))
+            .append('text')
+            .attr('x', width - margin.right + 30)
+            .attr('y', -10)
+            .attr('fill', 'currentColor')
+            .attr('text-anchor', 'end')
+            .text('Score');
+        
+        svg.append('g')
+            .attr('transform', `translate(${margin.left},0)`)
+            .call(d3.axisLeft(y))
+            .append('text')
+            .attr('x', -10)
+            .attr('y', 10)
+            .attr('fill', 'currentColor')
+            .attr('text-anchor', 'start')
+            .text('Density');
+        
+        // Draw title
+        svg.append('text')
+            .attr('x', width / 2)
+            .attr('y', 20)
+            .attr('text-anchor', 'middle')
+            .attr('font-weight', 'bold')
+            .text(title);
+        
+        // Draw densities
+        const line = d3.line()
+            .curve(d3.curveBasis)
+            .x(d => x(d[0]))
+            .y(d => y(d[1]));
+        
+        data.forEach(d => {
+            const density = kde(d.values);
+            
+            svg.append('path')
+                .datum(density)
+                .attr('fill', 'none')
+                .attr('stroke', d.color)
+                .attr('stroke-width', 2)
+                .attr('stroke-linejoin', 'round')
+                .attr('d', line);
+        });
+        
+        // Return scales for reuse
+        return { x, y };
+    }
+    
+    // Function to render histograms
+    function renderHistograms(svg, data, width, height, margin) {
+        if (data.length === 0) return;
+        
+        // Get existing scales
+        const allValues = data.flatMap(d => d.values).concat(baseData.values);
+        const xMin = d3.min(allValues);
+        const xMax = d3.max(allValues);
+        
+        const x = d3.scaleLinear()
+            .domain([xMin - 0.1 * (xMax - xMin), xMax + 0.1 * (xMax - xMin)])
+            .range([margin.left, width - margin.right]);
+        
+        // Create histogram generator
+        const histogram = d3.histogram()
+            .domain(x.domain())
+            .thresholds(x.ticks(parseInt($('#binSize').val())));
+        
+        // Check if normalization is enabled
+        const normalizeHistograms = $('#normalizeBins').is(':checked');
+        
+        // Calculate bin data for each cohort
+        const cohortBins = data.map(d => ({
+            name: d.name,
+            color: d.color,
+            bins: histogram(d.values),
+            totalSamples: d.values.length
+        }));
+        
+        // Calculate maximum bin height (either absolute counts or normalized proportions)
+        let maxBinHeight = 0;
+        
+        if (normalizeHistograms) {
+            // For normalized histograms, find the maximum proportion
+            cohortBins.forEach(cohort => {
+                const maxProportion = d3.max(cohort.bins, bin => bin.length / cohort.totalSamples);
+                maxBinHeight = Math.max(maxBinHeight, maxProportion);
+            });
+        } else {
+            // For raw histograms, find the maximum count
+            cohortBins.forEach(cohort => {
+                const maxCount = d3.max(cohort.bins, bin => bin.length);
+                maxBinHeight = Math.max(maxBinHeight, maxCount);
+            });
+        }
+        
+        // Create scale for histogram height
+        const yHist = d3.scaleLinear()
+            .domain([0, maxBinHeight])
+            .range([height - margin.bottom, height - margin.bottom - 100]);
+        
+        // Draw histograms
+        cohortBins.forEach(cohort => {
+            svg.selectAll(`.hist-${cohort.name}`)
+                .data(cohort.bins)
+                .enter()
+                .append('rect')
+                .attr('x', bin => x(bin.x0))
+                .attr('y', bin => {
+                    // Use normalized height if option is checked
+                    const binHeight = normalizeHistograms ? 
+                        bin.length / cohort.totalSamples : // Normalize by total sample count
+                        bin.length; // Use raw counts
+                    return yHist(binHeight);
+                })
+                .attr('width', bin => Math.max(1, x(bin.x1) - x(bin.x0) - 1))
+                .attr('height', bin => {
+                    // Use normalized height if option is checked
+                    const binHeight = normalizeHistograms ? 
+                        bin.length / cohort.totalSamples : // Normalize by total sample count
+                        bin.length; // Use raw counts
+                    return height - margin.bottom - yHist(binHeight);
+                })
+                .attr('fill', cohort.color)
+                .attr('opacity', 0.6)
+                .attr('stroke', 'black')
+                .attr('stroke-width', 0.5);
+        });
+        
+        // Add y-axis label based on normalization status
+        svg.append('text')
+            .attr('transform', 'rotate(-90)')
+            .attr('x', -(height - margin.bottom + margin.top) / 2)
+            .attr('y', margin.left - 40)
+            .attr('text-anchor', 'middle')
+            .text(normalizeHistograms ? 'Proportion of Samples' : 'Count');
+        
+        // Add legend
+        const legend = svg.append('g')
+            .attr('font-family', 'sans-serif')
+            .attr('font-size', 10)
+            .attr('text-anchor', 'start')
+            .attr('transform', `translate(${width - margin.right + 50},${margin.top})`); 
+        
+        // Add base cohort to legend
+        legend.append('rect')
+            .attr('x', 0)
+            .attr('y', 0)
+            .attr('width', 12)
+            .attr('height', 12)
+            .attr('fill', 'none')
+            .attr('stroke', baseData.color)
+            .attr('stroke-width', 2);
+        
+        legend.append('text')
+            .attr('x', 18)
+            .attr('y', 6)
+            .attr('dy', '0.35em')
+            .text(`${$('#baseCohort').val()} (${baseData.values.length} samples, density)`);
+        
+        // Add subcohorts to legend
+        data.forEach((d, i) => {
+            legend.append('rect')
+                .attr('x', 0)
+                .attr('y', (i + 1) * 20)
+                .attr('width', 12)
+                .attr('height', 12)
+                .attr('fill', d.color)
+                .attr('opacity', 0.6)
+                .attr('stroke', 'black')
+                .attr('stroke-width', 0.5);
+            
+            // Modified text to include sample count
+            legend.append('text')
+                .attr('x', 18)
+                .attr('y', (i + 1) * 20 + 6)
+                .attr('dy', '0.35em')
+                .text(`${d.name} (${d.values.length} samples)`);
+        });
+        
+        // Add note about normalization if enabled
+        if (normalizeHistograms) {
+            legend.append('text')
+                .attr('x', 0)
+                .attr('y', (data.length + 1) * 20 + 6)
+                .attr('dy', '0.35em')
+                .attr('font-style', 'italic');
+        }
+
+        if ($('#displayOR').is(':checked') && data.length === 2) {
+            let orResult;
+            
+            // Determine which calculation method to use
+            if ($('#orByBin').is(':checked')) {
+                // Get bin size
+                const binSize = parseInt($('#binSize').val());
+                // Use cumulative calculation (removed non-cumulative option)
+                orResult = calculateORByBinCumulative(data, binSize);
+                oddsRatios = orResult.oddsRatios;
+                confidenceIntervals = orResult.confidenceIntervals;
+
+                // Plot regular OR line and CI
+                console.log('Creating scale for OR');
+                const yOR = d3.scaleLog()
+                    .domain([
+                        d3.min(oddsRatios, d => Math.max(0.1, d.ci95low)), // Set minimum to 0.1 or lowest CI
+                        d3.max(oddsRatios, d => d.ci95high)
+                    ])
+                    .range([height - margin.bottom, margin.top])
+                    .nice();
+                
+                // Draw odds ratio axis
+                console.log('Drawing OR axis');
+                svg.append('g')
+                    .attr('transform', `translate(${width - margin.right},0)`)
+                    .attr('class', 'odds-ratio-axis')
+                    .call(d3.axisRight(yOR)
+                        .ticks(3)  // Reduce number of ticks from 5 to 3
+                        .tickFormat(d => d.toFixed(1)))  // Keep formatting to 1 decimal place
+                    .append('text')
+                    .attr('x', 10)
+                    .attr('y', margin.top - 10)
+                    .attr('fill', 'currentColor')
+                    .attr('text-anchor', 'start')
+                    .text('Odds Ratio');
+                            
+                // Draw OR line
+                console.log('Drawing smoothed OR line');
+                const orLine = d3.line()
+                    .x(d => x(d.x))
+                    .y(d => yOR(d.or));
+                orLine.curve(d3.curveBasis);
+                
+                svg.append('path')
+                    .datum(oddsRatios)
+                    .attr('fill', 'none')
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2)
+                    .attr('class', 'odds-ratio-line')
+                    .attr('d', orLine);
+                
+                // Draw confidence interval area
+                console.log('Drawing CI area');
+                const areaGenerator = d3.area()
+                    .x(d => x(d.x))
+                    .y0(d => yOR(d.y0))
+                    .y1(d => yOR(d.y1))
+                    .curve(d3.curveBasis);
+                
+                svg.append('path')
+                    .datum(confidenceIntervals)
+                    .attr('fill', 'red')
+                    .attr('fill-opacity', 0.2)
+                    .attr('class', 'odds-ratio-ci')
+                    .attr('d', areaGenerator);
+                
+                // Add reference line at OR = 1
+                console.log('Drawing reference line');
+                svg.append('line')
+                    .attr('x1', margin.left)
+                    .attr('x2', width - margin.right)
+                    .attr('y1', yOR(1))
+                    .attr('y2', yOR(1))
+                    .attr('stroke', 'black')
+                    .attr('stroke-dasharray', '4')
+                    .attr('opacity', 0.6);
+                
+                // Add OR to legend
+                console.log('Adding to legend');
+                const legendYPos = (data.length + 1) * 20;
+                
+                legend.append('path')
+                    .attr('d', `M0,${legendYPos + 6} L12,${legendYPos + 6}`)
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2)
+                    .attr('fill', 'none');
+                
+                legend.append('rect')
+                    .attr('x', 0)
+                    .attr('y', legendYPos + 15)
+                    .attr('width', 12)
+                    .attr('height', 12)
+                    .attr('fill', 'red')
+                    .attr('opacity', 0.2);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 6)
+                    .attr('dy', '0.35em')
+                    .text(`OR: ${data[0].name} vs ${data[1].name}`);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 21)
+                    .attr('dy', '0.35em')
+                    .text('95% CI');
+            } 
+            else if ($('#orByQuantile').is(':checked')) {
+                // Get number of quantiles
+                const numQuantiles = parseInt($('#quantileCount').val());
+                // Use cumulative calculation (removed non-cumulative option)
+                orResult = calculateORByQuantileCumulative(data, numQuantiles);
+                console.log(orResult);
+                oddsRatios = orResult.oddsRatios;
+                confidenceIntervals = orResult.confidenceIntervals;
+
+                // Create scale for odds ratio
+                const yOR = d3.scaleLog()
+                    .domain([
+                        d3.min(oddsRatios, d => Math.max(0.1, d.ci95low)),
+                        d3.max(oddsRatios, d => d.ci95high)
+                    ])
+                    .range([height - margin.bottom, margin.top])
+                    .nice();
+                
+                // Draw odds ratio axis
+                console.log('Drawing OR axis');
+                svg.append('g')
+                    .attr('transform', `translate(${width - margin.right},0)`)
+                    .attr('class', 'odds-ratio-axis')
+                    .call(d3.axisRight(yOR)
+                        .ticks(3)
+                        .tickFormat(d => d.toFixed(1)))
+                    .append('text')
+                    .attr('x', 10)
+                    .attr('y', margin.top - 10)
+                    .attr('fill', 'currentColor')
+                    .attr('text-anchor', 'start')
+                    .text('Odds Ratio');
+                
+                // For each quantile point, draw:
+                // 1. A vertical line at the x position
+                // 2. A point for the OR value
+                // 3. A CI line
+                
+                // Draw quantile markers (optional vertical lines at quantile breakpoints)
+                oddsRatios.forEach((d, i) => {
+                    // Draw vertical lines at quantile breakpoints (optional)
+                    if (i > 0) { // Avoid leftmost boundary
+                        svg.append('line')
+                            .attr('x1', x(d.x))
+                            .attr('x2', x(d.x))
+                            .attr('y1', margin.top)
+                            .attr('y2', height - margin.bottom)
+                            .attr('stroke', '#aaa')
+                            .attr('stroke-dasharray', '2')
+                            .attr('opacity', 0.4);
+                    }
+                });
+                
+                // Draw OR points and CIs
+                oddsRatios.forEach(d => {
+                    // Draw OR point
+                    svg.append('circle')
+                        .attr('cx', x(d.x))
+                        .attr('cy', yOR(d.or))
+                        .attr('r', 5)
+                        .attr('fill', 'red');
+                    
+                    // Draw confidence interval line
+                    svg.append('line')
+                        .attr('x1', x(d.x))
+                        .attr('x2', x(d.x))
+                        .attr('y1', yOR(d.ci95low))
+                        .attr('y2', yOR(d.ci95high))
+                        .attr('stroke', 'red')
+                        .attr('stroke-width', 2);
+                });
+                
+                // Add reference line at OR = 1
+                console.log('Drawing reference line');
+                svg.append('line')
+                    .attr('x1', margin.left)
+                    .attr('x2', width - margin.right)
+                    .attr('y1', yOR(1))
+                    .attr('y2', yOR(1))
+                    .attr('stroke', 'black')
+                    .attr('stroke-dasharray', '4')
+                    .attr('opacity', 0.6);
+
+                
+                // Add OR to legend
+                console.log('Adding to legend');
+                const legendYPos = (data.length + 1) * 20;
+                
+                legend.append('path')
+                    .attr('d', `M0,${legendYPos + 6} L12,${legendYPos + 6}`)
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2)
+                    .attr('fill', 'none');
+                
+                legend.append('rect')
+                    .attr('x', 0)
+                    .attr('y', legendYPos + 15)
+                    .attr('width', 12)
+                    .attr('height', 12)
+                    .attr('fill', 'red')
+                    .attr('opacity', 0.2);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 6)
+                    .attr('dy', '0.35em')
+                    .text(`OR: ${data[0].name} vs ${data[1].name}`);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 21)
+                    .attr('dy', '0.35em')
+                    .text('95% CI');
+            } 
+            else if ($('#orByThreshold').is(':checked')) {
+                // Get threshold value
+                const threshold = parseFloat($('#thresholdValue').val());
+                orResult = calculateORByThreshold(data, threshold);
+                
+                // For threshold, we plot differently - just a point with CI
+                console.log('Creating scale for OR threshold');
+                const yOR = d3.scaleLog()
+                    .domain([
+                        Math.max(0.1, orResult.ci95low * 0.8), // Lower bound
+                        orResult.ci95high * 1.2 // Upper bound with some padding
+                    ])
+                    .range([height - margin.bottom, margin.top])
+                    .nice();
+                
+                // Draw odds ratio axis
+                console.log('Drawing OR axis');
+                svg.append('g')
+                    .attr('transform', `translate(${width - margin.right},0)`)
+                    .attr('class', 'odds-ratio-axis')
+                    .call(d3.axisRight(yOR)
+                        .ticks(3)
+                        .tickFormat(d => d.toFixed(1)))
+                    .append('text')
+                    .attr('x', 10)
+                    .attr('y', margin.top - 10)
+                    .attr('fill', 'currentColor')
+                    .attr('text-anchor', 'start')
+                    .text('Odds Ratio');
+                
+                // Draw threshold line
+                console.log('Drawing threshold line');
+                svg.append('line')
+                    .attr('x1', x(orResult.threshold))
+                    .attr('x2', x(orResult.threshold))
+                    .attr('y1', margin.top)
+                    .attr('y2', height - margin.bottom)
+                    .attr('stroke', 'blue')
+                    .attr('stroke-dasharray', '4')
+                    .attr('opacity', 0.8);
+                
+                // Draw OR point
+                console.log('Drawing OR point');
+                svg.append('circle')
+                    .attr('cx', x(orResult.threshold))
+                    .attr('cy', yOR(orResult.or))
+                    .attr('r', 5)
+                    .attr('fill', 'red');
+                
+                // Draw confidence interval line
+                svg.append('line')
+                    .attr('x1', x(orResult.threshold))
+                    .attr('x2', x(orResult.threshold))
+                    .attr('y1', yOR(orResult.ci95low))
+                    .attr('y2', yOR(orResult.ci95high))
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2);
+                
+                // Add reference line at OR = 1
+                console.log('Drawing reference line');
+                svg.append('line')
+                    .attr('x1', margin.left)
+                    .attr('x2', width - margin.right)
+                    .attr('y1', yOR(1))
+                    .attr('y2', yOR(1))
+                    .attr('stroke', 'black')
+                    .attr('stroke-dasharray', '4')
+                    .attr('opacity', 0.6);
+                
+                // Add OR to legend with threshold value
+                console.log('Adding threshold OR to legend');
+                const legendYPos = (data.length + 1) * 20;
+                
+                legend.append('circle')
+                    .attr('cx', 6)
+                    .attr('cy', legendYPos + 6)
+                    .attr('r', 4)
+                    .attr('fill', 'red');
+                
+                legend.append('line')
+                    .attr('x1', 6)
+                    .attr('x2', 6)
+                    .attr('y1', legendYPos + 1)
+                    .attr('y2', legendYPos + 11)
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 6)
+                    .attr('dy', '0.35em')
+                    .text(`OR at ${orResult.threshold.toFixed(2)}: ${orResult.or.toFixed(2)} (${data[0].name} vs ${data[1].name})`);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 21)
+                    .attr('dy', '0.35em')
+                    .text(`95% CI: [${orResult.ci95low.toFixed(2)}, ${orResult.ci95high.toFixed(2)}]`);
+            }
+            else if ($('#orByDecileBaseline').is(':checked')) {
+                // Get number of deciles (default to 10 if not specified)
+                const numDeciles = parseInt($('#decileCount').val()) || 10;
+                orResult = calculateORByDecileVsBaseline(data, numDeciles);
+                
+                oddsRatios = orResult.oddsRatios;
+                confidenceIntervals = orResult.confidenceIntervals;
+                decileBreakpoints = orResult.decileBreakpoints;
+
+                // Create scale for odds ratio
+                const yOR = d3.scaleLog()
+                    .domain([
+                        d3.min(oddsRatios, d => Math.max(0.1, d.ci95low)),
+                        d3.max(oddsRatios, d => d.ci95high)
+                    ])
+                    .range([height - margin.bottom, margin.top])
+                    .nice();
+                
+                // Draw odds ratio axis
+                console.log('Drawing OR axis for decile vs baseline');
+                svg.append('g')
+                    .attr('transform', `translate(${width - margin.right},0)`)
+                    .attr('class', 'odds-ratio-axis')
+                    .call(d3.axisRight(yOR)
+                        .ticks(3)
+                        .tickFormat(d => d.toFixed(1)))
+                    .append('text')
+                    .attr('x', 10)
+                    .attr('y', margin.top - 10)
+                    .attr('fill', 'currentColor')
+                    .attr('text-anchor', 'start')
+                    .text('Odds Ratio');
+                
+                // Draw decile markers (vertical lines at decile breakpoints)
+                decileBreakpoints.forEach((breakpoint, i) => {
+                    if (i > 0) { // Skip the first (minimum) breakpoint
+                        svg.append('line')
+                            .attr('x1', x(breakpoint))
+                            .attr('x2', x(breakpoint))
+                            .attr('y1', margin.top)
+                            .attr('y2', height - margin.bottom)
+                            .attr('stroke', '#aaa')
+                            .attr('stroke-dasharray', '2')
+                            .attr('opacity', 0.4);
+                        
+                        // Optional: Add decile labels
+                        svg.append('text')
+                            .attr('x', x(breakpoint))
+                            .attr('y', height - margin.bottom + 15)
+                            .attr('text-anchor', 'middle')
+                            .attr('font-size', '8px')
+                            .text(`D${i+1}`);
+                    }
+                });
+                
+                // Draw OR points and CIs for each decile
+                oddsRatios.forEach(d => {
+                    // Draw OR point
+                    svg.append('circle')
+                        .attr('cx', x(d.x))
+                        .attr('cy', yOR(d.or))
+                        .attr('r', 5)
+                        .attr('fill', 'red');
+                    
+                    // Draw confidence interval line
+                    svg.append('line')
+                        .attr('x1', x(d.x))
+                        .attr('x2', x(d.x))
+                        .attr('y1', yOR(d.ci95low))
+                        .attr('y2', yOR(d.ci95high))
+                        .attr('stroke', 'red')
+                        .attr('stroke-width', 2);
+                });
+                
+                // Connect OR points with a line
+                const orLine = d3.line()
+                    .x(d => x(d.x))
+                    .y(d => yOR(d.or));
+                
+                svg.append('path')
+                    .datum(oddsRatios)
+                    .attr('fill', 'none')
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 1.5)
+                    .attr('stroke-dasharray', '3')
+                    .attr('class', 'odds-ratio-line')
+                    .attr('d', orLine);
+                
+                // Add reference line at OR = 1
+                console.log('Drawing reference line');
+                svg.append('line')
+                    .attr('x1', margin.left)
+                    .attr('x2', width - margin.right)
+                    .attr('y1', yOR(1))
+                    .attr('y2', yOR(1))
+                    .attr('stroke', 'black')
+                    .attr('stroke-dasharray', '4')
+                    .attr('opacity', 0.6);
+                
+                // Add OR to legend
+                console.log('Adding to legend');
+                const legendYPos = (data.length + 1) * 20;
+                
+                legend.append('circle')
+                    .attr('cx', 6)
+                    .attr('cy', legendYPos + 6)
+                    .attr('r', 4)
+                    .attr('fill', 'red');
+                
+                legend.append('line')
+                    .attr('x1', 6)
+                    .attr('x2', 6)
+                    .attr('y1', legendYPos + 1)
+                    .attr('y2', legendYPos + 11)
+                    .attr('stroke', 'red')
+                    .attr('stroke-width', 2);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 6)
+                    .attr('dy', '0.35em')
+                    .text(`OR by Decile vs Baseline: ${data[0].name} vs ${data[1].name}`);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 21)
+                    .attr('dy', '0.35em')
+                    .text('95% CI');
+            }
+            else if ($('#orByDecileCumulative').is(':checked')) {
+                // Get number of deciles (default to 10 if not specified)
+                const numDeciles = parseInt($('#decileCount').val()) || 10;
+                orResult = calculateORByDecileVsCumulative(data, numDeciles);
+                
+                oddsRatios = orResult.oddsRatios;
+                confidenceIntervals = orResult.confidenceIntervals;
+                decileBreakpoints = orResult.decileBreakpoints;
+
+                // Create scale for odds ratio
+                const yOR = d3.scaleLog()
+                    .domain([
+                        d3.min(oddsRatios, d => Math.max(0.1, d.ci95low)),
+                        d3.max(oddsRatios, d => d.ci95high)
+                    ])
+                    .range([height - margin.bottom, margin.top])
+                    .nice();
+                
+                // Draw odds ratio axis
+                console.log('Drawing OR axis for decile vs cumulative');
+                svg.append('g')
+                    .attr('transform', `translate(${width - margin.right},0)`)
+                    .attr('class', 'odds-ratio-axis')
+                    .call(d3.axisRight(yOR)
+                        .ticks(3)
+                        .tickFormat(d => d.toFixed(1)))
+                    .append('text')
+                    .attr('x', 10)
+                    .attr('y', margin.top - 10)
+                    .attr('fill', 'currentColor')
+                    .attr('text-anchor', 'start')
+                    .text('Odds Ratio');
+                
+                // Draw decile markers (vertical lines at decile breakpoints)
+                decileBreakpoints.forEach((breakpoint, i) => {
+                    if (i > 0) { // Skip the first (minimum) breakpoint
+                        svg.append('line')
+                            .attr('x1', x(breakpoint))
+                            .attr('x2', x(breakpoint))
+                            .attr('y1', margin.top)
+                            .attr('y2', height - margin.bottom)
+                            .attr('stroke', '#aaa')
+                            .attr('stroke-dasharray', '2')
+                            .attr('opacity', 0.4);
+                        
+                        // Optional: Add decile labels
+                        svg.append('text')
+                            .attr('x', x(breakpoint))
+                            .attr('y', height - margin.bottom + 15)
+                            .attr('text-anchor', 'middle')
+                            .attr('font-size', '8px')
+                            .text(`D${i+1}`);
+                    }
+                });
+                
+                // Draw OR points and CIs for each decile
+                oddsRatios.forEach(d => {
+                    // Draw OR point
+                    svg.append('circle')
+                        .attr('cx', x(d.x))
+                        .attr('cy', yOR(d.or))
+                        .attr('r', 5)
+                        .attr('fill', 'purple'); // Using a different color to differentiate
+                    
+                    // Draw confidence interval line
+                    svg.append('line')
+                        .attr('x1', x(d.x))
+                        .attr('x2', x(d.x))
+                        .attr('y1', yOR(d.ci95low))
+                        .attr('y2', yOR(d.ci95high))
+                        .attr('stroke', 'purple')
+                        .attr('stroke-width', 2);
+                });
+                
+                // Connect OR points with a line
+                const orLine = d3.line()
+                    .x(d => x(d.x))
+                    .y(d => yOR(d.or));
+                
+                svg.append('path')
+                    .datum(oddsRatios)
+                    .attr('fill', 'none')
+                    .attr('stroke', 'purple')
+                    .attr('stroke-width', 1.5)
+                    .attr('stroke-dasharray', '3')
+                    .attr('class', 'odds-ratio-line')
+                    .attr('d', orLine);
+                
+                // Add reference line at OR = 1
+                console.log('Drawing reference line');
+                svg.append('line')
+                    .attr('x1', margin.left)
+                    .attr('x2', width - margin.right)
+                    .attr('y1', yOR(1))
+                    .attr('y2', yOR(1))
+                    .attr('stroke', 'black')
+                    .attr('stroke-dasharray', '4')
+                    .attr('opacity', 0.6);
+                
+                // Add OR to legend
+                console.log('Adding to legend');
+                const legendYPos = (data.length + 1) * 20;
+                
+                legend.append('circle')
+                    .attr('cx', 6)
+                    .attr('cy', legendYPos + 6)
+                    .attr('r', 4)
+                    .attr('fill', 'purple');
+                
+                legend.append('line')
+                    .attr('x1', 6)
+                    .attr('x2', 6)
+                    .attr('y1', legendYPos + 1)
+                    .attr('y2', legendYPos + 11)
+                    .attr('stroke', 'purple')
+                    .attr('stroke-width', 2);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 6)
+                    .attr('dy', '0.35em')
+                    .text(`OR by Decile vs Cumulative Lower: ${data[0].name} vs ${data[1].name}`);
+                
+                legend.append('text')
+                    .attr('x', 18)
+                    .attr('y', legendYPos + 21)
+                    .attr('dy', '0.35em')
+                    .text('95% CI');
+            }
+        }
+    }
+
+    // 1. Calculate OR by histogram bin 
+    function calculateORByBinCumulative(data, binSize) {
+        console.log('Starting cumulative odds ratio calculation with bin size:', binSize);
+
+        const allValues = [...data[0].values, ...data[1].values];
+        const domain = [Math.min(...allValues), Math.max(...allValues)];
+        // Create histogram function with specified bin size
+        const histogram = d3.histogram()
+            .domain(domain)
+            .thresholds(d3.ticks(domain[0], domain[1], binSize));
+        
+        // Create bins for both subcohorts using the same parameters
+        const bins1 = histogram(data[0].values);
+        const bins2 = histogram(data[1].values);
+        
+        // Calculate odds ratio for each bin threshold
+        const oddsRatios = [];
+        const confidenceIntervals = [];
+        
+        // For each bin threshold, calculate OR cumulatively
+        for (let i = 0; i < bins1.length; i++) {
+            const threshold = bins1[i].x0;
+            
+            // Count values greater than or equal to threshold
+            const a = data[0].values.filter(v => v >= threshold).length;
+            const b = data[0].values.length - a;
+            const c = data[1].values.filter(v => v >= threshold).length;
+            const d = data[1].values.length - c;
+            
+            // Add small constant to avoid division by zero
+            const epsilon = 0.5;
+            
+            // Calculate odds ratio
+            const or = ((a + epsilon) * (d + epsilon)) / ((b + epsilon) * (c + epsilon));
+            
+            // Calculate 95% CI
+            const logOR = Math.log(or);
+            const seLogOR = Math.sqrt(1/(a + epsilon) + 1/(b + epsilon) + 1/(c + epsilon) + 1/(d + epsilon));
+            const ci95low = Math.exp(logOR - 1.96 * seLogOR);
+            const ci95high = Math.exp(logOR + 1.96 * seLogOR);
+            
+            oddsRatios.push({
+                x: (bins1[i].x0),
+                or: or,
+                ci95low: ci95low,
+                ci95high: ci95high
+            });
+            
+            confidenceIntervals.push({
+                x: (bins1[i].x0),    
+                y0: ci95low,
+                y1: ci95high
+            });
+        }
+        
+        // // Optionally add one more point for the rightmost edge of the last bin
+        // if (bins1.length > 0) {
+        //     const lastThreshold = bins1[bins1.length - 1].x1;
+            
+        //     // Count values greater than or equal to last threshold
+        //     const a = data[0].values.filter(v => v >= lastThreshold).length;
+        //     const b = data[0].values.length - a;
+        //     const c = data[1].values.filter(v => v >= lastThreshold).length;
+        //     const d = data[1].values.length - c;
+            
+        //     // Add small constant to avoid division by zero
+        //     const epsilon = 0.5;
+            
+        //     // Calculate odds ratio
+        //     const or = ((a + epsilon) * (d + epsilon)) / ((b + epsilon) * (c + epsilon));
+            
+        //     // Calculate 95% CI
+        //     const logOR = Math.log(or);
+        //     const seLogOR = Math.sqrt(1/(a + epsilon) + 1/(b + epsilon) + 1/(c + epsilon) + 1/(d + epsilon));
+        //     const ci95low = Math.exp(logOR - 1.96 * seLogOR);
+        //     const ci95high = Math.exp(logOR + 1.96 * seLogOR);
+            
+        //     oddsRatios.push({
+        //         x: lastThreshold,
+        //         or: or,
+        //         ci95low: ci95low,
+        //         ci95high: ci95high
+        //     });
+            
+        //     confidenceIntervals.push({
+        //         x: lastThreshold,
+        //         y0: ci95low,
+        //         y1: ci95high
+        //     });
+        // }
+        
+        return { oddsRatios, confidenceIntervals };
+    }
+
+    // 2. Calculate OR by quantiles
+    function calculateORByQuantileCumulative(data, numQuantiles) {
+        console.log('Starting cumulative odds ratio calculation with quantiles:', numQuantiles);
+        
+        const oddsRatios = [];
+        const confidenceIntervals = [];
+        
+        // Combine all values to determine quantile breakpoints
+        const allValues = [...data[0].values, ...data[1].values];
+        
+        // Calculate quantile breakpoints
+        const quantileBreaks = [];
+        for (let i = 1; i < numQuantiles; i++) {
+            quantileBreaks.push(d3.quantile(allValues, i / numQuantiles));
+        }
+        
+        // Add min and max to create complete range
+        const minValue = d3.min(allValues);
+        const maxValue = d3.max(allValues);
+        
+        // For each quantile threshold, calculate cumulative OR
+        for (let i = 0; i < quantileBreaks.length-1; i++) {
+            const threshold = quantileBreaks[i];
+
+            const lowerBound = quantileBreaks[i];
+            const upperBound = quantileBreaks[i + 1];
+            console.log(i, lowerBound, upperBound)
+
+            // Count values above threshold for both cohorts
+            const a = data[0].values.filter(v => v >= threshold).length;
+            const b = data[0].values.length - a;
+            const c = data[1].values.filter(v => v >= threshold).length;
+            const d = data[1].values.length - c;
+            
+            // Add small constant to avoid division by zero
+            const epsilon = 0.5;
+            
+            // Calculate odds ratio
+            const or = ((a + epsilon) * (d + epsilon)) / ((b + epsilon) * (c + epsilon));
+            
+            // Calculate 95% CI
+            const logOR = Math.log(or);
+            const seLogOR = Math.sqrt(1/(a + epsilon) + 1/(b + epsilon) + 1/(c + epsilon) + 1/(d + epsilon));
+            const ci95low = Math.exp(logOR - 1.96 * seLogOR);
+            const ci95high = Math.exp(logOR + 1.96 * seLogOR);
+            
+            // Use midpoint of quantile range as x value
+            const midpoint = (lowerBound + upperBound) / 2;
+
+            oddsRatios.push({
+                x: lowerBound,
+                or: or,
+                ci95low: ci95low,
+                ci95high: ci95high
+            });
+            
+            confidenceIntervals.push({
+                x: lowerBound,
+                y0: ci95low,
+                y1: ci95high
+            });
+        }
+        
+        // Add one more point for values above the minimum (optional)
+        // This gives a complete picture from min to max
+        const a0 = data[0].values.filter(v => v >= minValue).length; // All values
+        const b0 = data[0].values.length - a0; // Should be 0
+        const c0 = data[1].values.filter(v => v >= minValue).length; // All values
+        const d0 = data[1].values.length - c0; // Should be 0
+        
+        // Add small constant to avoid division by zero
+        const epsilon = 0.5;
+        const or0 = ((a0 + epsilon) * (d0 + epsilon)) / ((b0 + epsilon) * (c0 + epsilon));
+        
+        // Calculate 95% CI
+        const logOR0 = Math.log(or0);
+        const seLogOR0 = Math.sqrt(1/(a0 + epsilon) + 1/(b0 + epsilon) + 1/(c0 + epsilon) + 1/(d0 + epsilon));
+        const ci95low0 = Math.exp(logOR0 - 1.96 * seLogOR0);
+        const ci95high0 = Math.exp(logOR0 + 1.96 * seLogOR0);
+        
+        // Insert at beginning of arrays
+        oddsRatios.unshift({
+            x: minValue,
+            or: or0,
+            ci95low: ci95low0,
+            ci95high: ci95high0
+        });
+        
+        confidenceIntervals.unshift({
+            x: minValue,
+            y0: ci95low0,
+            y1: ci95high0
+        });
+        
+        return { oddsRatios, confidenceIntervals };
+    }
+    
+    // 3. Calculate OR by threshold
+    function calculateORByThreshold(data, threshold) {
+        console.log('Starting odds ratio calculation with threshold:', threshold);
+        
+        // For threshold method, we calculate a single OR at the specified threshold
+        // Count values above/below threshold for both subcohorts
+        const a = data[0].values.filter(v => v >= threshold).length;
+        const b = data[0].values.length - a;
+        const c = data[1].values.filter(v => v >= threshold).length;
+        const d = data[1].values.length - c;
+        
+        // Add small constant to avoid division by zero
+        const epsilon = 0.5;
+        
+        // Calculate odds ratio
+        const or = ((a + epsilon) * (d + epsilon)) / ((b + epsilon) * (c + epsilon));
+        
+        // Calculate 95% CI
+        const logOR = Math.log(or);
+        const seLogOR = Math.sqrt(1/(a + epsilon) + 1/(b + epsilon) + 1/(c + epsilon) + 1/(d + epsilon));
+        const ci95low = Math.exp(logOR - 1.96 * seLogOR);
+        const ci95high = Math.exp(logOR + 1.96 * seLogOR);
+        
+        // For threshold method, we'll return a special structure with the single OR value
+        // This will be handled differently in the plotting code
+        return {
+            threshold: threshold,
+            or: or,
+            ci95low: ci95low, 
+            ci95high: ci95high
+        };
+    }
+    
+    // 4. Comparing each decile to the baseline (1st decile)
+    function calculateORByDecileVsBaseline(data, numDeciles = 10) {
+        console.log('Starting odds ratio calculation by decile vs baseline, with numDeciles:', numDeciles);
+        
+        // Combine all values to determine decile breakpoints
+        const allValues = [...data[0].values, ...data[1].values];
+        allValues.sort((a, b) => a - b);
+        
+        // Calculate decile breakpoints
+        const decileBreakpoints = [];
+        for (let i = 1; i < numDeciles; i++) {
+            decileBreakpoints.push(d3.quantile(allValues, i / numDeciles));
+        }
+        
+        // Add minimum value at the beginning to create complete range
+        const minValue = d3.min(allValues);
+        decileBreakpoints.unshift(minValue);
+        
+        // Create containers for counts in each decile
+        const casesByDecile = Array(numDeciles).fill(0);
+        const ctrlsByDecile = Array(numDeciles).fill(0);
+        
+        // Assign values to appropriate deciles for cases
+        data[0].values.forEach(value => {
+            let decileIndex = 0;
+            for (let i = 1; i < decileBreakpoints.length; i++) {
+                if (value >= decileBreakpoints[i]) {
+                    decileIndex = i;
+                }
+            }
+            casesByDecile[decileIndex]++;
+        });
+        
+        // Assign values to appropriate deciles for controls
+        data[1].values.forEach(value => {
+            let decileIndex = 0;
+            for (let i = 1; i < decileBreakpoints.length; i++) {
+                if (value >= decileBreakpoints[i]) {
+                    decileIndex = i;
+                }
+            }
+            ctrlsByDecile[decileIndex]++;
+        });
+        
+        // Calculate baseline odds (1st decile)
+        const baselineCases = casesByDecile[0];
+        const baselineCtrls = ctrlsByDecile[0];
+        
+        // Calculate odds ratios for each decile compared to baseline
+        const oddsRatios = [];
+        const confidenceIntervals = [];
+        
+        for (let i = 0; i < numDeciles; i++) {
+            // Values for the current decile
+            const a = casesByDecile[i];
+            const b = ctrlsByDecile[i];
+            
+            // Values for the baseline (1st decile)
+            const c = baselineCases;
+            const d = baselineCtrls;
+            
+            // Add small constant to avoid division by zero
+            const epsilon = 0.5;
+            
+            // Calculate odds ratio: (a/b)/(c/d) = (a*d)/(b*c)
+            const or = ((a + epsilon) * (d + epsilon)) / ((b + epsilon) * (c + epsilon));
+            
+            // Calculate 95% CI
+            const logOR = Math.log(or);
+            const seLogOR = Math.sqrt(1/(a + epsilon) + 1/(b + epsilon) + 1/(c + epsilon) + 1/(d + epsilon));
+            const ci95low = Math.exp(logOR - 1.96 * seLogOR);
+            const ci95high = Math.exp(logOR + 1.96 * seLogOR);
+            
+            oddsRatios.push({
+                decile: i + 1,
+                x: decileBreakpoints[i], // Use the decile breakpoint as x value
+                or: or,
+                ci95low: ci95low,
+                ci95high: ci95high,
+                caseCount: a,
+                ctrlCount: b
+            });
+            
+            confidenceIntervals.push({
+                decile: i + 1,
+                x: decileBreakpoints[i],
+                y0: ci95low,
+                y1: ci95high
+            });
+        }
+        
+        return { oddsRatios, confidenceIntervals, decileBreakpoints };
+    }
+
+    // 5. Compare each decile to all lower deciles combined
+    function calculateORByDecileVsCumulative(data, numDeciles = 10) {
+        console.log('Starting odds ratio calculation by decile vs cumulative lower deciles, with numDeciles:', numDeciles);
+        
+        // Combine all values to determine decile breakpoints
+        const allValues = [...data[0].values, ...data[1].values];
+        allValues.sort((a, b) => a - b);
+        
+        // Calculate decile breakpoints
+        const decileBreakpoints = [];
+        for (let i = 1; i < numDeciles; i++) {
+            decileBreakpoints.push(d3.quantile(allValues, i / numDeciles));
+        }
+        
+        // Add minimum value at the beginning to create complete range
+        const minValue = d3.min(allValues);
+        decileBreakpoints.unshift(minValue);
+        
+        // Create containers for counts in each decile
+        const casesByDecile = Array(numDeciles).fill(0);
+        const ctrlsByDecile = Array(numDeciles).fill(0);
+        
+        // Assign values to appropriate deciles for cases
+        data[0].values.forEach(value => {
+            let decileIndex = 0;
+            for (let i = 1; i < decileBreakpoints.length; i++) {
+                if (value >= decileBreakpoints[i]) {
+                    decileIndex = i;
+                }
+            }
+            casesByDecile[decileIndex]++;
+        });
+        
+        // Assign values to appropriate deciles for controls
+        data[1].values.forEach(value => {
+            let decileIndex = 0;
+            for (let i = 1; i < decileBreakpoints.length; i++) {
+                if (value >= decileBreakpoints[i]) {
+                    decileIndex = i;
+                }
+            }
+            ctrlsByDecile[decileIndex]++;
+        });
+        
+        // Calculate odds ratios for each decile compared to all lower deciles combined
+        const oddsRatios = [];
+        const confidenceIntervals = [];
+        
+        // First decile has no lower deciles, so we'll set its OR to 1.0 (neutral)
+        oddsRatios.push({
+            decile: 1,
+            x: decileBreakpoints[0],
+            or: 1.0,
+            ci95low: 1.0,
+            ci95high: 1.0,
+            caseCount: casesByDecile[0],
+            ctrlCount: ctrlsByDecile[0]
+        });
+        
+        confidenceIntervals.push({
+            decile: 1,
+            x: decileBreakpoints[0],
+            y0: 1.0,
+            y1: 1.0
+        });
+        
+        // For deciles 2 and above, compare to all lower deciles combined
+        for (let i = 1; i < numDeciles; i++) {
+            // Values for the current decile
+            const a = casesByDecile[i];
+            const b = ctrlsByDecile[i];
+            
+            // Sum of values for all lower deciles
+            let c = 0;
+            let d = 0;
+            for (let j = 0; j < i; j++) {
+                c += casesByDecile[j];
+                d += ctrlsByDecile[j];
+            }
+            
+            // Add small constant to avoid division by zero
+            const epsilon = 0.5;
+            
+            // Calculate odds ratio: (a/b)/(c/d) = (a*d)/(b*c)
+            const or = ((a + epsilon) * (d + epsilon)) / ((b + epsilon) * (c + epsilon));
+            
+            // Calculate 95% CI
+            const logOR = Math.log(or);
+            const seLogOR = Math.sqrt(1/(a + epsilon) + 1/(b + epsilon) + 1/(c + epsilon) + 1/(d + epsilon));
+            const ci95low = Math.exp(logOR - 1.96 * seLogOR);
+            const ci95high = Math.exp(logOR + 1.96 * seLogOR);
+            
+            oddsRatios.push({
+                decile: i + 1,
+                x: decileBreakpoints[i],
+                or: or,
+                ci95low: ci95low,
+                ci95high: ci95high,
+                caseCount: a,
+                ctrlCount: b,
+                lowerCaseCount: c,
+                lowerCtrlCount: d
+            });
+            
+            confidenceIntervals.push({
+                decile: i + 1,
+                x: decileBreakpoints[i],
+                y0: ci95low,
+                y1: ci95high
+            });
+        }
+        
+        return { oddsRatios, confidenceIntervals, decileBreakpoints };
+    }
+
+    // Function to render percentile table
+    // function renderPercentileTable(data) {
+    //     if (data.length === 0) {
+    //         $('#percentileTable').html('<div class="text-center text-muted py-3">No subcohort data available</div>');
+    //         return;
+    //     }
+        
+    //     const tableHtml = `
+    //         <table class="table table-striped table-hover">
+    //             <thead>
+    //                 <tr>
+    //                     <th data-sort="sample">Sample ID</th>
+    //                     <th data-sort="score">Score</th>
+    //                     <th data-sort="percentile">Percentile</th>
+    //                     <th data-sort="subcohort">Subcohort</th>
+    //                 </tr>
+    //             </thead>
+    //             <tbody>
+    //                 ${data.slice(0, 1000).map(row => `
+    //                 <tr>
+    //                     <td>${row.SAMPLE_ID}</td>
+    //                     <td>${row.SCORE}</td>
+    //                     <td>${row.PERCENTILE}</td>
+    //                     <td>${row.SUBCOHORT}</td>
+    //                 </tr>
+    //             `).join('')}
+    //             </tbody>
+    //         </table>
+    //         <div class="text-muted mt-2">
+    //             Showing ${Math.min(data.length, 1000)} of ${data.length} records
+    //         </div>
+    //     `;
+        
+    //     $('#percentileTable').html(tableHtml);
+        
+    //     // Add sort functionality
+    //     $('#percentileTable th').on('click', function() {
+    //         const sortKey = $(this).data('sort');
+    //         sortTable(sortKey);
+    //     });
+    // }
+    
+    // // Function to sort table
+    // function sortTable(sortKey) {
+    //     const sortOrder = $('#percentileTable').data('sort-order') === 'asc' ? 'desc' : 'asc';
+    //     $('#percentileTable').data('sort-order', sortOrder);
+        
+    //     // Sort the table data
+    //     tableData.sort((a, b) => {
+    //         let valA, valB;
+            
+    //         if (sortKey === 'sample') {
+    //             valA = a.SAMPLE_ID;
+    //             valB = b.SAMPLE_ID;
+    //         } else if (sortKey === 'score') {
+    //             valA = parseFloat(a.SCORE);
+    //             valB = parseFloat(b.SCORE);
+    //         } else if (sortKey === 'percentile') {
+    //             valA = parseFloat(a.PERCENTILE);
+    //             valB = parseFloat(b.PERCENTILE);
+    //         } else if (sortKey === 'subcohort') {
+    //             valA = a.SUBCOHORT;
+    //             valB = b.SUBCOHORT;
+    //         }
+            
+    //         if (sortOrder === 'asc') {
+    //             return valA > valB ? 1 : -1;
+    //         } else {
+    //             return valA < valB ? 1 : -1;
+    //         }
+    //     });
+        
+    //     // Re-render the table
+    //     renderPercentileTable(tableData);
+    // }
+    
+    // // Function to apply percentile filter
+    // function applyPercentileFilter() {
+    //     const percentileValue = parseFloat($('#percentileInput').val());
+    //     const filterType = $('#percentileFilter').val();
+        
+    //     if (isNaN(percentileValue) || percentileValue < 0 || percentileValue > 100) {
+    //         showAlert('Please enter a valid percentile value between 0 and 100', 'warning');
+    //         return;
+    //     }
+        
+    //     // Filter the data
+    //     const filteredData = originalTableData.filter(row => {
+    //         const rowPercentile = parseFloat(row.PERCENTILE);
+    //         if (filterType === 'above') {
+    //             return rowPercentile >= percentileValue;
+    //         } else {
+    //             return rowPercentile <= percentileValue;
+    //         }
+    //     });
+        
+    //     // Update table data and re-render
+    //     tableData = filteredData;
+    //     renderPercentileTable(tableData);
+        
+    //     showAlert(`Showing ${filteredData.length} records ${filterType} ${percentileValue}%`, 'info');
+    // }
+    
+    // // Function to download the plot as SVG
+    // function downloadPlotAsSvg() {
+    //     const svg = document.querySelector('#plotSvg');
+    //     const serializer = new XMLSerializer();
+    //     const svgData = serializer.serializeToString(svg);
+        
+    //     // Add XML declaration
+    //     const svgBlob = new Blob([
+    //         '<?xml version="1.0" standalone="no"?>\r\n',
+    //         svgData
+    //     ], { type: 'image/svg+xml;charset=utf-8' });
+        
+    //     const url = URL.createObjectURL(svgBlob);
+        
+    //     // Create download link
+    //     const link = document.createElement('a');
+    //     link.href = url;
+    //     link.download = 'subcohort_plot.svg';
+    //     document.body.appendChild(link);
+    //     link.click();
+    //     document.body.removeChild(link);
+        
+    //     // Clean up
+    //     URL.revokeObjectURL(url);
+    // }
+    
+    // // Function to download table as CSV
+    // function downloadTableAsCsv() {
+    //     if (tableData.length === 0) {
+    //         showAlert('No data to download', 'warning');
+    //         return;
+    //     }
+        
+    //     // Create CSV content
+    //     let csvContent = 'Sample ID,Score,Percentile,Subcohort\n';
+        
+    //     tableData.forEach(row => {
+    //         csvContent += `${row.SAMPLE_ID},${row.SCORE},${row.PERCENTILE},${row.SUBCOHORT}\n`;
+    //     });
+        
+    //     // Create download link
+    //     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    //     const url = URL.createObjectURL(blob);
+        
+    //     const link = document.createElement('a');
+    //     link.href = url;
+    //     link.download = 'subcohort_data.csv';
+    //     document.body.appendChild(link);
+    //     link.click();
+    //     document.body.removeChild(link);
+        
+    //     // Clean up
+    //     URL.revokeObjectURL(url);
+    // }
+    
+    // Utility functions for density estimation
+    function kernelDensityEstimator(kernel, X) {
+        return function(V) {
+            return X.map(x => [x, d3.mean(V, v => kernel(x - v))]);
+        };
+    }
+    
+    function epanechnikovKernel(bandwidth) {
+        return function(u) {
+            return Math.abs(u /= bandwidth) <= 1 ? 0.75 * (1 - u * u) / bandwidth : 0;
+        };
+    }
+    
+    // Function to calculate percentile of a value in an array
+    function calculatePercentile(value, array) {
+        const sortedArray = [...array].sort((a, b) => a - b);
+        const position = sortedArray.findIndex(x => x >= value);
+        
+        if (position === -1) {
+            return 100; // Value is greater than all elements
+        }
+        
+        return (position / sortedArray.length * 100);
+    }
+
+    // Populate subcohort selects when subcohorts are added
+    function updateSubcohortSelects() {
+        const subcohort1Select = $('#subcohort1Select');
+        const subcohort2Select = $('#subcohort2Select');
+        
+        subcohort1Select.empty();
+        subcohort2Select.empty();
+        
+        subcohort1Select.append('<option value="" selected disabled>Select subcohort</option>');
+        subcohort2Select.append('<option value="" selected disabled>Select subcohort</option>');
+        
+        subcohorts.forEach((subcohort, index) => {
+            subcohort1Select.append(`<option value="${index}">${subcohort.name}</option>`);
+            subcohort2Select.append(`<option value="${index}">${subcohort.name}</option>`);
+        });
+    }
+
+    // Fetch score types for a PGS ID
+    function fetchScoreTypes(pgsId) {
+        $.get(`/api/score_types/${pgsId}`, function(data) {
+            const scoreSelect = $('#scoreType');
+            scoreSelect.empty();
+            scoreSelect.append('<option value="" selected disabled>Select Score Type</option>');
+            
+            data.score_types.forEach(function(scoreType) {
+                scoreSelect.append(`<option value="${scoreType}">${scoreType}</option>`);
+            });
+        }).fail(function() {
+            showAlert('Failed to load score types', 'danger');
+        });
+    }
+    
+    // Function to show alert
+    function showAlert(message, type) {
+        const alert = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        
+        $('#alertContainer').html(alert);
+    }
+});
+</script>
+{% endblock %}
