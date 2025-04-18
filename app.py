@@ -3220,9 +3220,6 @@ async def get_multi_cohort_distribution_with_ids(pgs: str, score_type: str, coho
 
     return {"cohorts": cohort_data}
 
-# Path for storing generated plots
-PLOTS_DIR = os.path.join("static", "plots")
-os.makedirs(PLOTS_DIR, exist_ok=True)
 
 def calculate_percentile(value: float, array: List[float]) -> float:
     """Calculate the percentile of a value in an array."""
@@ -3240,8 +3237,8 @@ async def generate_subcohort_plot(request: PlotRequest):
     
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
+    cursor = conn.cursor() 
+    
     # Retrieve scores for the given PGS and score type
     cursor.execute(
         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
@@ -3708,14 +3705,14 @@ async def generate_subcohort_plot(request: PlotRequest):
     
     # Save plot to file
     plot_id = str(uuid.uuid4())
-    plot_path = os.path.join(PLOTS_DIR, f"{plot_id}.html")
-    plot_url = f"/static/plots/{plot_id}.html"
+    plot_path = os.path.join("/", f"{plot_id}.html")
+    plot_url = f"/temp/{plot_id}.html"
     
     fig.write_html(plot_path, include_plotlyjs="cdn")
     
     return PlotResponse(plot_url=plot_url, table_data=table_data)
 
-# Add the OR calculation functions
+# OR calculation functions
 def calculate_OR_by_bin_cumulative(data, bin_size):
     """Calculate odds ratio by histogram bin (cumulative)."""
     all_values = data[0]["values"] + data[1]["values"]
