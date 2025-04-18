@@ -3430,7 +3430,7 @@ async def generate_subcohort_plot(request: PlotRequest):
                     x0=d["x"], x1=d["x"],
                     y0=d["ci95low"], y1=d["ci95high"],
                     line=dict(color="red", width=2),
-                    yaxis="y2"
+                    yref="y2"
                 )
             
             # Add OR to legend
@@ -3488,7 +3488,7 @@ async def generate_subcohort_plot(request: PlotRequest):
                 x0=or_result["threshold"], x1=or_result["threshold"],
                 y0=or_result["ci95low"], y1=or_result["ci95high"],
                 line=dict(color="red", width=2),
-                yaxis="y2"
+                yref="y2"
             )
             
             # Add CI to legend
@@ -3555,7 +3555,7 @@ async def generate_subcohort_plot(request: PlotRequest):
                     x0=d["x"], x1=d["x"],
                     y0=d["ci95low"], y1=d["ci95high"],
                     line=dict(color="red", width=2),
-                    yaxis="y2"
+                    yref="y2"
                 )
             
             # Connect points with line
@@ -3634,7 +3634,7 @@ async def generate_subcohort_plot(request: PlotRequest):
                     x0=d["x"], x1=d["x"],
                     y0=d["ci95low"], y1=d["ci95high"],
                     line=dict(color="purple", width=2),
-                    yaxis="y2"
+                    yref="y2"
                 )
             
             # Connect points with line

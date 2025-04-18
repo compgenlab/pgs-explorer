@@ -125,14 +125,6 @@ The application provides the following API endpoints:
 ### Heatmap
 - `POST /api/generate_heatmap` - Generate a heatmap based on specified parameters
 
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
 ## Acknowledgments
 
 - [Plotly](https://plotly.com/python/) for interactive visualizations
