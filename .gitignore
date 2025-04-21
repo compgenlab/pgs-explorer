@@ -3,3 +3,6 @@ temp_copy/
 tests/
 .DStore
 pgsexplorer/
+__pycache__/
+*.py[cod]
+*$py.class

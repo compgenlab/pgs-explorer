@@ -355,6 +355,7 @@ def get_pgs_list():
 @app.get("/api/score_types")
 def get_score_types():
     """Fetches all distinct score types available in the database."""
+    print("hi nadia")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
