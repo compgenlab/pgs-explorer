@@ -45,7 +45,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
 
 # SQLite Database Setup
-db_path = "/Users/nsabry/PGSVisualizer/db/pgs_data.db"
+db_path = "/data/dev/db/pgs_data.db"
 
 # def initialize_db():
 #     """Initialize database if it doesn't exist"""
