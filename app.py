@@ -1428,11 +1428,29 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
-    pgs_ids = specific_pgs_ids if specific_pgs_ids else []
+    # Get PGS IDs 
+    if specific_pgs_ids:
+        placeholders = ','.join(['?'] * len(specific_pgs_ids))
+        cursor.execute(f"""
+            SELECT DISTINCT PGS_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ?
+            AND PGS_ID IN ({placeholders})
+            ORDER BY PGS_ID
+        """, [score_type] + specific_pgs_ids)
+    else:
+        cursor.execute("""
+            SELECT DISTINCT PGS_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ?
+            ORDER BY PGS_ID
+        """, (score_type,))
+    
+    pgs_ids = [row[0] for row in cursor.fetchall()]
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
     
+
     # Get metadata for PGS IDs
-    ### TODO remove and place where used
     pgs_metadata = {}
     if pgs_ids:
         placeholder = ','.join(['?'] * len(pgs_ids))
@@ -1459,137 +1477,92 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
                 'Reported_Trait': 'Unknown',
                 'Publication_ID': 'Unknown'
             }
-    ### TODO end
-
-    # # Modified sample ID fetching with population filtering
-    # print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
-
-    # if cohort and cohort != "ALL":
-    #     # Query the ancestry table to get sample IDs for the specified population
-    #     cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
-    #     cohort_result = cursor.fetchone()
-        
-    #     if cohort_result:
-    #         # Parse the JSON array of sample IDs
-    #         sample_ids = json.loads(cohort_result[0])
-    #         print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
-            
-    #         # Query scores with population filtering
-    #         cursor.execute(f"""
-    #             SELECT DISTINCT SAMPLE_ID 
-    #             FROM scores 
-    #             WHERE SCORE_TYPE = ? 
-    #             AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-    #             AND SAMPLE_ID IN ({','.join(['?']*len(sample_ids))})
-    #             ORDER BY SAMPLE_ID
-    #         """, [score_type] + pgs_ids + sample_ids)
-    #     else:
-    #         print(f"Warning: Population {cohort} not found in database. Using all samples.")
-    #         cursor.execute(f"""
-    #             SELECT DISTINCT SAMPLE_ID 
-    #             FROM scores 
-    #             WHERE SCORE_TYPE = ? 
-    #             AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-    #             ORDER BY SAMPLE_ID
-    #         """, [score_type] + pgs_ids)
-    # else:
-    #     # No population filtering
-    #     cursor.execute(f"""
-    #         SELECT DISTINCT SAMPLE_ID 
-    #         FROM scores 
-    #         WHERE SCORE_TYPE = ? 
-    #         AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-    #         ORDER BY SAMPLE_ID
-    #     """, [score_type] + pgs_ids)
-        
-    #     if cohort and cohort != "ALL":
-    #         print(f"Using {len(sample_ids)} samples from {cohort} cohort.")
     
-    # print("Creating matrix data structure...")
+    # Modified sample ID fetching with cohort filtering
+    print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
     
-    # # Store the data as a sparse structure (dictionary of dictionaries)
-    # data_dict = defaultdict(dict)
-    # scores_list = []
-    
-    # # Process in chunks to handle large datasets efficiently
-    # chunk_size = 1000000
-    # offset = 0
-    
-    # print("Fetching scores in chunks...")
-    # while True:
-    #     query = """
-    #         SELECT SAMPLE_ID, PGS_ID, SCORE
-    #         FROM scores
-    #         WHERE SCORE_TYPE = ?
-    #         AND SAMPLE_ID IN ({})
-    #         AND PGS_ID IN ({})
-    #         LIMIT {} OFFSET {}
-    #     """.format(','.join(['?']*len(sample_ids)), 
-    #               ','.join(['?']*len(pgs_ids)),
-    #               chunk_size, offset)
-        
-    #     cursor.execute(query, [score_type] + sample_ids + pgs_ids)
-    #     chunk = cursor.fetchall()
-        
-    #     if not chunk:
-    #         break
-            
-    #     for sample_id, pgs_id, score in chunk:
-    #         data_dict[sample_id][pgs_id] = score
-    #         scores_list.append(score)
-        
-    #     offset += chunk_size
-    #     print(f"Processed {offset} rows...")
-    # Create a temporary table for our filtered scores
-    cursor.execute("DROP TABLE IF EXISTS temp_filtered_scores")
-
-    # Base query to create temp table
-    base_query = """
-    CREATE TEMP TABLE temp_filtered_scores AS
-    SELECT SAMPLE_ID, PGS_ID, SCORE
-    FROM scores
-    WHERE SCORE_TYPE = ?
-    """
-
-    # Prepare parameters
-    query_params = [score_type]
-
-    # Add population (cohort) filter if specified
     if cohort and cohort != "ALL":
-        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
-        cohort_result = cursor.fetchone()
+        # Get sample IDs for the selected cohort
+        cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
+        cohort_file = os.path.join(cohorts_dir, f"{cohort}.txt")
         
-        if cohort_result:
-            sample_ids = json.loads(cohort_result[0])
-            base_query += " AND SAMPLE_ID IN ({})".format(','.join(['?']*len(sample_ids)))
-            query_params.extend(sample_ids)
-            print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
+        if os.path.exists(cohort_file):
+            with open(cohort_file, "r") as f:
+                cohort_sample_ids = [line.strip() for line in f if line.strip()]
+            
+            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} cohort")
+            
+            # Use the cohort sample IDs in the query
+            placeholders = ','.join(['?'] * len(cohort_sample_ids))
+            cursor.execute(f"""
+                SELECT DISTINCT SAMPLE_ID 
+                FROM scores 
+                WHERE SCORE_TYPE = ? 
+                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
+                AND SAMPLE_ID IN ({placeholders})
+                ORDER BY SAMPLE_ID
+            """, [score_type] + pgs_ids + cohort_sample_ids)
         else:
-            print(f"Warning: Population {cohort} not found in database.")
-
-    # Add PGS ID filter if specified
-    if pgs_ids:
-        base_query += " AND PGS_ID IN ({})".format(','.join(['?']*len(pgs_ids)))
-        query_params.extend(pgs_ids)
-
-    # Execute the query to create temp table
-    cursor.execute(base_query, query_params)
-
-    # Fetch all filtered scores
-    cursor.execute("SELECT SAMPLE_ID, PGS_ID, SCORE FROM temp_filtered_scores")
-    filtered_scores = cursor.fetchall()
-
-    # Create matrix data structure
+            print(f"Warning: Cohort file {cohort_file} not found. Using all samples.")
+            cursor.execute(f"""
+                SELECT DISTINCT SAMPLE_ID 
+                FROM scores 
+                WHERE SCORE_TYPE = ? 
+                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
+                ORDER BY SAMPLE_ID
+            """, [score_type] + pgs_ids)
+    else:
+        # No cohort filtering, use original query
+        cursor.execute(f"""
+            SELECT DISTINCT SAMPLE_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ? 
+            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
+            ORDER BY SAMPLE_ID
+        """, [score_type] + pgs_ids)
+    
+    sample_ids = [row[0] for row in cursor.fetchall()]
+    print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
+    
+    if cohort and cohort != "ALL":
+        print(f"Using {len(sample_ids)} samples from {cohort} cohort.")
+    
+    print("Creating matrix data structure...")
+    
+    # Store the data as a sparse structure (dictionary of dictionaries)
     data_dict = defaultdict(dict)
     scores_list = []
-
-    for sample_id, pgs_id, score in filtered_scores:
-        data_dict[sample_id][pgs_id] = score
-        scores_list.append(score)
-
-    # Optional: drop the temporary table
-    cursor.execute("DROP TABLE IF EXISTS temp_filtered_scores")
-
+    
+    # Process in chunks to handle large datasets efficiently
+    chunk_size = 1000000
+    offset = 0
+    
+    print("Fetching scores in chunks...")
+    while True:
+        query = """
+            SELECT SAMPLE_ID, PGS_ID, SCORE
+            FROM scores
+            WHERE SCORE_TYPE = ?
+            AND SAMPLE_ID IN ({})
+            AND PGS_ID IN ({})
+            LIMIT {} OFFSET {}
+        """.format(','.join(['?']*len(sample_ids)), 
+                  ','.join(['?']*len(pgs_ids)),
+                  chunk_size, offset)
+        
+        cursor.execute(query, [score_type] + sample_ids + pgs_ids)
+        chunk = cursor.fetchall()
+        
+        if not chunk:
+            break
+            
+        for sample_id, pgs_id, score in chunk:
+            data_dict[sample_id][pgs_id] = score
+            scores_list.append(score)
+        
+        offset += chunk_size
+        print(f"Processed {offset} rows...")
+    
     # Close database connection
     conn.close()
 
@@ -1606,7 +1579,8 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
             sample_ids, pgs_ids, data_dict, n_neighbors, min_dist, 
             score_type, cohort, pgs_metadata
         )
-    
+
+
 def generate_sample_based_umap(sample_ids, pgs_ids, data_dict, n_neighbors, min_dist, score_type, cohort, db_path):
     print("Creating matrix for clustering...")
     
