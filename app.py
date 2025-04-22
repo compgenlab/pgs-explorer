@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Request, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -45,131 +45,36 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
 
 # SQLite Database Setup
-db_path = "/data/dev/db/pgs_data.db"
+DB_PATH = "/data/dev/db/pgs_data.db"
+TASK_DB_PATH = "/data/dev/db/tasks.db"
 
-# def initialize_db():
-#     """Initialize database if it doesn't exist"""
-#     if os.path.exists(db_path):
-#         return
+def init_task_db():
+    # Ensure the directory exists
+    os.makedirs(os.path.dirname(TASK_DB_PATH), exist_ok=True)
 
-#     # Create db directory if it doesn't exist
-#     os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    conn = sqlite3.connect(TASK_DB_PATH)
+    cursor = conn.cursor()
+    
+    # Create tasks table
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS image_tasks (
+        task_id TEXT PRIMARY KEY,
+        task_type TEXT,
+        name TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        completed_at TEXT,
+        result_path TEXT,
+        error TEXT,
+        request_data TEXT NOT NULL
+    )
+    ''')
+    
+    conn.commit()
+    conn.close()
 
-#     file_path = "data/samples/pgs_scores_output.tsv.gz"  
-
-#     # Detect if the file is gzipped and read accordingly
-#     if file_path.endswith(".gz"):
-#         f = gzip.open(file_path, "rt")  
-#     else:
-#         f = open(file_path, "rt")
-
-#     conn = sqlite3.connect(db_path)
-#     cursor = conn.cursor()
-
-#     # Create the pgs_metadata table
-#     cursor.execute("DROP TABLE IF EXISTS pgs_metadata")
-
-#     cursor.execute("""
-#         CREATE TABLE IF NOT EXISTS pgs_metadata (
-#             PGS_ID TEXT PRIMARY KEY,
-#             PGS_Name TEXT,
-#             Reported_Trait TEXT,
-#             Mapped_Trait_Label TEXT,
-#             Mapped_Trait_ID TEXT,
-#             PGS_Development_Method TEXT,
-#             PGS_Development_Details TEXT,
-#             Original_Genome_Build TEXT,
-#             Number_of_Variants INTEGER,
-#             Number_of_Interaction_Terms INTEGER,
-#             Type_of_Variant_Weight TEXT,
-#             PGS_Publication_ID TEXT,
-#             Publication_PMID INTEGER,
-#             Publication_DOI TEXT,
-#             Score_Matches_Publication BOOLEAN,
-#             Ancestry_Distribution_Variant_Associations TEXT,
-#             Ancestry_Distribution_Score_Development TEXT,
-#             Ancestry_Distribution_PGS_Evaluation TEXT,
-#             FTP_Link TEXT,
-#             Release_Date TEXT,
-#             License_Terms TEXT
-#         )
-#     """)
-
-#     # Drop old table if it exists
-#     cursor.execute("DROP TABLE IF EXISTS scores")
-
-#     # Create table in "long format"
-#     cursor.execute("""
-#         CREATE TABLE IF NOT EXISTS scores (
-#             PGS_ID TEXT REFERENCES pgs_metadata(PGS_ID),
-#             SCORE_TYPE TEXT,
-#             SAMPLE_ID TEXT,
-#             SCORE REAL
-#         )
-#     """)
-#     cursor.execute("CREATE INDEX score_pgs_idx ON scores(PGS_ID)")
-
-#     # Reshape data: Convert wide format (IDs as columns) → long format (one row per (ID, Score))
-#     data = []
-#     header = []
-#     last_pgs=""
-#     write=True
-#     for line in f:
-#         row = line.strip("\n").split("\t")
-#         if row[0]=="PGS":
-#             header = row
-#             continue 
-#         pgs = row[0]
-#         if pgs != last_pgs:
-#             if write:
-#                 cursor.executemany("INSERT INTO scores (PGS_ID, SCORE_TYPE, SAMPLE_ID, SCORE) VALUES (?, ?, ?, ?)", data)
-#                 # print(f"{last_pgs} written")
-#             else:
-#                 print(f"{last_pgs} failed")
-#             data = []
-#             write=True
-#             last_pgs=pgs
-#         score_type = row[1]
-#         for index, score in enumerate(row):  # Iterate over all sample ID columns
-#             if index < 2: 
-#                 continue 
-#             try:
-#                 data.append((pgs, score_type, header[index], float(score)))
-#             except: 
-#                 write=False
-
-#         # Insert Data
-#     if data and write:
-#         cursor.executemany("INSERT INTO scores (PGS_ID, SCORE_TYPE, SAMPLE_ID, SCORE) VALUES (?, ?, ?, ?)", data)
-
-#     metadata_csv_path = "data/pgs/score_info.csv"
-
-#     # Load the metadata CSV
-#     df = pd.read_csv(metadata_csv_path)
-
-#     # Rename columns to match the SQL schema
-#     df.columns = [
-#         "PGS_ID", "PGS_Name", "Reported_Trait", "Mapped_Trait_Label", "Mapped_Trait_ID",
-#         "PGS_Development_Method", "PGS_Development_Details", "Original_Genome_Build",
-#         "Number_of_Variants", "Number_of_Interaction_Terms", "Type_of_Variant_Weight",
-#         "PGS_Publication_ID", "Publication_PMID", "Publication_DOI", 
-#         "Score_Matches_Publication", "Ancestry_Distribution_Variant_Associations", 
-#         "Ancestry_Distribution_Score_Development", "Ancestry_Distribution_PGS_Evaluation",
-#         "FTP_Link", "Release_Date", "License_Terms"
-#     ]
-
-#     # Convert boolean column to actual boolean type
-#     df["Score_Matches_Publication"] = df["Score_Matches_Publication"].apply(lambda x: x == "TRUE")
-
-#     # Insert data into the SQLite database
-#     df.to_sql("pgs_metadata", conn, if_exists="replace", index=False)
-
-#     conn.commit()
-#     conn.close()
-#     f.close()
-
-# # Initialize DB when application starts
-# initialize_db()
+# Initialize DB on startup
+init_task_db()
 
 # Classes for API request/response models
 class CohortRequest(BaseModel):
@@ -261,19 +166,19 @@ class SampleData(BaseModel):
     SAMPLE_ID: str
     SCORE: float
 
-class SubcohortRequest(BaseModel):
+class Subcohort(BaseModel):
     name: str
     color: str
     sample_ids: List[str]
     active: bool = True
 
-class PlotRequest(BaseModel):
+class SubcohortPlotRequest(BaseModel):
     pgs_id: str
     score_type: str
     base_cohort: str
     plot_title: Optional[str] = None
     normalize_bins: bool = False
-    subcohorts: List[SubcohortRequest] = []
+    subcohorts: List[Subcohort] = []
     
     # Odds Ratio configuration
     display_or: bool = False
@@ -290,6 +195,13 @@ class PlotResponse(BaseModel):
 class InteractiveRequest(BaseModel):
     plot_type: str = "umap"
     plot_url: str
+
+class TaskResponse(BaseModel):
+    task_id: str
+    task_type: str
+    name: Optional[str] = None
+    status: str
+    created_at: str
 
 # Frontend routes
 @app.get("/", response_class=HTMLResponse)
@@ -319,7 +231,7 @@ async def metadata_view(request: Request):
 @app.get("/api/metadata/{pgs_id}")
 def get_metadata(pgs_id: str):
     """Fetches metadata for a given PGS_ID from the `pgs_metadata` table."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Fetch metadata for the given PGS_ID
@@ -343,7 +255,7 @@ def get_metadata(pgs_id: str):
 @app.get("/api/pgs_list")
 def get_pgs_list():
     """Fetches PGS IDs from pgs_metadata."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     cursor.execute("SELECT PGS_ID FROM pgs_metadata ORDER BY PGS_ID")
@@ -356,7 +268,7 @@ def get_pgs_list():
 def get_score_types():
     """Fetches all distinct score types available in the database."""
     print("hi nadia")
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     cursor.execute("SELECT DISTINCT SCORE_TYPE FROM scores ORDER BY SCORE_TYPE")
@@ -368,7 +280,7 @@ def get_score_types():
 @app.get("/api/score_types/{pgs_id}")
 def get_score_types_for_pgs(pgs_id: str):
     """Fetches distinct score types for a given PGS_ID from the `scores` table."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Get unique score types for the given PGS_ID
@@ -388,7 +300,7 @@ def get_score_types_for_pgs(pgs_id: str):
 @app.get("/api/pgs_data/{pgs_id}")
 def get_pgs_data(pgs_id: str):
     """Fetches sample scores from `scores` for a given PGS_ID."""
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Fetch sample score data
@@ -409,20 +321,38 @@ def get_pgs_data(pgs_id: str):
     return {"scores": scores_list}
 
 @app.post("/api/generate_heatmap")
-async def generate_heatmap(request: HeatmapRequest):
+async def generate_heatmap(request: HeatmapRequest, background_tasks: BackgroundTasks):
     """Generates a heatmap visualization and saves it as HTML file"""
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="heatmap",
+        task_name=getattr(request, "name", None),
+        processing_function=process_heatmap,
+        background_tasks=background_tasks
+    )
+
+def process_heatmap(request_data):
     try:
         # Create temp directory if it doesn't exist
         os.makedirs("temp", exist_ok=True)
         
+        # Extract parameters from request_data
+        score_type = request_data["score_type"]
+        std_dev_threshold = request_data["std_dev_threshold"]
+        dendrogram_view = request_data["dendrogram_view"]
+        pgs_ids = request_data["pgs_ids"]
+        cohort = request_data["cohort"]
+        subcohorts = request_data["subcohorts"]
+        max_pgs_ids = request_data.get("max_pgs_ids")
+        
         # Generate hash based on request parameters
         request_hash = generate_heatmap_hash(
-            request.score_type,
-            request.std_dev_threshold,
-            request.dendrogram_view,
-            request.pgs_ids,
-            request.cohort,
-            request.subcohorts 
+            score_type,
+            std_dev_threshold,
+            dendrogram_view,
+            pgs_ids,
+            cohort,
+            subcohorts 
         )
 
         # Check if we already have a file with this hash
@@ -435,59 +365,50 @@ async def generate_heatmap(request: HeatmapRequest):
                 print(f"Using cached heatmap: {filename}")
                 
                 # Return file path with empty statistics
-                return {
-                    "file_path": f"/temp/{filename}",
-                    "statistics": {}
-                }
+                return f"/temp/{filename}"
 
         # Check and clean up temp directory if needed
-        cleanup_temp_files(max_size_in_gb=10)  
+        # cleanup_temp_files(max_size_in_gb=10)  
 
         # Generate filename with hash for future cache hits
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        score_type_safe = request.score_type.replace("/", "_").replace("\\", "_")
-        cohort_indicator = f"{request.cohort}_" if request.cohort and request.cohort != "ALL" else ""
+        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
+        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
         filename = f"heatmap_{cohort_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
         filepath = os.path.join("temp", filename)
         
-        # Choose appropriate function based on size
-        # if total_cells > LARGE_DATASET_THRESHOLD:
+        # Generate the heatmap
         print(f"Large dataset detected. Using static heatmap generator.")
         fig, stats = generate_static_heatmap_for_large_dataset(
-            db_path=db_path,
-            score_type=request.score_type,
-            max_pgs_ids=request.max_pgs_ids,
-            std_dev_threshold=request.std_dev_threshold,
-            dendrogram_view=request.dendrogram_view,
-            specific_pgs_ids=request.pgs_ids,
-            cohort=request.cohort,
-            subcohorts=request.subcohorts 
+            score_type=score_type,
+            max_pgs_ids=max_pgs_ids,
+            std_dev_threshold=std_dev_threshold,
+            dendrogram_view=dendrogram_view,
+            specific_pgs_ids=pgs_ids,
+            cohort=cohort,
+            subcohorts=subcohorts 
         )
-        print("fig layout shapes")
-        print(fig.layout.shapes)
-        # For large datasets, use optimized HTML output
+        
+        # Save the heatmap
         fig.write_html(
             filepath,
-            include_plotlyjs='cdn',    # Use CDN version of plotly.js
-            include_mathjax=False,     # No MathJax needed
+            include_plotlyjs='cdn',
+            include_mathjax=False,
             config={
-                'displayModeBar': False,  # Hide the mode bar
-                'responsive': True        # Allow it to be resized
+                'displayModeBar': False,
+                'responsive': True
             }
         )
 
-        # Format statistics for frontend
-        outliers_removed = int(stats[4]) if isinstance(stats[4], np.integer) else stats[4]
-        stats_formatted = {}
+        # Return the file path
+        return f"/temp/{filename}"
         
-        return {
-            "file_path": f"/temp/{filename}",
-            "statistics": stats_formatted
-        }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the error
+        print(f"Error generating heatmap: {str(e)}")
+        raise e
 
-def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max_pgs_ids=5500, 
+def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=5500, 
                                              std_dev_threshold=3, dendrogram_view=False, 
                                              specific_pgs_ids=None, cohort=None, subcohorts=None):
     """
@@ -495,7 +416,6 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
     Similar to the regular heatmap but optimized for file size and rendering performance.
     
     Parameters:
-    - db_path: Path to the SQLite database
     - score_type: The SCORE_TYPE to filter on
     - max_pgs_ids: Maximum number of PGS_IDs to include
     - std_dev_threshold: Number of standard deviations beyond which to cap outliers
@@ -511,7 +431,7 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
     print(f"=== Generating Static Heatmap for Large Dataset ===")
     print(f"Score Type: {score_type}")
     
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Get PGS IDs
@@ -526,13 +446,7 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
             LIMIT ?
         """, [score_type] + specific_pgs_ids + [max_pgs_ids])
     else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-            LIMIT ?
-        """, (score_type, max_pgs_ids))
+        cursor.execute("SELECT PGS_ID FROM pgs_metadata ORDER BY PGS_ID")
     
     pgs_ids = [row[0] for row in cursor.fetchall()]
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
@@ -573,30 +487,32 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
         # Query the ancestry table to get sample IDs for the specified population
         cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
         cohort_result = cursor.fetchone()
-        
-        if cohort_result:
-            # Parse the JSON array of sample IDs
-            cohort_sample_ids = json.loads(cohort_result[0])
-            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} population")
+        sample_ids = json.loads(cohort_result[0])
+        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
+
+        # if cohort_result:
+        #     # Parse the JSON array of sample IDs
+        #     cohort_sample_ids = json.loads(cohort_result[0])
+        #     print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} population")
             
-            # Query scores with population filtering
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                AND SAMPLE_ID IN ({','.join(['?']*len(cohort_sample_ids))})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids + cohort_sample_ids)
-        else:
-            print(f"Warning: Population {cohort} not found in database. Using all samples.")
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids)
+        #     # Query scores with population filtering
+        #     cursor.execute(f"""
+        #         SELECT DISTINCT SAMPLE_ID 
+        #         FROM scores 
+        #         WHERE SCORE_TYPE = ? 
+        #         AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
+        #         AND SAMPLE_ID IN ({','.join(['?']*len(cohort_sample_ids))})
+        #         ORDER BY SAMPLE_ID
+        #     """, [score_type] + pgs_ids + cohort_sample_ids)
+        # else:
+        #     print(f"Warning: Population {cohort} not found in database. Using all samples.")
+        #     cursor.execute(f"""
+        #         SELECT DISTINCT SAMPLE_ID 
+        #         FROM scores 
+        #         WHERE SCORE_TYPE = ? 
+        #         AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
+        #         ORDER BY SAMPLE_ID
+        #     """, [score_type] + pgs_ids)
     else:
         # No population filtering
         cursor.execute(f"""
@@ -607,7 +523,7 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
             ORDER BY SAMPLE_ID
         """, [score_type] + pgs_ids)
     
-    sample_ids = [row[0] for row in cursor.fetchall()]    
+        sample_ids = [row[0] for row in cursor.fetchall()]    
     print(f"Large dataset optimization: {len(sample_ids)} samples × {len(pgs_ids)} PGS IDs")
     
     # Calculate overall statistics for outlier detection
@@ -649,58 +565,20 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
     
     outlier_count = cursor.fetchone()[0]
     print(f"Found {outlier_count} outliers in dataset")
-    
     print("Creating matrix data structure...")
-    
-    # Store the data as a sparse structure (dictionary of dictionaries)
-    data_dict = defaultdict(dict)
-    scores_list = []
-    
-    # Process in chunks to handle large datasets efficiently
-    chunk_size = 1000000
-    offset = 0
-    
-    print("Fetching scores in chunks...")
-    while True:
-        query = """
-            SELECT SAMPLE_ID, PGS_ID, SCORE
-            FROM scores
-            WHERE SCORE_TYPE = ?
-            AND SAMPLE_ID IN ({})
-            AND PGS_ID IN ({})
-            LIMIT {} OFFSET {}
-        """.format(','.join(['?']*len(sample_ids)), 
-                  ','.join(['?']*len(pgs_ids)),
-                  chunk_size, offset)
-        
-        cursor.execute(query, [score_type] + sample_ids + pgs_ids)
-        chunk = cursor.fetchall()
-        
-        if not chunk:
-            break
-            
-        for sample_id, pgs_id, score in chunk:
-            # Cap outliers
-            if score > upper_threshold:
-                score = upper_threshold
-            elif score < lower_threshold:
-                score = lower_threshold
-                
-            data_dict[sample_id][pgs_id] = score
-            scores_list.append(score)
-        
-        offset += chunk_size
-        print(f"Processed {offset} rows...")
-    
-    print("Creating matrix for clustering...")
-    
-    # Create a numpy matrix with NaN for missing values
-    matrix = np.full((len(sample_ids), len(pgs_ids)), np.nan)
-    for i, sample_id in enumerate(sample_ids):
-        for j, pgs_id in enumerate(pgs_ids):
-            if pgs_id in data_dict[sample_id]:
-                matrix[i, j] = data_dict[sample_id][pgs_id]
-    
+    start_time = time.time()
+
+    matrix = get_matrix(
+        sample_ids=sample_ids,
+        pgs_ids=pgs_ids,
+        score_type=score_type,
+        output_format="numpy",  # This will return a numpy matrix directly
+        upper_threshold=upper_threshold,
+        lower_threshold=lower_threshold
+    )
+    end_time = time.time()
+    print(f"Matrix created in {end_time - start_time:.2f} seconds.")
+
     # For clustering, we need to temporarily replace NaNs
     clustering_matrix = np.copy(matrix)
     
@@ -1327,20 +1205,37 @@ def generate_heatmap_hash(score_type, std_dev_threshold, dendrogram_view, pgs_id
     return hash_obj.hexdigest()
 
 @app.post("/api/generate_umap")
-async def generate_umap(request: UMAPRequest):
+async def generate_umap(request: UMAPRequest, background_tasks: BackgroundTasks):
     """Generates a UMAP visualization and saves it as HTML file"""
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="umap",
+        task_name=getattr(request, "name", None),
+        processing_function=process_umap,
+        background_tasks=background_tasks
+    )
+
+def process_umap(request_data):
     try:
         # Create temp directory if it doesn't exist
         os.makedirs("temp", exist_ok=True)
         
+        # Extract parameters from request_data
+        score_type = request_data["score_type"]
+        n_neighbors = request_data["n_neighbors"]
+        min_dist = request_data["min_dist"]
+        pgs_ids = request_data["pgs_ids"]
+        cohort = request_data["cohort"]
+        view_type = request_data["view_type"]
+        
         # Generate hash based on request parameters
         request_hash = generate_umap_hash(
-            request.score_type,
-            request.n_neighbors,
-            request.min_dist,
-            request.pgs_ids,
-            request.cohort,
-            request.view_type  
+            score_type,
+            n_neighbors,
+            min_dist,
+            pgs_ids,
+            cohort,
+            view_type  
         )
 
         print(f"Request hash: {request_hash}")
@@ -1352,37 +1247,30 @@ async def generate_umap(request: UMAPRequest):
                 cached_filepath = os.path.join("temp", filename)
                 os.utime(cached_filepath)
                 
-                print(f"Using cached heatmap: {filename}")
+                print(f"Using cached UMAP: {filename}")
                 
-                # Return file path with empty statistics
-                return {
-                    "file_path": f"/temp/{filename}",
-                    "statistics": {}
-                }
+                # Return file path
+                return f"/temp/{filename}"
 
-        # Check and clean up temp directory if needed
-        cleanup_temp_files(max_size_in_gb=10)  
-        
         # Parameters for hash
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        score_type_safe = request.score_type.replace("/", "_").replace("\\", "_")
-        cohort_indicator = f"{request.cohort}_" if request.cohort and request.cohort != "ALL" else ""
-        view_indicator = f"{request.view_type}_"  # Add view type to filename
+        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
+        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
+        view_indicator = f"{view_type}_"  # Add view type to filename
         filename = f"umap_{cohort_indicator}{view_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
         filepath = os.path.join("temp", filename)
         
-        # Generate hash
+        # Generate UMAP
         fig, stats = generate_umap_html(
-            db_path=db_path,
-            score_type=request.score_type,
-            n_neighbors=request.n_neighbors,
-            min_dist=request.min_dist,
-            specific_pgs_ids=request.pgs_ids,
-            cohort=request.cohort,
-            view_type=request.view_type  # Pass view_type parameter
+            score_type=score_type,
+            n_neighbors=n_neighbors,
+            min_dist=min_dist,
+            specific_pgs_ids=pgs_ids,
+            cohort=cohort,
+            view_type=view_type
         )
         
-        # For large datasets, use optimized HTML output
+        # Save the visualization
         fig.write_html(
             filepath,
             include_plotlyjs='cdn',    
@@ -1392,24 +1280,20 @@ async def generate_umap(request: UMAPRequest):
                 'responsive': True        
             }
         )
-
-        # Format statistics for frontend
-        # outliers_removed = int(stats[4]) if isinstance(stats[4], np.integer) else stats[4]
-        stats_formatted = {}
         
-        return {
-            "file_path": f"/temp/{filename}",
-            "statistics": stats_formatted
-        }
+        # Return the file path
+        return f"/temp/{filename}"
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the error
+        print(f"Error generating UMAP: {str(e)}")
+        raise e
 
-def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specific_pgs_ids=None, cohort=None, view_type="sample"):
+def generate_umap_html(score_type, n_neighbors=15, min_dist=0.1, specific_pgs_ids=None, cohort=None, view_type="sample"):
     """
     Generate a UMAP visualization for PGS score data.
     
     Parameters:
-    - db_path: Path to the SQLite database
     - score_type: The SCORE_TYPE to filter on
     - n_neighbors: Number of neighbors for UMAP (default: 15)
     - min_dist: Minimum distance for UMAP (default: 0.1)
@@ -1425,8 +1309,8 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
     print(f"View Type: {view_type}")
     print(f"Score Type: {score_type}")
     
-    # Database connection and data retrieval (same as your existing code)
-    conn = sqlite3.connect(db_path)
+    # Database connection and data retrieval 
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Get PGS IDs 
@@ -1434,12 +1318,7 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
         pgs_ids = specific_pgs_ids
         print(f"Using {len(pgs_ids)} provided PGS_IDs")
     else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-        """, (score_type,))
+        cursor.execute("SELECT PGS_ID FROM pgs_metadata ORDER BY PGS_ID")
         pgs_ids = [row[0] for row in cursor.fetchall()]
         print(f"Found {len(pgs_ids)} PGS_IDs for score type {score_type}")
     
@@ -1490,40 +1369,12 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
     if cohort and cohort != "ALL":
         print(f"Using {len(sample_ids)} samples from {cohort} cohort.")
     
-    print("creating matrix data structure...")
-    # Build placeholders for the IN clauses
-    sample_placeholders = ','.join(['?'] * len(sample_ids))
-    pgs_placeholders = ','.join(['?'] * len(pgs_ids))
-
-    # Create the temp table with proper placeholders
-    query = f"""
-        CREATE TEMP TABLE temp_filtered_scores AS
-        SELECT SAMPLE_ID, PGS_ID, SCORE
-        FROM scores
-        WHERE SCORE_TYPE = ?
-        AND SAMPLE_ID IN ({sample_placeholders})
-        AND PGS_ID IN ({pgs_placeholders})
-    """
-
-    # Parameters list: first the score_type, then all sample_ids, then all pgs_ids
-    params = [score_type] + sample_ids + pgs_ids
-    cursor.execute(query, params)
-
-    # Create an index on the temp table for faster retrieval
-    cursor.execute("CREATE INDEX idx_temp_filtered ON temp_filtered_scores(SAMPLE_ID, PGS_ID)")
-
-    # Fetch all results at once
-    cursor.execute("SELECT SAMPLE_ID, PGS_ID, SCORE FROM temp_filtered_scores")
-
-    data_dict = {}
-    scores_list = []
-
-    for sample_id, pgs_id, score in cursor:
-        if sample_id not in data_dict:
-            data_dict[sample_id] = {}
-        data_dict[sample_id][pgs_id] = score
-        scores_list.append(score)
-    print("Finishing constructing matrix.")
+    data_dict = get_matrix(
+        sample_ids=sample_ids,
+        pgs_ids=pgs_ids,
+        score_type=score_type,
+        output_format="dict"  
+    )
 
     # Close database connection
     conn.close()
@@ -1533,7 +1384,7 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
         # Original sample-based UMAP - mostly unchanged
         return generate_sample_based_umap(
             sample_ids, pgs_ids, data_dict, n_neighbors, min_dist, 
-            score_type, cohort, db_path
+            score_type, cohort
         )
     else:  # "score" view type
         # New score-based UMAP
@@ -1542,11 +1393,10 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
             score_type, cohort, pgs_metadata
         )
 
-
-def generate_sample_based_umap(sample_ids, pgs_ids, data_dict, n_neighbors, min_dist, score_type, cohort, db_path):
+def generate_sample_based_umap(sample_ids, pgs_ids, data_dict, n_neighbors, min_dist, score_type, cohort):
     print("Creating matrix for clustering...")
     
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Create a numpy matrix with NaN for missing values
@@ -1767,20 +1617,37 @@ def generate_umap_hash(score_type, n_neighbors, min_dist, pgs_ids, cohort, view_
     return hash_obj.hexdigest()
 
 @app.post("/api/generate_svd_image")
-async def generate_svd_image(request: SVDRequest):
+async def generate_svd_image(request: SVDRequest, background_tasks: BackgroundTasks):
     """Routes to the appropriate SVD image generation function based on plot_type"""
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="svd",
+        task_name=getattr(request, "name", None),
+        processing_function=process_svd,
+        background_tasks=background_tasks
+    )
+
+def process_svd(request_data):
     try:
         # Create temp directory if it doesn't exist
         os.makedirs("temp", exist_ok=True)
         
+        # Extract parameters from request_data
+        score_type = request_data["score_type"]
+        pgs_ids = request_data["pgs_ids"]
+        cohort = request_data["cohort"]
+        plot_type = request_data["plot_type"]
+        perspective = request_data.get("perspective", "sample")  # Default to sample
+        max_vectors = request_data.get("max_vectors", 10)  # Default to 10
+        
         # Generate hash for caching
         request_hash = generate_svd_hash(
-            request.score_type,
-            request.pgs_ids,
-            request.cohort,
-            request.plot_type,
-            request.perspective,
-            request.max_vectors
+            score_type,
+            pgs_ids,
+            cohort,
+            plot_type,
+            perspective,
+            max_vectors
         )
         
         # Check if we already have a file with this hash
@@ -1793,39 +1660,35 @@ async def generate_svd_image(request: SVDRequest):
                 print(f"Using cached SVD visualization: {filename}")
                 
                 # Return file path
-                return {
-                    "file_path": f"/temp/{filename}",
-                    "hash": request_hash
-                }
+                return f"/temp/{filename}"
         
         # First, perform SVD analysis to get the matrices
         U, S, Vt, pgs_ids, sample_ids, stats = perform_svd_analysis(
-            db_path=db_path,
-            score_type=request.score_type,
-            specific_pgs_ids=request.pgs_ids,
-            cohort=request.cohort
+            score_type=score_type,
+            specific_pgs_ids=pgs_ids,
+            cohort=cohort
         )
         
         # Generate filename with hash
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        score_type_safe = request.score_type.replace("/", "_").replace("\\", "_")
-        cohort_indicator = f"{request.cohort}_" if request.cohort and request.cohort != "ALL" else ""
-        filename = f"svd_{cohort_indicator}{score_type_safe}_{request.plot_type}_{request_hash}_{timestamp}.html"
+        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
+        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
+        filename = f"svd_{cohort_indicator}{score_type_safe}_{plot_type}_{request_hash}_{timestamp}.html"
         filepath = os.path.join("temp", filename)
         
         # Route to the appropriate visualization function
-        if request.plot_type == "scree":
+        if plot_type == "scree":
             fig = generate_svd_scree_plot(S, stats)
-        elif request.plot_type == "biplot":
-            if request.perspective == "score":
-                fig = generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=request.max_vectors)
+        elif plot_type == "biplot":
+            if perspective == "score":
+                fig = generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=max_vectors)
             else:  # Default to sample perspective
-                fig = generate_svd_biplot_sample(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=request.max_vectors)
-        elif request.plot_type == "component_weights":
+                fig = generate_svd_biplot_sample(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=max_vectors)
+        elif plot_type == "component_weights":
             fig = generate_svd_component_weights(Vt, pgs_ids, stats)
-        elif request.plot_type == "heatmap":
+        elif plot_type == "heatmap":
             fig = generate_svd_heatmap(Vt, pgs_ids, stats)
-        elif request.plot_type == "combined":
+        elif plot_type == "combined":
             fig = generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats)
         
         # Save the figure to HTML
@@ -1839,19 +1702,19 @@ async def generate_svd_image(request: SVDRequest):
             }
         )
         
-        return {
-            "file_path": f"/temp/{filename}",
-            "hash": request_hash
-        }
+        # Return file path
+        return f"/temp/{filename}"
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-    
-def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None):
+        # Log the error
+        print(f"Error generating SVD visualization: {str(e)}")
+        raise e 
+
+def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None):
     """
     Build a matrix of PGS scores x samples and perform SVD on it.
     
     Parameters:
-    - db_path: Path to the SQLite database
     - score_type: The SCORE_TYPE to filter on
     - specific_pgs_ids: List of specific PGS IDs to include (if None, use all)
     - cohort: Name of cohort to filter samples (optional)
@@ -1868,7 +1731,7 @@ def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None
     print(f"Score Type: {score_type}")
     
     # Database connection
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     # Get PGS IDs 
@@ -1882,12 +1745,7 @@ def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None
             ORDER BY PGS_ID
         """, [score_type] + specific_pgs_ids)
     else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-        """, (score_type,))
+        cursor.execute("SELECT PGS_ID FROM pgs_metadata ORDER BY PGS_ID")
     
     pgs_ids = [row[0] for row in cursor.fetchall()]
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
@@ -1902,18 +1760,10 @@ def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None
         
         if cohort_result:
             # Parse the JSON array of sample IDs
-            cohort_sample_ids = json.loads(cohort_result[0])
-            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} population")
+            sample_ids = json.loads(cohort_result[0])
+            print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
             
-            # Query scores with population filtering
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                AND SAMPLE_ID IN ({','.join(['?']*len(cohort_sample_ids))})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids + cohort_sample_ids)
+
         else:
             print(f"Warning: Population {cohort} not found in database. Using all samples.")
             cursor.execute(f"""
@@ -1923,6 +1773,7 @@ def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None
                 AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
                 ORDER BY SAMPLE_ID
             """, [score_type] + pgs_ids)
+            sample_ids = [row[0] for row in cursor.fetchall()]
     else:
         # No population filtering
         cursor.execute(f"""
@@ -1933,65 +1784,19 @@ def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None
             ORDER BY SAMPLE_ID
         """, [score_type] + pgs_ids)
     
-    sample_ids = [row[0] for row in cursor.fetchall()]
+        sample_ids = [row[0] for row in cursor.fetchall()]
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
 
     start_time = time.time()
     print("Starting data processing...")
 
-    # Create a temporary table for the sample IDs and PGS IDs
-    print(f"Preparing temporary tables for {len(sample_ids)} samples and {len(pgs_ids)} PGS IDs...")
-    cursor.execute("CREATE TEMPORARY TABLE temp_sample_ids (id TEXT)")
-    cursor.execute("CREATE TEMPORARY TABLE temp_pgs_ids (id TEXT)")
-    cursor.executemany("INSERT INTO temp_sample_ids VALUES (?)", [(id,) for id in sample_ids])
-    cursor.executemany("INSERT INTO temp_pgs_ids VALUES (?)", [(id,) for id in pgs_ids])
-
-    # Execute optimized query
-    print("Executing optimized query...")
-    query_start = time.time()
-    cursor.execute("""
-        SELECT SAMPLE_ID, PGS_ID, SCORE
-        FROM scores
-        JOIN temp_sample_ids ON scores.SAMPLE_ID = temp_sample_ids.id
-        JOIN temp_pgs_ids ON scores.PGS_ID = temp_pgs_ids.id
-        WHERE SCORE_TYPE = ?
-    """, [score_type])
-
-    # Fetch all results at once
-    results = cursor.fetchall()
-    query_end = time.time()
-    print(f"Query completed in {query_end - query_start:.2f} seconds, retrieved {len(results)} records.")
-
-    # Create mapping dictionaries for faster lookups
-    print("Building matrix directly...")
-    sample_to_index = {sample_id: i for i, sample_id in enumerate(sample_ids)}
-    pgs_to_index = {pgs_id: j for j, pgs_id in enumerate(pgs_ids)}
-
-    # Pre-allocate the matrix
-    matrix = np.full((len(sample_ids), len(pgs_ids)), np.nan)
-
-    # Fill the matrix directly - much faster than nested loops
-    matrix_start = time.time()
-    for sample_id, pgs_id, score in results:
-        i = sample_to_index.get(sample_id)
-        j = pgs_to_index.get(pgs_id)
-        if i is not None and j is not None:  # Safety check
-            matrix[i, j] = score
-
-    matrix_end = time.time()
-    print(f"Matrix built in {matrix_end - matrix_start:.2f} seconds.")
-
-    # Handle missing values (fill with column means)
-    print("Handling missing values...")
-    for j in range(matrix.shape[1]):
-        col_mean = np.nanmean(matrix[:, j])
-        mask = np.isnan(matrix[:, j])
-        if mask.any():  # Only fill if there are NaNs
-            matrix[mask, j] = col_mean
-
-    # Clean up
-    cursor.execute("DROP TABLE temp_sample_ids")
-    cursor.execute("DROP TABLE temp_pgs_ids")
+    matrix = get_matrix(
+        sample_ids=sample_ids,
+        pgs_ids=pgs_ids,
+        score_type=score_type,
+        output_format="numpy",
+        handle_missing=True  
+    )
 
     total_time = time.time() - start_time
     print(f"Total processing time: {total_time:.2f} seconds.")
@@ -2584,7 +2389,7 @@ def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_v
 async def get_permanent_cohorts():
     """Get list of permanent cohorts from the ancestry groups."""
     try:
-        conn = sqlite3.connect(db_path)
+        conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         
         # Query all populations and their sample IDs from ancestry_groups
@@ -2609,553 +2414,458 @@ async def get_permanent_cohorts():
         return {"cohorts": []}
 
 @app.post("/api/generate_distribution")
-async def generate_distribution(request: DistributionRequest):
+async def generate_distribution(request: DistributionRequest, background_tasks: BackgroundTasks):
+    """Generate distribution plots on the backend as a background task"""
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="distribution",
+        task_name=getattr(request, "name", None),
+        processing_function=process_distribution,
+        background_tasks=background_tasks
+    )
+
+def process_distribution(request_data):
     """
     Generate distribution plots on the backend, cache them, and return the plot path.
     The function calculates a hash of the request to check if it's already been processed.
     """
-    # Create a hash of the request to use as the filename
-    request_hash = hashlib.md5(json.dumps(request.dict(), sort_keys=True).encode()).hexdigest()
-    os.makedirs("temp", exist_ok=True)
-
-    html_path = f"temp/{request_hash}.html"
-    json_path = f"temp/{request_hash}.json"
-    
-    # Check if this exact plot has been generated recently
-    if os.path.exists(html_path) and os.path.exists(json_path):
-        # Return the cached files
-        with open(json_path, 'r') as f:
-            data_matrix = json.load(f)
-        
-        return {
-            "plot_path": html_path,
-            "data": data_matrix,
-            "cached": True
-        }
-    
-    # Connect to the database
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
     try:
-        # Handle cohort analysis
-        if request.analysis_type == 'cohort':
-            if not request.pgs_id or not request.score_type or not request.cohorts:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Missing required fields for cohort analysis"
-                )
-            
-            # Retrieve scores for the given PGS and score type
-            cursor.execute(
-                "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-                (request.pgs_id, request.score_type)
-            )
-            rows = cursor.fetchall()
-            
-            if not rows:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"No data found for PGS '{request.pgs_id}' and Score Type '{request.score_type}'"
-                )
-            
-            # Create a dictionary mapping SAMPLE_ID to SCORE
-            score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-            
-            cohort_data = []
-            for cohort in request.cohorts:
-                # Filter to include only samples that exist in our data
-                valid_samples = [
-                    {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                    for sample_id in cohort.sample_ids
-                    if sample_id in score_dict
-                ]
-                
-                cohort_scores = [sample["SCORE"] for sample in valid_samples]
-                
-                cohort_data.append({
-                    "color": cohort.color,
-                    "values": cohort_scores,
-                    "samples": valid_samples,
-                    "name": cohort.name
-                })
-            
-            # Create Plotly figure based on chart_type
-            fig = go.Figure()
-            
-            if request.chart_type == 'density':
-                # Create a common x-axis range for all distributions
-                all_values = []
-                for cohort in cohort_data:
-                    if cohort["values"]:
-                        all_values.extend(cohort["values"])
-                
-                if not all_values:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="No valid data to plot"
-                    )
-                
-                # Determine appropriate range for x-axis with padding
-                min_val = min(all_values)
-                max_val = max(all_values)
-                range_padding = (max_val - min_val) * 0.1
-                x_min = min_val - range_padding
-                x_max = max_val + range_padding
-                
-                # Create evenly spaced x values for the density curves
-                x = np.linspace(x_min, x_max, 100)
-                
-                for cohort in cohort_data:
-                    if cohort["values"] and len(cohort["values"]) > 1:
-                        # Use kernel density estimation to create smooth curve
-                        # Similar to the epanechnikovKernel in the frontend
-                        try:
-                            kde = stats.gaussian_kde(cohort["values"])
-                            y = kde(x)
-                            
-                            # Create density curve similar to D3 implementation
-                            fig.add_trace(go.Scatter(
-                                x=x,
-                                y=y,
-                                mode='lines',
-                                name=cohort["name"],
-                                line=dict(color=cohort["color"], width=2),
-                                fill=None  # No fill, just the line
-                            ))
-                            
-                        except Exception as e:
-                            print(f"Error creating density plot for {cohort['name']}: {str(e)}")
-                            continue
-                
-                # Update layout to match D3 style
-                fig.update_layout(
-                    title=request.plot_title,
-                    xaxis_title="Score",
-                    yaxis_title="Density",
-                    hovermode="closest",
-                    showlegend=True,
-                    legend=dict(
-                        x=1.02,
-                        y=0.98,
-                        xanchor="left",
-                        yanchor="top"
-                    ),
-                    margin=dict(l=60, r=150, t=50, b=50)
-                )
+        # Create a hash of the request to use as the filename
+        request_hash = hashlib.md5(json.dumps(request_data, sort_keys=True).encode()).hexdigest()
+        os.makedirs("temp", exist_ok=True)
 
-            elif request.chart_type == 'histogram':
-                # Get all values to determine common axis
-                all_values = []
-                for cohort in cohort_data:
-                    if cohort["values"]:
-                        all_values.extend(cohort["values"])
+        html_path = f"temp/{request_hash}.html"
+        json_path = f"temp/{request_hash}.json"
+        
+        # Check if this exact plot has been generated recently
+        if os.path.exists(html_path) and os.path.exists(json_path):
+            # Return the cached file path
+            return f"/{html_path}"
+        
+        # Connect to the database
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        try:
+            # Handle cohort analysis
+            if request_data["analysis_type"] == 'cohort':
+                pgs_id = request_data.get("pgs_id", "")
+                score_type = request_data.get("score_type", "")
+                cohorts = request_data.get("cohorts", [])
+                chart_type = request_data.get("chart_type", "")
+                plot_title = request_data.get("plot_title", "")
                 
-                if not all_values:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="No valid data to plot"
-                    )
+                if not pgs_id or not score_type or not cohorts:
+                    raise ValueError("Missing required fields for cohort analysis")
                 
-                # Determine appropriate range with padding
-                min_val = min(all_values)
-                max_val = max(all_values)
-                range_padding = (max_val - min_val) * 0.1
-                x_min = min_val - range_padding
-                x_max = max_val + range_padding
-                
-                # Calculate optimal number of bins based on data
-                num_bins = min(30, int(np.ceil(np.sqrt(len(all_values)))))
-                
-                # Create histogram bins
-                bin_size = (x_max - x_min) / num_bins
-                
-                # Add histograms for each cohort
-                for i, cohort in enumerate(cohort_data):
-                    if cohort["values"]:
-                        fig.add_trace(go.Histogram(
-                            x=cohort["values"],
-                            name=cohort["name"],
-                            marker_color=cohort["color"],
-                            opacity=0.7,
-                            xbins=dict(
-                                start=x_min,
-                                end=x_max,
-                                size=bin_size
-                            ),
-                            # Offset bins for each cohort to avoid complete overlap
-                            offsetgroup=i
-                        ))
-                
-                # Update layout
-                fig.update_layout(
-                    title=request.plot_title,
-                    xaxis_title="Score",
-                    yaxis_title="Frequency",
-                    barmode='group',  # Group bars for different cohorts
-                    hovermode="closest",
-                    showlegend=True,
-                    legend=dict(
-                        x=1.02,
-                        y=0.98,
-                        xanchor="left",
-                        yanchor="top"
-                    ),
-                    margin=dict(l=60, r=150, t=50, b=50)
-                )
-            elif request.chart_type == 'box':
-                # Add boxplots for each cohort
-                for cohort in cohort_data:
-                    if cohort["values"] and len(cohort["values"]) > 0:
-                        # Calculate boxplot stats to match D3 implementation
-                        values = sorted(cohort["values"])
-                        
-                        fig.add_trace(go.Box(
-                            y=values,
-                            name=cohort["name"],
-                            boxmean=True,  # Show mean as a dashed line
-                            marker_color=cohort["color"],
-                            line=dict(color='black'),
-                            fillcolor=cohort["color"],
-                            opacity=0.7
-                        ))
-                
-                # Update layout
-                fig.update_layout(
-                    title=request.plot_title,
-                    yaxis_title="Score",
-                    xaxis_title="Cohort",
-                    hovermode="closest",
-                    showlegend=False,  # Legend is less important for boxplots since labels are on x-axis
-                    margin=dict(l=60, r=150, t=50, b=50)
-                )
-            
-            # Common layout settings for all chart types
-            fig.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0.05)',
-                height=600,
-                width=900
-            )
-            
-            # Save the plot as an HTML file
-            fig.write_html(html_path)
-            
-            # Save the data matrix
-            data_matrix = {"cohorts": cohort_data}
-            with open(json_path, 'w') as f:
-                json.dump(data_matrix, f)
-            
-            return {
-                "plot_path": html_path,
-                "data": data_matrix,
-                "cached": False
-            }
-                
-        # Handle score comparison
-        elif request.analysis_type == 'score':
-            if not request.pgs_comparison or not request.score_type:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Missing required fields for score comparison"
-                )
-            
-            # For each PGS ID, retrieve the scores for the sample IDs
-            pgs_data = []
-            for i, pgs_id in enumerate(request.pgs_comparison.pgs_ids):
-                # Retrieve scores for this PGS and the score type
+                # Retrieve scores for the given PGS and score type
                 cursor.execute(
                     "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-                    (pgs_id, request.score_type)
+                    (pgs_id, score_type)
                 )
                 rows = cursor.fetchall()
                 
                 if not rows:
-                    continue  # Skip if no data found for this PGS
+                    raise ValueError(f"No data found for PGS '{pgs_id}' and Score Type '{score_type}'")
                 
                 # Create a dictionary mapping SAMPLE_ID to SCORE
                 score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
                 
-                # Filter to include only samples that exist in our data
-                valid_samples = [
-                    {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                    for sample_id in request.pgs_comparison.sample_ids
-                    if sample_id in score_dict
-                ]
+                cohort_data = []
+                for cohort in cohorts:
+                    # Filter to include only samples that exist in our data
+                    valid_samples = [
+                        {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                        for sample_id in cohort["sample_ids"]
+                        if sample_id in score_dict
+                    ]
+                    
+                    cohort_scores = [sample["SCORE"] for sample in valid_samples]
+                    
+                    cohort_data.append({
+                        "color": cohort["color"],
+                        "values": cohort_scores,
+                        "samples": valid_samples,
+                        "name": cohort["name"]
+                    })
                 
-                scores = [sample["SCORE"] for sample in valid_samples]
+                # Create Plotly figure based on chart_type
+                fig = go.Figure()
                 
-                pgs_data.append({
-                    "color": request.pgs_comparison.colors[i],
-                    "values": scores,
-                    "samples": valid_samples,
-                    "name": request.pgs_comparison.names[i]
-                })
-            
-            # Create Plotly figure based on chart_type
-            fig = go.Figure()
-            
-            # Similar plotting logic as for cohorts, but with PGS data
-            if request.chart_type == 'density':
-                # Create a common x-axis range for all distributions
-                all_values = []
-                for pgs in pgs_data:
-                    if pgs["values"]:
-                        all_values.extend(pgs["values"])
-                
-                if not all_values:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="No valid data to plot"
-                    )
-                
-                # Determine appropriate range for x-axis
-                min_val = min(all_values)
-                max_val = max(all_values)
-                # Add some padding to the range
-                range_padding = (max_val - min_val) * 0.1
-                x_min = min_val - range_padding
-                x_max = max_val + range_padding
-                
-                # Create evenly spaced x values for the density curves
-                x = np.linspace(x_min, x_max, 100)
-                
-                for pgs in pgs_data:
-                    if pgs["values"] and len(pgs["values"]) > 1:
-                        try:
+                if chart_type == 'density':
+                    # Create a common x-axis range for all distributions
+                    all_values = []
+                    for cohort in cohort_data:
+                        if cohort["values"]:
+                            all_values.extend(cohort["values"])
+                    
+                    if not all_values:
+                        raise ValueError("No valid data to plot")
+                    
+                    # Determine appropriate range for x-axis with padding
+                    min_val = min(all_values)
+                    max_val = max(all_values)
+                    range_padding = (max_val - min_val) * 0.1
+                    x_min = min_val - range_padding
+                    x_max = max_val + range_padding
+                    
+                    # Create evenly spaced x values for the density curves
+                    x = np.linspace(x_min, x_max, 100)
+                    
+                    for cohort in cohort_data:
+                        if cohort["values"] and len(cohort["values"]) > 1:
                             # Use kernel density estimation to create smooth curve
-                            kde = stats.gaussian_kde(pgs["values"])
-                            y = kde(x)
-                            
-                            # Create density curve similar to D3 implementation
-                            fig.add_trace(go.Scatter(
-                                x=x,
-                                y=y,
-                                mode='lines',
-                                name=pgs["name"],
-                                line=dict(color=pgs["color"], width=2),
-                                fill=None  # No fill, just the line
-                            ))
-                        except Exception as e:
-                            print(f"Error creating density plot for {pgs['name']}: {str(e)}")
-                            continue
-                
-                fig.update_layout(
-                    title=request.plot_title,
-                    xaxis_title="Score",
-                    yaxis_title="Density",
-                    hovermode="closest",
-                    showlegend=True,
-                    legend=dict(
-                        x=1.02,
-                        y=0.98,
-                        xanchor="left",
-                        yanchor="top"
-                    ),
-                    margin=dict(l=60, r=150, t=50, b=50)
-                )
+                            try:
+                                kde = stats.gaussian_kde(cohort["values"])
+                                y = kde(x)
+                                
+                                # Create density curve
+                                fig.add_trace(go.Scatter(
+                                    x=x,
+                                    y=y,
+                                    mode='lines',
+                                    name=cohort["name"],
+                                    line=dict(color=cohort["color"], width=2),
+                                    fill=None  # No fill, just the line
+                                ))
+                                
+                            except Exception as e:
+                                print(f"Error creating density plot for {cohort['name']}: {str(e)}")
+                                continue
+                    
+                    # Update layout
+                    fig.update_layout(
+                        title=plot_title,
+                        xaxis_title="Score",
+                        yaxis_title="Density",
+                        hovermode="closest",
+                        showlegend=True,
+                        legend=dict(
+                            x=1.02,
+                            y=0.98,
+                            xanchor="left",
+                            yanchor="top"
+                        ),
+                        margin=dict(l=60, r=150, t=50, b=50)
+                    )
 
-            elif request.chart_type == 'histogram':
-                # Get all values to determine common axis
-                all_values = []
-                for pgs in pgs_data:
-                    if pgs["values"]:
-                        all_values.extend(pgs["values"])
-                
-                if not all_values:
-                    raise HTTPException(
-                        status_code=400,
-                        detail="No valid data to plot"
+                elif chart_type == 'histogram':
+                    # Get all values to determine common axis
+                    all_values = []
+                    for cohort in cohort_data:
+                        if cohort["values"]:
+                            all_values.extend(cohort["values"])
+                    
+                    if not all_values:
+                        raise ValueError("No valid data to plot")
+                    
+                    # Determine appropriate range with padding
+                    min_val = min(all_values)
+                    max_val = max(all_values)
+                    range_padding = (max_val - min_val) * 0.1
+                    x_min = min_val - range_padding
+                    x_max = max_val + range_padding
+                    
+                    # Calculate optimal number of bins based on data
+                    num_bins = min(30, int(np.ceil(np.sqrt(len(all_values)))))
+                    
+                    # Create histogram bins
+                    bin_size = (x_max - x_min) / num_bins
+                    
+                    # Add histograms for each cohort
+                    for i, cohort in enumerate(cohort_data):
+                        if cohort["values"]:
+                            fig.add_trace(go.Histogram(
+                                x=cohort["values"],
+                                name=cohort["name"],
+                                marker_color=cohort["color"],
+                                opacity=0.7,
+                                xbins=dict(
+                                    start=x_min,
+                                    end=x_max,
+                                    size=bin_size
+                                ),
+                                # Offset bins for each cohort to avoid complete overlap
+                                offsetgroup=i
+                            ))
+                    
+                    # Update layout
+                    fig.update_layout(
+                        title=plot_title,
+                        xaxis_title="Score",
+                        yaxis_title="Frequency",
+                        barmode='group',  # Group bars for different cohorts
+                        hovermode="closest",
+                        showlegend=True,
+                        legend=dict(
+                            x=1.02,
+                            y=0.98,
+                            xanchor="left",
+                            yanchor="top"
+                        ),
+                        margin=dict(l=60, r=150, t=50, b=50)
+                    )
+                elif chart_type == 'box':
+                    # Add boxplots for each cohort
+                    for cohort in cohort_data:
+                        if cohort["values"] and len(cohort["values"]) > 0:
+                            # Calculate boxplot stats
+                            values = sorted(cohort["values"])
+                            
+                            fig.add_trace(go.Box(
+                                y=values,
+                                name=cohort["name"],
+                                boxmean=True,  # Show mean as a dashed line
+                                marker_color=cohort["color"],
+                                line=dict(color='black'),
+                                fillcolor=cohort["color"],
+                                opacity=0.7
+                            ))
+                    
+                    # Update layout
+                    fig.update_layout(
+                        title=plot_title,
+                        yaxis_title="Score",
+                        xaxis_title="Cohort",
+                        hovermode="closest",
+                        showlegend=False,
+                        margin=dict(l=60, r=150, t=50, b=50)
                     )
                 
-                # Determine appropriate range with padding
-                min_val = min(all_values)
-                max_val = max(all_values)
-                range_padding = (max_val - min_val) * 0.1
-                x_min = min_val - range_padding
-                x_max = max_val + range_padding
-                
-                # Calculate optimal number of bins based on data
-                num_bins = min(30, int(np.ceil(np.sqrt(len(all_values)))))
-                
-                # Create histogram bins
-                bin_size = (x_max - x_min) / num_bins
-                
-                # Add histograms for each PGS
-                for i, pgs in enumerate(pgs_data):
-                    if pgs["values"]:
-                        fig.add_trace(go.Histogram(
-                            x=pgs["values"],
-                            name=pgs["name"],
-                            marker_color=pgs["color"],
-                            opacity=0.7,
-                            xbins=dict(
-                                start=x_min,
-                                end=x_max,
-                                size=bin_size
-                            ),
-                            # Offset bins for each PGS to avoid complete overlap
-                            offsetgroup=i
-                        ))
-                
-                # Update layout
+                # Common layout settings for all chart types
                 fig.update_layout(
-                    title=request.plot_title,
-                    xaxis_title="Score",
-                    yaxis_title="Frequency",
-                    barmode='group',  # Group bars for different PGS
-                    hovermode="closest",
-                    showlegend=True,
-                    legend=dict(
-                        x=1.02,
-                        y=0.98,
-                        xanchor="left",
-                        yanchor="top"
-                    ),
-                    margin=dict(l=60, r=150, t=50, b=50)
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0.05)',
+                    height=600,
+                    width=900
                 )
-            elif request.chart_type == 'box':
-                # Add boxplots for each PGS
-                for pgs in pgs_data:
-                    if pgs["values"] and len(pgs["values"]) > 0:
-                        # Calculate boxplot stats to match D3 implementation
-                        values = sorted(pgs["values"])
-                        
-                        fig.add_trace(go.Box(
-                            y=values,
-                            name=pgs["name"],
-                            boxmean=True,  # Show mean as a dashed line
-                            marker_color=pgs["color"],
-                            line=dict(color='black'),
-                            fillcolor=pgs["color"],
-                            opacity=0.7
-                        ))
                 
-                # Update layout
+                # Save the plot as an HTML file
+                fig.write_html(html_path)
+                
+                # Save the data matrix
+                data_matrix = {"cohorts": cohort_data}
+                with open(json_path, 'w') as f:
+                    json.dump(data_matrix, f)
+                
+                # Return the file path
+                return f"/{html_path}"
+                    
+            # Handle score comparison
+            elif request_data["analysis_type"] == 'score':
+                score_type = request_data.get("score_type", "")
+                pgs_comparison = request_data.get("pgs_comparison", {})
+                chart_type = request_data.get("chart_type", "")
+                plot_title = request_data.get("plot_title", "")
+                
+                if not pgs_comparison or not score_type:
+                    raise ValueError("Missing required fields for score comparison")
+                
+                # For each PGS ID, retrieve the scores for the sample IDs
+                pgs_data = []
+                for i, pgs_id in enumerate(pgs_comparison.get("pgs_ids", [])):
+                    # Retrieve scores for this PGS and the score type
+                    cursor.execute(
+                        "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
+                        (pgs_id, score_type)
+                    )
+                    rows = cursor.fetchall()
+                    
+                    if not rows:
+                        continue  # Skip if no data found for this PGS
+                    
+                    # Create a dictionary mapping SAMPLE_ID to SCORE
+                    score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
+                    
+                    # Filter to include only samples that exist in our data
+                    valid_samples = [
+                        {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                        for sample_id in pgs_comparison.get("sample_ids", [])
+                        if sample_id in score_dict
+                    ]
+                    
+                    scores = [sample["SCORE"] for sample in valid_samples]
+                    
+                    pgs_data.append({
+                        "color": pgs_comparison.get("colors", [])[i] if i < len(pgs_comparison.get("colors", [])) else "#000000",
+                        "values": scores,
+                        "samples": valid_samples,
+                        "name": pgs_comparison.get("names", [])[i] if i < len(pgs_comparison.get("names", [])) else pgs_id
+                    })
+                
+                # Create Plotly figure based on chart_type
+                fig = go.Figure()
+                
+                # Similar plotting logic as for cohorts, but with PGS data
+                if chart_type == 'density':
+                    # Create a common x-axis range for all distributions
+                    all_values = []
+                    for pgs in pgs_data:
+                        if pgs["values"]:
+                            all_values.extend(pgs["values"])
+                    
+                    if not all_values:
+                        raise ValueError("No valid data to plot")
+                    
+                    # Determine appropriate range for x-axis
+                    min_val = min(all_values)
+                    max_val = max(all_values)
+                    range_padding = (max_val - min_val) * 0.1
+                    x_min = min_val - range_padding
+                    x_max = max_val + range_padding
+                    
+                    # Create evenly spaced x values for the density curves
+                    x = np.linspace(x_min, x_max, 100)
+                    
+                    for pgs in pgs_data:
+                        if pgs["values"] and len(pgs["values"]) > 1:
+                            try:
+                                # Use kernel density estimation to create smooth curve
+                                kde = stats.gaussian_kde(pgs["values"])
+                                y = kde(x)
+                                
+                                # Create density curve
+                                fig.add_trace(go.Scatter(
+                                    x=x,
+                                    y=y,
+                                    mode='lines',
+                                    name=pgs["name"],
+                                    line=dict(color=pgs["color"], width=2),
+                                    fill=None  # No fill, just the line
+                                ))
+                            except Exception as e:
+                                print(f"Error creating density plot for {pgs['name']}: {str(e)}")
+                                continue
+                    
+                    fig.update_layout(
+                        title=plot_title,
+                        xaxis_title="Score",
+                        yaxis_title="Density",
+                        hovermode="closest",
+                        showlegend=True,
+                        legend=dict(
+                            x=1.02,
+                            y=0.98,
+                            xanchor="left",
+                            yanchor="top"
+                        ),
+                        margin=dict(l=60, r=150, t=50, b=50)
+                    )
+
+                elif chart_type == 'histogram':
+                    # Get all values to determine common axis
+                    all_values = []
+                    for pgs in pgs_data:
+                        if pgs["values"]:
+                            all_values.extend(pgs["values"])
+                    
+                    if not all_values:
+                        raise ValueError("No valid data to plot")
+                    
+                    # Determine appropriate range with padding
+                    min_val = min(all_values)
+                    max_val = max(all_values)
+                    range_padding = (max_val - min_val) * 0.1
+                    x_min = min_val - range_padding
+                    x_max = max_val + range_padding
+                    
+                    # Calculate optimal number of bins based on data
+                    num_bins = min(30, int(np.ceil(np.sqrt(len(all_values)))))
+                    
+                    # Create histogram bins
+                    bin_size = (x_max - x_min) / num_bins
+                    
+                    # Add histograms for each PGS
+                    for i, pgs in enumerate(pgs_data):
+                        if pgs["values"]:
+                            fig.add_trace(go.Histogram(
+                                x=pgs["values"],
+                                name=pgs["name"],
+                                marker_color=pgs["color"],
+                                opacity=0.7,
+                                xbins=dict(
+                                    start=x_min,
+                                    end=x_max,
+                                    size=bin_size
+                                ),
+                                # Offset bins for each PGS to avoid complete overlap
+                                offsetgroup=i
+                            ))
+                    
+                    # Update layout
+                    fig.update_layout(
+                        title=plot_title,
+                        xaxis_title="Score",
+                        yaxis_title="Frequency",
+                        barmode='group',  # Group bars for different PGS
+                        hovermode="closest",
+                        showlegend=True,
+                        legend=dict(
+                            x=1.02,
+                            y=0.98,
+                            xanchor="left",
+                            yanchor="top"
+                        ),
+                        margin=dict(l=60, r=150, t=50, b=50)
+                    )
+
+                elif chart_type == 'box':
+                    # Add boxplots for each PGS
+                    for pgs in pgs_data:
+                        if pgs["values"] and len(pgs["values"]) > 0:
+                            # Calculate boxplot stats to match D3 implementation
+                            values = sorted(pgs["values"])
+                            
+                            fig.add_trace(go.Box(
+                                y=values,
+                                name=pgs["name"],
+                                boxmean=True,  # Show mean as a dashed line
+                                marker_color=pgs["color"],
+                                line=dict(color='black'),
+                                fillcolor=pgs["color"],
+                                opacity=0.7
+                            ))
+                    
+                    # Update layout
+                    fig.update_layout(
+                        title=plot_title,
+                        yaxis_title="Score",
+                        xaxis_title="PGS",
+                        hovermode="closest",
+                        showlegend=False,  # Legend is less important for boxplots since labels are on x-axis
+                        margin=dict(l=60, r=150, t=50, b=50)
+                    )
+                
+                # Common layout settings for all chart types
                 fig.update_layout(
-                    title=request.plot_title,
-                    yaxis_title="Score",
-                    xaxis_title="PGS",
-                    hovermode="closest",
-                    showlegend=False,  # Legend is less important for boxplots since labels are on x-axis
-                    margin=dict(l=60, r=150, t=50, b=50)
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0.05)',
+                    height=600,
+                    width=900
                 )
+                
+                # Save the plot as an HTML file
+                fig.write_html(html_path)
+                
+                # Save the data matrix
+                data_matrix = {"pgs_data": pgs_data}
+                with open(json_path, 'w') as f:
+                    json.dump(data_matrix, f)
+                
+                # Return the file path
+                return f"/{html_path}"
             
-            # Common layout settings for all chart types
-            fig.update_layout(
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0.05)',
-                height=600,
-                width=900
-            )
+            else:
+                raise ValueError(f"Invalid analysis type: {request_data['analysis_type']}")
+        
+        finally:
+            conn.close()
             
-            # Save the plot as an HTML file
-            fig.write_html(html_path)
-            
-            # Save the data matrix
-            data_matrix = {"pgs_data": pgs_data}
-            with open(json_path, 'w') as f:
-                json.dump(data_matrix, f)
-            
-            return {
-                "plot_path": html_path,
-                "data": data_matrix,
-                "cached": False
-            }
-        
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid analysis type: {request.analysis_type}"
-            )
-    
-    finally:
-        conn.close()
-        
-@app.post("/api/multi_cohort_distribution/{pgs}/{score_type}")
-async def get_multi_cohort_distribution(pgs: str, score_type: str, cohorts: List[CohortRequest]):
-    """Retrieve score distributions for multiple cohorts."""
-    
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    # Retrieve scores for the given PGS and score type
-    cursor.execute(
-        "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-        (pgs, score_type)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
-        )
-
-    # Create a dictionary mapping SAMPLE_ID to SCORE
-    score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-
-    cohort_data = []
-    for cohort in cohorts:
-        cohort_scores = [
-            score_dict[sample_id] for sample_id in cohort.sample_ids
-            if sample_id in score_dict
-        ]
-        cohort_data.append({
-            "color": cohort.color,
-            "values": cohort_scores,
-            "name": cohort.name
-        })
-
-    return {"cohorts": cohort_data}
-
-@app.post("/api/multi_cohort_distribution_with_ids/{pgs}/{score_type}")
-async def get_multi_cohort_distribution_with_ids(pgs: str, score_type: str, cohorts: List[CohortRequest]):
-    """Retrieve score distributions for multiple cohorts with individual sample data."""
-    
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
-    # Retrieve scores for the given PGS and score type
-    cursor.execute(
-        "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-        (pgs, score_type)
-    )
-    rows = cursor.fetchall()
-    conn.close()
-
-    if not rows:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
-        )
-
-    # Create a dictionary mapping SAMPLE_ID to SCORE
-    score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-
-    cohort_data = []
-    for cohort in cohorts:
-        # Filter to include only samples that exist in our data
-        valid_samples = [
-            {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-            for sample_id in cohort.sample_ids
-            if sample_id in score_dict
-        ]
-        
-        cohort_scores = [sample["SCORE"] for sample in valid_samples]
-        
-        cohort_data.append({
-            "color": cohort.color,
-            "values": cohort_scores,
-            "samples": valid_samples,
-            "name": cohort.name
-        })
-
-    return {"cohorts": cohort_data}
-
+    except Exception as e:
+        # Log error and re-raise to be caught by background task processor
+        print(f"Error in process_distribution: {str(e)}")
+        raise e      
 
 def calculate_percentile(value: float, array: List[float]) -> float:
     """Calculate the percentile of a value in an array."""
@@ -3168,485 +2878,510 @@ def calculate_percentile(value: float, array: List[float]) -> float:
     return (position / len(sorted_array) * 100)
 
 @app.post("/api/generate_subcohort_plot")
-async def generate_subcohort_plot(request: PlotRequest):
-    """Generate a subcohort plot with odds ratio calculation and return the URL."""
-    
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor() 
-    
-    # Retrieve scores for the given PGS and score type
-    cursor.execute(
-        "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-        (request.pgs_id, request.score_type)
+async def generate_subcohort_plot(request: SubcohortPlotRequest, background_tasks: BackgroundTasks):
+    """Generate a subcohort plot with odds ratio calculation as a background task"""
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="subcohort_plot",
+        task_name=getattr(request, "name", None),
+        processing_function=process_subcohort_plot,
+        background_tasks=background_tasks
     )
-    rows = cursor.fetchall()
-    
-    if not rows:
-        raise HTTPException(
-            status_code=404,
-            detail=f"No data found for PGS '{request.pgs_id}' and Score Type '{request.score_type}'"
-        )
 
-    # Create a dictionary mapping SAMPLE_ID to SCORE
-    score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-    
-    # Get base cohort sample IDs from ancestry groups
-    cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (request.base_cohort,))
-    cohort_result = cursor.fetchone()
-
-    if not cohort_result:
-        raise HTTPException(
-            status_code=404,
-            detail=f"Base cohort '{request.base_cohort}' not found in database"
-        )
-
-    # Parse the JSON array of sample IDs
-    base_sample_ids = json.loads(cohort_result[0])
-
-    # Filter to include only samples that exist in our data
-    base_valid_samples = [
-        {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-        for sample_id in base_sample_ids
-        if sample_id in score_dict
-    ]
-    
-    base_scores = [sample["SCORE"] for sample in base_valid_samples]
-    
-    # Process subcohorts
-    subcohort_data = []
-    table_data = []
-    
-    for subcohort in request.subcohorts:
-        if not subcohort.active:
-            continue
+def process_subcohort_plot(request_data):
+    try:
+        # Extract parameters from request_data
+        pgs_id = request_data["pgs_id"]
+        score_type = request_data["score_type"]
+        base_cohort = request_data["base_cohort"]
+        subcohorts = request_data["subcohorts"]
+        plot_title = request_data.get("plot_title", "")
+        display_or = request_data.get("display_or", False)
+        normalize_bins = request_data.get("normalize_bins", False)
+        bin_size = request_data.get("bin_size")
+        or_calculation_type = request_data.get("or_calculation_type")
+        threshold_value = request_data.get("threshold_value")
+        quantile_count = request_data.get("quantile_count")
+        decile_count = request_data.get("decile_count")
+        
+        # Connect to the database
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor() 
+        
+        try:
+            # Retrieve scores for the given PGS and score type
+            cursor.execute(
+                "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
+                (pgs_id, score_type)
+            )
+            rows = cursor.fetchall()
             
-        # Filter to include only samples that exist in our data
-        valid_samples = [
-            {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-            for sample_id in subcohort.sample_ids
-            if sample_id in score_dict
-        ]
-        
-        subcohort_scores = [sample["SCORE"] for sample in valid_samples]
-        
-        # Calculate percentiles relative to base distribution
-        for sample in valid_samples:
-            percentile = calculate_percentile(sample["SCORE"], base_scores)
-            table_data.append({
-                "SAMPLE_ID": sample["SAMPLE_ID"],
-                "SCORE": f"{sample['SCORE']:.4f}",
-                "PERCENTILE": f"{percentile:.2f}",
-                "SUBCOHORT": subcohort.name
-            })
-        
-        subcohort_data.append({
-            "name": subcohort.name,
-            "color": subcohort.color,
-            "values": subcohort_scores
-        })
-    
-    conn.close()
-    
-    # Generate plot using Plotly
-    fig = make_subplots(specs=[[{"secondary_y": request.display_or}]])
-    
-    # Set plot dimensions
-    fig.update_layout(
-        title=request.plot_title or f"Distribution of {request.pgs_id} - {request.score_type}",
-        xaxis_title="Score",
-        yaxis_title="Density" if not request.normalize_bins else "Proportion of Samples",
-        width=1000,
-        height=600,
-        margin=dict(l=60, r=160, t=50, b=50),
-        legend=dict(x=1.05, y=0.5),
-        template="plotly_white"
-    )
-    
-    # Add base cohort density curve
-    kde_xs = np.linspace(min(base_scores), max(base_scores), 1000)
-    kde = stats.gaussian_kde(base_scores)
-    kde_ys = kde(kde_xs)
-    
-    fig.add_trace(
-        go.Scatter(
-            x=kde_xs,
-            y=kde_ys,
-            mode="lines",
-            line=dict(color="#1f77b4", width=2),
-            name=f"{request.base_cohort} ({len(base_scores)} samples, density)"
-        )
-    )
-    
-    # Calculate histogram bins
-    bin_size = request.bin_size or 30
-    bins = np.histogram_bin_edges(
-        np.concatenate([base_scores] + [sc["values"] for sc in subcohort_data]),
-        bins=bin_size
-    )
-    
-    # Add subcohort histograms
-    for subcohort in subcohort_data:
-        hist, _ = np.histogram(subcohort["values"], bins=bins)
-        
-        # Normalize if requested
-        if request.normalize_bins:
-            hist = hist / len(subcohort["values"])
+            if not rows:
+                raise ValueError(f"No data found for PGS '{pgs_id}' and Score Type '{score_type}'")
+
+            # Create a dictionary mapping SAMPLE_ID to SCORE
+            score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
             
+            # Get base cohort sample IDs from ancestry groups
+            cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (base_cohort,))
+            cohort_result = cursor.fetchone()
+
+            if not cohort_result:
+                raise ValueError(f"Base cohort '{base_cohort}' not found in database")
+
+            # Parse the JSON array of sample IDs
+            base_sample_ids = json.loads(cohort_result[0])
+
+            # Filter to include only samples that exist in our data
+            base_valid_samples = [
+                {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                for sample_id in base_sample_ids
+                if sample_id in score_dict
+            ]
+            
+            base_scores = [sample["SCORE"] for sample in base_valid_samples]
+            
+            # Process subcohorts
+            subcohort_data = []
+            table_data = []
+            
+            for subcohort in subcohorts:
+                if not subcohort.get("active", True):
+                    continue
+                    
+                # Filter to include only samples that exist in our data
+                valid_samples = [
+                    {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                    for sample_id in subcohort["sample_ids"]
+                    if sample_id in score_dict
+                ]
+                
+                subcohort_scores = [sample["SCORE"] for sample in valid_samples]
+                
+                # Calculate percentiles relative to base distribution
+                for sample in valid_samples:
+                    percentile = calculate_percentile(sample["SCORE"], base_scores)
+                    table_data.append({
+                        "SAMPLE_ID": sample["SAMPLE_ID"],
+                        "SCORE": f"{sample['SCORE']:.4f}",
+                        "PERCENTILE": f"{percentile:.2f}",
+                        "SUBCOHORT": subcohort["name"]
+                    })
+                
+                subcohort_data.append({
+                    "name": subcohort["name"],
+                    "color": subcohort["color"],
+                    "values": subcohort_scores
+                })
+        finally:
+            conn.close()
+        
+        # Generate plot using Plotly
+        fig = make_subplots(specs=[[{"secondary_y": display_or}]])
+        
+        # Set plot dimensions
+        fig.update_layout(
+            title=plot_title or f"Distribution of {pgs_id} - {score_type}",
+            xaxis_title="Score",
+            yaxis_title="Density" if not normalize_bins else "Proportion of Samples",
+            width=1000,
+            height=600,
+            margin=dict(l=60, r=160, t=50, b=50),
+            legend=dict(x=1.05, y=0.5),
+            template="plotly_white"
+        )
+        
+        # Add base cohort density curve
+        kde_xs = np.linspace(min(base_scores), max(base_scores), 1000)
+        kde = stats.gaussian_kde(base_scores)
+        kde_ys = kde(kde_xs)
+        
         fig.add_trace(
-            go.Bar(
-                x=[(bins[i] + bins[i+1])/2 for i in range(len(bins)-1)],
-                y=hist,
-                opacity=0.6,
-                width=bins[1]-bins[0],
-                name=f"{subcohort['name']} ({len(subcohort['values'])} samples)",
-                marker_color=subcohort["color"],
-                marker_line_color="black",
-                marker_line_width=0.5
+            go.Scatter(
+                x=kde_xs,
+                y=kde_ys,
+                mode="lines",
+                line=dict(color="#1f77b4", width=2),
+                name=f"{base_cohort} ({len(base_scores)} samples, density)"
             )
         )
-    
-    # Add odds ratio calculation if requested
-    if request.display_or and len(subcohort_data) == 2:
-        data = subcohort_data  # Just using the values and names
         
-        if request.or_calculation_type == "bin":
-            # Calculate OR by bin (cumulative)
-            bin_size = request.bin_size or 30
-            or_result = calculate_OR_by_bin_cumulative(data, bin_size)
+        # Calculate histogram bins
+        bin_size_value = bin_size or 30
+        bins = np.histogram_bin_edges(
+            np.concatenate([base_scores] + [sc["values"] for sc in subcohort_data]),
+            bins=bin_size_value
+        )
+        
+        # Add subcohort histograms
+        for subcohort in subcohort_data:
+            hist, _ = np.histogram(subcohort["values"], bins=bins)
             
-            # Add OR line and CI area
+            # Normalize if requested
+            if normalize_bins:
+                hist = hist / len(subcohort["values"])
+                
             fig.add_trace(
-                go.Scatter(
-                    x=[d["x"] for d in or_result["oddsRatios"]],
-                    y=[d["or"] for d in or_result["oddsRatios"]],
-                    mode="lines",
-                    line=dict(color="red", width=2),
-                    name=f"OR: {data[0]['name']} vs {data[1]['name']}",
-                    yaxis="y2"
+                go.Bar(
+                    x=[(bins[i] + bins[i+1])/2 for i in range(len(bins)-1)],
+                    y=hist,
+                    opacity=0.6,
+                    width=bins[1]-bins[0],
+                    name=f"{subcohort['name']} ({len(subcohort['values'])} samples)",
+                    marker_color=subcohort["color"],
+                    marker_line_color="black",
+                    marker_line_width=0.5
                 )
             )
+        
+        # Add odds ratio calculation if requested
+        if display_or and len(subcohort_data) == 2:
+            data = subcohort_data  # Just using the values and names
             
-            fig.add_trace(
-                go.Scatter(
-                    x=[d["x"] for d in or_result["confidenceIntervals"]],
-                    y=[d["y1"] for d in or_result["confidenceIntervals"]],
-                    mode="lines",
-                    line=dict(width=0),
-                    showlegend=False,
-                    yaxis="y2"
+            if or_calculation_type == "bin":
+                # Calculate OR by bin (cumulative)
+                or_result = calculate_OR_by_bin_cumulative(data, bin_size)
+                
+                # Add OR line and CI area
+                fig.add_trace(
+                    go.Scatter(
+                        x=[d["x"] for d in or_result["oddsRatios"]],
+                        y=[d["or"] for d in or_result["oddsRatios"]],
+                        mode="lines",
+                        line=dict(color="red", width=2),
+                        name=f"OR: {data[0]['name']} vs {data[1]['name']}",
+                        yaxis="y2"
+                    )
                 )
-            )
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=[d["x"] for d in or_result["confidenceIntervals"]],
-                    y=[d["y0"] for d in or_result["confidenceIntervals"]],
-                    mode="lines",
-                    line=dict(width=0),
-                    fillcolor="rgba(255, 0, 0, 0.2)",
-                    fill="tonexty",
-                    name="95% CI",
-                    yaxis="y2"
+                
+                fig.add_trace(
+                    go.Scatter(
+                        x=[d["x"] for d in or_result["confidenceIntervals"]],
+                        y=[d["y1"] for d in or_result["confidenceIntervals"]],
+                        mode="lines",
+                        line=dict(width=0),
+                        showlegend=False,
+                        yaxis="y2"
+                    )
                 )
-            )
-            
-        elif request.or_calculation_type == "quantile":
-            # Calculate OR by quantile (cumulative)
-            quantile_count = request.quantile_count or 10
-            or_result = calculate_OR_by_quantile_cumulative(data, quantile_count)
-            
-            # Add vertical lines at quantile breakpoints
-            for i, d in enumerate(or_result["oddsRatios"]):
-                if i > 0:  # Skip first point
+                
+                fig.add_trace(
+                    go.Scatter(
+                        x=[d["x"] for d in or_result["confidenceIntervals"]],
+                        y=[d["y0"] for d in or_result["confidenceIntervals"]],
+                        mode="lines",
+                        line=dict(width=0),
+                        fillcolor="rgba(255, 0, 0, 0.2)",
+                        fill="tonexty",
+                        name="95% CI",
+                        yaxis="y2"
+                    )
+                )
+                
+            elif or_calculation_type == "quantile":
+                # Calculate OR by quantile (cumulative)
+                quantile_count = quantile_count or 10
+                or_result = calculate_OR_by_quantile_cumulative(data, quantile_count)
+                
+                # Add vertical lines at quantile breakpoints
+                for i, d in enumerate(or_result["oddsRatios"]):
+                    if i > 0:  # Skip first point
+                        fig.add_shape(
+                            type="line",
+                            x0=d["x"], x1=d["x"],
+                            y0=0, y1=1,
+                            yref="paper",
+                            line=dict(color="#aaa", width=1, dash="dash"),
+                            opacity=0.4
+                        )
+                
+                # Add OR points and CI lines
+                for d in or_result["oddsRatios"]:
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[d["x"]],
+                            y=[d["or"]],
+                            mode="markers",
+                            marker=dict(color="red", size=8),
+                            showlegend=False,
+                            yaxis="y2"
+                        )
+                    )
+                    
                     fig.add_shape(
                         type="line",
                         x0=d["x"], x1=d["x"],
-                        y0=0, y1=1,
-                        yref="paper",
-                        line=dict(color="#aaa", width=1, dash="dash"),
-                        opacity=0.4
+                        y0=d["ci95low"], y1=d["ci95high"],
+                        line=dict(color="red", width=2),
+                        yref="y2"
                     )
-            
-            # Add OR points and CI lines
-            for d in or_result["oddsRatios"]:
+                
+                # Add OR to legend
                 fig.add_trace(
                     go.Scatter(
-                        x=[d["x"]],
-                        y=[d["or"]],
+                        x=[None],
+                        y=[None],
                         mode="markers",
                         marker=dict(color="red", size=8),
-                        showlegend=False,
+                        name=f"OR: {data[0]['name']} vs {data[1]['name']}",
                         yaxis="y2"
                     )
                 )
                 
-                fig.add_shape(
-                    type="line",
-                    x0=d["x"], x1=d["x"],
-                    y0=d["ci95low"], y1=d["ci95high"],
-                    line=dict(color="red", width=2),
-                    yref="y2"
-                )
-            
-            # Add OR to legend
-            fig.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="markers",
-                    marker=dict(color="red", size=8),
-                    name=f"OR: {data[0]['name']} vs {data[1]['name']}",
-                    yaxis="y2"
-                )
-            )
-            
-            fig.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="lines",
-                    line=dict(color="red", width=2),
-                    name="95% CI",
-                    yaxis="y2"
-                )
-            )
-            
-        elif request.or_calculation_type == "threshold":
-            # Calculate OR by threshold
-            threshold = request.threshold_value or 0
-            or_result = calculate_OR_by_threshold(data, threshold)
-            
-            # Add threshold line
-            fig.add_shape(
-                type="line",
-                x0=or_result["threshold"], x1=or_result["threshold"],
-                y0=0, y1=1,
-                yref="paper",
-                line=dict(color="blue", width=1, dash="dash"),
-                opacity=0.8
-            )
-            
-            # Add OR point and CI line
-            fig.add_trace(
-                go.Scatter(
-                    x=[or_result["threshold"]],
-                    y=[or_result["or"]],
-                    mode="markers",
-                    marker=dict(color="red", size=8),
-                    name=f"OR at {or_result['threshold']:.2f}: {or_result['or']:.2f} ({data[0]['name']} vs {data[1]['name']})",
-                    yaxis="y2"
-                )
-            )
-            
-            fig.add_shape(
-                type="line",
-                x0=or_result["threshold"], x1=or_result["threshold"],
-                y0=or_result["ci95low"], y1=or_result["ci95high"],
-                line=dict(color="red", width=2),
-                yref="y2"
-            )
-            
-            # Add CI to legend
-            fig.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="lines",
-                    line=dict(color="red", width=2),
-                    name=f"95% CI: [{or_result['ci95low']:.2f}, {or_result['ci95high']:.2f}]",
-                    yaxis="y2"
-                )
-            )
-            
-        elif request.or_calculation_type == "decileBaseline":
-            # Calculate OR by decile vs baseline
-            decile_count = request.decile_count or 10
-            or_result = calculate_OR_by_decile_vs_baseline(data, decile_count)
-            
-            # Add decile markers
-            for i, breakpoint in enumerate(or_result["decileBreakpoints"]):
-                if i > 0:  # Skip first point (minimum value)
-                    fig.add_shape(
-                        type="line",
-                        x0=breakpoint, x1=breakpoint,
-                        y0=0, y1=1,
-                        yref="paper",
-                        line=dict(color="#aaa", width=1, dash="dash"),
-                        opacity=0.4
-                    )
-                    
-                    # Add decile label
-                    fig.add_annotation(
-                        x=breakpoint,
-                        y=0,
-                        yref="paper",
-                        text=f"D{i+1}",
-                        showarrow=False,
-                        font=dict(size=8),
-                        yshift=-15
-                    )
-            
-            # Add OR points and CI lines
-            x_values = []
-            or_values = []
-            
-            for d in or_result["oddsRatios"]:
-                x_values.append(d["x"])
-                or_values.append(d["or"])
-                
                 fig.add_trace(
                     go.Scatter(
-                        x=[d["x"]],
-                        y=[d["or"]],
+                        x=[None],
+                        y=[None],
+                        mode="lines",
+                        line=dict(color="red", width=2),
+                        name="95% CI",
+                        yaxis="y2"
+                    )
+                )
+                
+            elif or_calculation_type == "threshold":
+                # Calculate OR by threshold
+                threshold = threshold_value or 0
+                or_result = calculate_OR_by_threshold(data, threshold)
+                
+                # Add threshold line
+                fig.add_shape(
+                    type="line",
+                    x0=or_result["threshold"], x1=or_result["threshold"],
+                    y0=0, y1=1,
+                    yref="paper",
+                    line=dict(color="blue", width=1, dash="dash"),
+                    opacity=0.8
+                )
+                
+                # Add OR point and CI line
+                fig.add_trace(
+                    go.Scatter(
+                        x=[or_result["threshold"]],
+                        y=[or_result["or"]],
                         mode="markers",
                         marker=dict(color="red", size=8),
-                        showlegend=False,
+                        name=f"OR at {or_result['threshold']:.2f}: {or_result['or']:.2f} ({data[0]['name']} vs {data[1]['name']})",
                         yaxis="y2"
                     )
                 )
                 
                 fig.add_shape(
                     type="line",
-                    x0=d["x"], x1=d["x"],
-                    y0=d["ci95low"], y1=d["ci95high"],
+                    x0=or_result["threshold"], x1=or_result["threshold"],
+                    y0=or_result["ci95low"], y1=or_result["ci95high"],
                     line=dict(color="red", width=2),
                     yref="y2"
                 )
-            
-            # Connect points with line
-            fig.add_trace(
-                go.Scatter(
-                    x=x_values,
-                    y=or_values,
-                    mode="lines",
-                    line=dict(color="red", width=1.5, dash="dash"),
-                    name=f"OR by Decile vs Baseline: {data[0]['name']} vs {data[1]['name']}",
-                    yaxis="y2"
-                )
-            )
-            
-            # Add CI to legend
-            fig.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="lines",
-                    line=dict(color="red", width=2),
-                    name="95% CI",
-                    yaxis="y2"
-                )
-            )
-            
-        elif request.or_calculation_type == "decileCumulative":
-            # Calculate OR by decile vs cumulative lower deciles
-            decile_count = request.decile_count or 10
-            or_result = calculate_OR_by_decile_vs_cumulative(data, decile_count)
-            
-            # Add decile markers
-            for i, breakpoint in enumerate(or_result["decileBreakpoints"]):
-                if i > 0:  # Skip first point (minimum value)
-                    fig.add_shape(
-                        type="line",
-                        x0=breakpoint, x1=breakpoint,
-                        y0=0, y1=1,
-                        yref="paper",
-                        line=dict(color="#aaa", width=1, dash="dash"),
-                        opacity=0.4
-                    )
-                    
-                    # Add decile label
-                    fig.add_annotation(
-                        x=breakpoint,
-                        y=0,
-                        yref="paper",
-                        text=f"D{i+1}",
-                        showarrow=False,
-                        font=dict(size=8),
-                        yshift=-15
-                    )
-            
-            # Add OR points and CI lines
-            x_values = []
-            or_values = []
-            
-            for d in or_result["oddsRatios"]:
-                x_values.append(d["x"])
-                or_values.append(d["or"])
                 
+                # Add CI to legend
                 fig.add_trace(
                     go.Scatter(
-                        x=[d["x"]],
-                        y=[d["or"]],
-                        mode="markers",
-                        marker=dict(color="purple", size=8),
-                        showlegend=False,
+                        x=[None],
+                        y=[None],
+                        mode="lines",
+                        line=dict(color="red", width=2),
+                        name=f"95% CI: [{or_result['ci95low']:.2f}, {or_result['ci95high']:.2f}]",
                         yaxis="y2"
                     )
                 )
                 
-                fig.add_shape(
-                    type="line",
-                    x0=d["x"], x1=d["x"],
-                    y0=d["ci95low"], y1=d["ci95high"],
-                    line=dict(color="purple", width=2),
-                    yref="y2"
+            elif or_calculation_type == "decileBaseline":
+                # Calculate OR by decile vs baseline
+                decile_count = decile_count or 10
+                or_result = calculate_OR_by_decile_vs_baseline(data, decile_count)
+                
+                # Add decile markers
+                for i, breakpoint in enumerate(or_result["decileBreakpoints"]):
+                    if i > 0:  # Skip first point (minimum value)
+                        fig.add_shape(
+                            type="line",
+                            x0=breakpoint, x1=breakpoint,
+                            y0=0, y1=1,
+                            yref="paper",
+                            line=dict(color="#aaa", width=1, dash="dash"),
+                            opacity=0.4
+                        )
+                        
+                        # Add decile label
+                        fig.add_annotation(
+                            x=breakpoint,
+                            y=0,
+                            yref="paper",
+                            text=f"D{i+1}",
+                            showarrow=False,
+                            font=dict(size=8),
+                            yshift=-15
+                        )
+                
+                # Add OR points and CI lines
+                x_values = []
+                or_values = []
+                
+                for d in or_result["oddsRatios"]:
+                    x_values.append(d["x"])
+                    or_values.append(d["or"])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[d["x"]],
+                            y=[d["or"]],
+                            mode="markers",
+                            marker=dict(color="red", size=8),
+                            showlegend=False,
+                            yaxis="y2"
+                        )
+                    )
+                    
+                    fig.add_shape(
+                        type="line",
+                        x0=d["x"], x1=d["x"],
+                        y0=d["ci95low"], y1=d["ci95high"],
+                        line=dict(color="red", width=2),
+                        yref="y2"
+                    )
+                
+                # Connect points with line
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=or_values,
+                        mode="lines",
+                        line=dict(color="red", width=1.5, dash="dash"),
+                        name=f"OR by Decile vs Baseline: {data[0]['name']} vs {data[1]['name']}",
+                        yaxis="y2"
+                    )
+                )
+                
+                # Add CI to legend
+                fig.add_trace(
+                    go.Scatter(
+                        x=[None],
+                        y=[None],
+                        mode="lines",
+                        line=dict(color="red", width=2),
+                        name="95% CI",
+                        yaxis="y2"
+                    )
+                )
+                
+            elif or_calculation_type == "decileCumulative":
+                # Calculate OR by decile vs cumulative lower deciles
+                decile_count = decile_count or 10
+                or_result = calculate_OR_by_decile_vs_cumulative(data, decile_count)
+                
+                # Add decile markers
+                for i, breakpoint in enumerate(or_result["decileBreakpoints"]):
+                    if i > 0:  # Skip first point (minimum value)
+                        fig.add_shape(
+                            type="line",
+                            x0=breakpoint, x1=breakpoint,
+                            y0=0, y1=1,
+                            yref="paper",
+                            line=dict(color="#aaa", width=1, dash="dash"),
+                            opacity=0.4
+                        )
+                        
+                        # Add decile label
+                        fig.add_annotation(
+                            x=breakpoint,
+                            y=0,
+                            yref="paper",
+                            text=f"D{i+1}",
+                            showarrow=False,
+                            font=dict(size=8),
+                            yshift=-15
+                        )
+                
+                # Add OR points and CI lines
+                x_values = []
+                or_values = []
+                
+                for d in or_result["oddsRatios"]:
+                    x_values.append(d["x"])
+                    or_values.append(d["or"])
+                    
+                    fig.add_trace(
+                        go.Scatter(
+                            x=[d["x"]],
+                            y=[d["or"]],
+                            mode="markers",
+                            marker=dict(color="purple", size=8),
+                            showlegend=False,
+                            yaxis="y2"
+                        )
+                    )
+                    
+                    fig.add_shape(
+                        type="line",
+                        x0=d["x"], x1=d["x"],
+                        y0=d["ci95low"], y1=d["ci95high"],
+                        line=dict(color="purple", width=2),
+                        yref="y2"
+                    )
+                
+                # Connect points with line
+                fig.add_trace(
+                    go.Scatter(
+                        x=x_values,
+                        y=or_values,
+                        mode="lines",
+                        line=dict(color="purple", width=1.5, dash="dash"),
+                        name=f"OR by Decile vs Cumulative Lower: {data[0]['name']} vs {data[1]['name']}",
+                        yaxis="y2"
+                    )
+                )
+                
+                # Add CI to legend
+                fig.add_trace(
+                    go.Scatter(
+                        x=[None],
+                        y=[None],
+                        mode="lines",
+                        line=dict(color="purple", width=2),
+                        name="95% CI",
+                        yaxis="y2"
+                    )
                 )
             
-            # Connect points with line
-            fig.add_trace(
-                go.Scatter(
-                    x=x_values,
-                    y=or_values,
-                    mode="lines",
-                    line=dict(color="purple", width=1.5, dash="dash"),
-                    name=f"OR by Decile vs Cumulative Lower: {data[0]['name']} vs {data[1]['name']}",
-                    yaxis="y2"
+            # Configure secondary y-axis for OR
+            fig.update_layout(
+                yaxis2=dict(
+                    title="Odds Ratio",
+                    side="right",
+                    type="log",
+                    overlaying="y",
+                    showgrid=False
                 )
             )
             
-            # Add CI to legend
-            fig.add_trace(
-                go.Scatter(
-                    x=[None],
-                    y=[None],
-                    mode="lines",
-                    line=dict(color="purple", width=2),
-                    name="95% CI",
-                    yaxis="y2"
-                )
+            # Add reference line at OR = 1
+            fig.add_shape(
+                type="line",
+                x0=0, x1=1,
+                y0=1, y1=1,
+                xref="paper",
+                yref="y2",
+                line=dict(color="black", width=1, dash="dash"),
+                opacity=0.6
             )
+    
+        # Save plot to file
+        plot_id = str(uuid.uuid4())
+        plot_dir = "temp"
+        os.makedirs(plot_dir, exist_ok=True)
+        plot_path = os.path.join(plot_dir, f"{plot_id}.html")
         
-        # Configure secondary y-axis for OR
-        fig.update_layout(
-            yaxis2=dict(
-                title="Odds Ratio",
-                side="right",
-                type="log",
-                overlaying="y",
-                showgrid=False
-            )
-        )
+        fig.write_html(plot_path, include_plotlyjs="cdn")
         
-        # Add reference line at OR = 1
-        fig.add_shape(
-            type="line",
-            x0=0, x1=1,
-            y0=1, y1=1,
-            xref="paper",
-            yref="y2",
-            line=dict(color="black", width=1, dash="dash"),
-            opacity=0.6
-        )
-    
-    # Save plot to file
-    plot_id = str(uuid.uuid4())
-    plot_path = os.path.join("/", f"{plot_id}.html")
-    plot_url = f"/temp/{plot_id}.html"
-    
-    fig.write_html(plot_path, include_plotlyjs="cdn")
-    
-    return PlotResponse(plot_url=plot_url, table_data=table_data)
+        # Return the file path
+        return f"/temp/{plot_id}.html"
+        
+    except Exception as e:
+        # Log the error
+        print(f"Error generating subcohort plot: {str(e)}")
+        raise e
 
 # OR calculation functions
 def calculate_OR_by_bin_cumulative(data, bin_size):
@@ -4430,3 +4165,482 @@ document.addEventListener('DOMContentLoaded', function() {
     print(f"Interactive filter added successfully!")
     print(f"Modified file saved to: {output_file_path}")
     return output_file_path
+
+# TASK MANAGERS 
+@app.get("/api/task_status/{task_id}")
+async def get_task_status(task_id: str):
+    conn = sqlite3.connect(TASK_DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM image_tasks WHERE task_id = ?", (task_id,))
+    task = cursor.fetchone()
+    conn.close()
+    
+    if not task:
+        return {"error": "Task not found"}
+    
+    # Convert DB row to dictionary
+    columns = ["task_id", "task_type", "name", "status", "created_at", 
+               "completed_at", "result_path", "error", "request_data"]
+    task_dict = {columns[i]: task[i] for i in range(len(columns))}
+    
+    return {
+        "task_id": task_dict["task_id"],
+        "task_type": task_dict["task_type"],
+        "name": task_dict["name"],
+        "status": task_dict["status"],
+        "created_at": task_dict["created_at"],
+        "completed_at": task_dict["completed_at"],
+        "result_path": task_dict["result_path"] if task_dict["status"] == "completed" else None,
+        "error": task_dict["error"] if task_dict["status"] == "failed" else None
+    }
+
+@app.get("/api/list_tasks")
+async def list_tasks(task_type: Optional[str] = None, limit: int = 20, offset: int = 0):
+    conn = sqlite3.connect(TASK_DB_PATH)
+    cursor = conn.cursor()
+    
+    if task_type:
+        cursor.execute(
+            "SELECT task_id, task_type, name, status, created_at, completed_at FROM image_tasks WHERE task_type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?", 
+            (task_type, limit, offset)
+        )
+    else:
+        cursor.execute(
+            "SELECT task_id, task_type, name, status, created_at, completed_at FROM image_tasks ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset)
+        )
+    
+    tasks = cursor.fetchall()
+    conn.close()
+    
+    return [
+        {
+            "task_id": task[0],
+            "task_type": task[1],
+            "name": task[2],
+            "status": task[3],
+            "created_at": task[4],
+            "completed_at": task[5]
+        }
+        for task in tasks
+    ]
+
+# Function to update task status in the database
+def update_task_status(task_id, status, **kwargs):
+    conn = sqlite3.connect(TASK_DB_PATH)
+    cursor = conn.cursor()
+    
+    set_clause = f"status = ?"
+    params = [status]
+    
+    for key, value in kwargs.items():
+        set_clause += f", {key} = ?"
+        params.append(value)
+    
+    params.append(task_id)
+    
+    cursor.execute(f"UPDATE image_tasks SET {set_clause} WHERE task_id = ?", params)
+    conn.commit()
+    conn.close()
+
+# Utility functions
+def get_matrix(
+    sample_ids, 
+    pgs_ids, 
+    score_type,
+    output_format="dict",   # Options: "dict", "numpy"
+    handle_missing=False,   # Whether to fill NaN values with column means
+    upper_threshold=None,   # Cap scores above this value
+    lower_threshold=None    # Cap scores below this value
+):
+    """
+    Retrieve scores and construct a matrix using temporary tables for efficiency.
+    
+    Parameters:
+    -----------
+    sample_ids : list
+        List of sample IDs to include
+    pgs_ids : list
+        List of PGS IDs to include
+    score_type : str
+        Type of score to retrieve
+    output_format : str, optional
+        Format of output, either "dict" or "numpy"
+    handle_missing : bool, optional
+        Whether to replace missing values with column means (only for numpy output)
+    upper_threshold : float, optional
+        Maximum value for scores (scores above will be capped)
+    lower_threshold : float, optional
+        Minimum value for scores (scores below will be capped)
+    
+    Returns:
+    --------
+    dict or numpy.ndarray
+        Either nested dictionary or numpy matrix of scores
+    """
+    # Establish connection to the database
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    try:
+        # Create the temp table with proper placeholders
+        sample_placeholders = ','.join(['?'] * len(sample_ids))
+        pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+        
+        query = f"""
+            CREATE TEMP TABLE temp_filtered_scores AS
+            SELECT SAMPLE_ID, PGS_ID, SCORE
+            FROM scores
+            WHERE SCORE_TYPE = ?
+            AND SAMPLE_ID IN ({sample_placeholders})
+            AND PGS_ID IN ({pgs_placeholders})
+        """
+
+        # Parameters list: first the score_type, then all sample_ids, then all pgs_ids
+        params = [score_type] + sample_ids + pgs_ids
+        cursor.execute(query, params)
+
+        # Create an index on the temp table for faster retrieval
+        cursor.execute("CREATE INDEX idx_temp_filtered ON temp_filtered_scores(SAMPLE_ID, PGS_ID)")
+
+        # Fetch all results at once
+        cursor.execute("SELECT SAMPLE_ID, PGS_ID, SCORE FROM temp_filtered_scores")
+
+        data_dict = {}
+        scores_list = []
+
+        for sample_id, pgs_id, score in cursor:
+            # Apply thresholds if provided
+            if upper_threshold is not None and score > upper_threshold:
+                score = upper_threshold
+            elif lower_threshold is not None and score < lower_threshold:
+                score = lower_threshold
+                
+            if sample_id not in data_dict:
+                data_dict[sample_id] = {}
+            data_dict[sample_id][pgs_id] = score
+            scores_list.append(score)
+
+        # Return dictionary or convert to numpy matrix
+        if output_format == "numpy":
+            # Create mapping dictionaries for faster lookups
+            sample_to_index = {sample_id: i for i, sample_id in enumerate(sample_ids)}
+            pgs_to_index = {pgs_id: j for j, pgs_id in enumerate(pgs_ids)}
+
+            # Pre-allocate the matrix
+            matrix = np.full((len(sample_ids), len(pgs_ids)), np.nan)
+
+            # Fill the matrix
+            for sample_id, pgs_scores in data_dict.items():
+                i = sample_to_index.get(sample_id)
+                if i is not None:
+                    for pgs_id, score in pgs_scores.items():
+                        j = pgs_to_index.get(pgs_id)
+                        if j is not None:  # Safety check
+                            matrix[i, j] = score
+
+            # Handle missing values if requested
+            if handle_missing:
+                for j in range(matrix.shape[1]):
+                    col_values = matrix[:, j]
+                    non_nan_values = col_values[~np.isnan(col_values)]
+                    if len(non_nan_values) > 0:  # Only calculate mean if there are non-NaN values
+                        col_mean = np.mean(non_nan_values)
+                        mask = np.isnan(col_values)
+                        if mask.any():  # Only fill if there are NaNs
+                            matrix[mask, j] = col_mean
+
+            return matrix
+        else:
+            return data_dict
+            
+    finally:
+        # Clean up temp table and close connection
+        try:
+            cursor.execute("DROP TABLE IF EXISTS temp_filtered_scores")
+        except:
+            pass
+        conn.close()
+
+# Define the background task processor separately
+def process_background_task(task_id, request_data, processing_function):
+    try:
+        # Update status to "processing"
+        update_task_status(task_id, "processing")
+        
+        # Call the actual processing function
+        result_path = processing_function(request_data)
+        
+        # Update task with success status and result path
+        update_task_status(
+            task_id, 
+            "completed",
+            result_path=result_path,
+            completed_at=datetime.now().isoformat()
+        )
+        
+    except Exception as e:
+        # Update task with error status
+        update_task_status(
+            task_id,
+            "failed",
+            error=str(e),
+            completed_at=datetime.now().isoformat()
+        )
+
+async def process_image_request(
+    request_data: dict,
+    task_type: str,
+    task_name: Optional[str],
+    processing_function,
+    background_tasks: BackgroundTasks
+):
+    """
+    Generic function to handle image generation requests
+    
+    Args:
+        request_data: Dict containing the request parameters
+        task_type: Type of task (heatmap, clustering, etc.)
+        task_name: Optional user-provided name
+        processing_function: The function that will generate the image
+        background_tasks: FastAPI BackgroundTasks object
+    
+    Returns:
+        TaskResponse object with task_id and status
+    """
+    # Generate a unique task ID
+    task_id = str(uuid.uuid4())
+    created_at = datetime.now().isoformat()
+    
+    # Store task in database
+    conn = sqlite3.connect(TASK_DB_PATH)
+    cursor = conn.cursor()
+    
+    cursor.execute(
+        "INSERT INTO image_tasks (task_id, task_type, name, status, created_at, request_data) VALUES (?, ?, ?, ?, ?, ?)",
+        (task_id, task_type, task_name, "queued", created_at, json.dumps(request_data))
+    )
+    
+    conn.commit()
+    conn.close()
+    
+    # Add task to background tasks - pass the processing function as an argument
+    background_tasks.add_task(process_background_task, task_id, request_data, processing_function)
+    
+    # Return task ID and initial status to client
+    return TaskResponse(
+        task_id=task_id,
+        task_type=task_type,
+        name=task_name,
+        status="queued",
+        created_at=created_at
+    )
+
+# def initialize_db():
+#     """Initialize database if it doesn't exist"""
+#     if os.path.exists(DB_PATH):
+#         return
+
+#     # Create db directory if it doesn't exist
+#     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+
+#     file_path = "data/samples/pgs_scores_output.tsv.gz"  
+
+#     # Detect if the file is gzipped and read accordingly
+#     if file_path.endswith(".gz"):
+#         f = gzip.open(file_path, "rt")  
+#     else:
+#         f = open(file_path, "rt")
+
+#     conn = sqlite3.connect(DB_PATH)
+#     cursor = conn.cursor()
+
+#     # Create the pgs_metadata table
+#     cursor.execute("DROP TABLE IF EXISTS pgs_metadata")
+
+#     cursor.execute("""
+#         CREATE TABLE IF NOT EXISTS pgs_metadata (
+#             PGS_ID TEXT PRIMARY KEY,
+#             PGS_Name TEXT,
+#             Reported_Trait TEXT,
+#             Mapped_Trait_Label TEXT,
+#             Mapped_Trait_ID TEXT,
+#             PGS_Development_Method TEXT,
+#             PGS_Development_Details TEXT,
+#             Original_Genome_Build TEXT,
+#             Number_of_Variants INTEGER,
+#             Number_of_Interaction_Terms INTEGER,
+#             Type_of_Variant_Weight TEXT,
+#             PGS_Publication_ID TEXT,
+#             Publication_PMID INTEGER,
+#             Publication_DOI TEXT,
+#             Score_Matches_Publication BOOLEAN,
+#             Ancestry_Distribution_Variant_Associations TEXT,
+#             Ancestry_Distribution_Score_Development TEXT,
+#             Ancestry_Distribution_PGS_Evaluation TEXT,
+#             FTP_Link TEXT,
+#             Release_Date TEXT,
+#             License_Terms TEXT
+#         )
+#     """)
+
+#     # Drop old table if it exists
+#     cursor.execute("DROP TABLE IF EXISTS scores")
+
+#     # Create table in "long format"
+#     cursor.execute("""
+#         CREATE TABLE IF NOT EXISTS scores (
+#             PGS_ID TEXT REFERENCES pgs_metadata(PGS_ID),
+#             SCORE_TYPE TEXT,
+#             SAMPLE_ID TEXT,
+#             SCORE REAL
+#         )
+#     """)
+#     cursor.execute("CREATE INDEX score_pgs_idx ON scores(PGS_ID)")
+
+#     # Reshape data: Convert wide format (IDs as columns) → long format (one row per (ID, Score))
+#     data = []
+#     header = []
+#     last_pgs=""
+#     write=True
+#     for line in f:
+#         row = line.strip("\n").split("\t")
+#         if row[0]=="PGS":
+#             header = row
+#             continue 
+#         pgs = row[0]
+#         if pgs != last_pgs:
+#             if write:
+#                 cursor.executemany("INSERT INTO scores (PGS_ID, SCORE_TYPE, SAMPLE_ID, SCORE) VALUES (?, ?, ?, ?)", data)
+#                 # print(f"{last_pgs} written")
+#             else:
+#                 print(f"{last_pgs} failed")
+#             data = []
+#             write=True
+#             last_pgs=pgs
+#         score_type = row[1]
+#         for index, score in enumerate(row):  # Iterate over all sample ID columns
+#             if index < 2: 
+#                 continue 
+#             try:
+#                 data.append((pgs, score_type, header[index], float(score)))
+#             except: 
+#                 write=False
+
+#         # Insert Data
+#     if data and write:
+#         cursor.executemany("INSERT INTO scores (PGS_ID, SCORE_TYPE, SAMPLE_ID, SCORE) VALUES (?, ?, ?, ?)", data)
+
+#     metadata_csv_path = "data/pgs/score_info.csv"
+
+#     # Load the metadata CSV
+#     df = pd.read_csv(metadata_csv_path)
+
+#     # Rename columns to match the SQL schema
+#     df.columns = [
+#         "PGS_ID", "PGS_Name", "Reported_Trait", "Mapped_Trait_Label", "Mapped_Trait_ID",
+#         "PGS_Development_Method", "PGS_Development_Details", "Original_Genome_Build",
+#         "Number_of_Variants", "Number_of_Interaction_Terms", "Type_of_Variant_Weight",
+#         "PGS_Publication_ID", "Publication_PMID", "Publication_DOI", 
+#         "Score_Matches_Publication", "Ancestry_Distribution_Variant_Associations", 
+#         "Ancestry_Distribution_Score_Development", "Ancestry_Distribution_PGS_Evaluation",
+#         "FTP_Link", "Release_Date", "License_Terms"
+#     ]
+
+#     # Convert boolean column to actual boolean type
+#     df["Score_Matches_Publication"] = df["Score_Matches_Publication"].apply(lambda x: x == "TRUE")
+
+#     # Insert data into the SQLite database
+#     df.to_sql("pgs_metadata", conn, if_exists="replace", index=False)
+
+#     conn.commit()
+#     conn.close()
+#     f.close()
+
+# # Initialize DB when application starts
+# initialize_db()
+
+# @app.post("/api/multi_cohort_distribution/{pgs}/{score_type}")
+# async def get_multi_cohort_distribution(pgs: str, score_type: str, cohorts: List[CohortRequest]):
+#     """Retrieve score distributions for multiple cohorts."""
+    
+#     conn = sqlite3.connect(DB_PATH)
+#     conn.row_factory = sqlite3.Row
+#     cursor = conn.cursor()
+
+#     # Retrieve scores for the given PGS and score type
+#     cursor.execute(
+#         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
+#         (pgs, score_type)
+#     )
+#     rows = cursor.fetchall()
+#     conn.close()
+
+#     if not rows:
+#         raise HTTPException(
+#             status_code=404,
+#             detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
+#         )
+
+#     # Create a dictionary mapping SAMPLE_ID to SCORE
+#     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
+
+#     cohort_data = []
+#     for cohort in cohorts:
+#         cohort_scores = [
+#             score_dict[sample_id] for sample_id in cohort.sample_ids
+#             if sample_id in score_dict
+#         ]
+#         cohort_data.append({
+#             "color": cohort.color,
+#             "values": cohort_scores,
+#             "name": cohort.name
+#         })
+
+#     return {"cohorts": cohort_data}
+
+# @app.post("/api/multi_cohort_distribution_with_ids/{pgs}/{score_type}")
+# async def get_multi_cohort_distribution_with_ids(pgs: str, score_type: str, cohorts: List[CohortRequest]):
+#     """Retrieve score distributions for multiple cohorts with individual sample data."""
+    
+#     conn = sqlite3.connect(DB_PATH)
+#     conn.row_factory = sqlite3.Row
+#     cursor = conn.cursor()
+
+#     # Retrieve scores for the given PGS and score type
+#     cursor.execute(
+#         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
+#         (pgs, score_type)
+#     )
+#     rows = cursor.fetchall()
+#     conn.close()
+
+#     if not rows:
+#         raise HTTPException(
+#             status_code=404,
+#             detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
+#         )
+
+#     # Create a dictionary mapping SAMPLE_ID to SCORE
+#     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
+
+#     cohort_data = []
+#     for cohort in cohorts:
+#         # Filter to include only samples that exist in our data
+#         valid_samples = [
+#             {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+#             for sample_id in cohort.sample_ids
+#             if sample_id in score_dict
+#         ]
+        
+#         cohort_scores = [sample["SCORE"] for sample in valid_samples]
+        
+#         cohort_data.append({
+#             "color": cohort.color,
+#             "values": cohort_scores,
+#             "samples": valid_samples,
+#             "name": cohort.name
+#         })
+
+#     return {"cohorts": cohort_data}

@@ -260,7 +260,7 @@
         <div class="card shadow">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
-                    <i class="fas fa-th me-2"></i>Heatmap Visualization
+                    <i class="fas fa-th me-2"></i>Plot
                 </h5>
                 <div>
                     <button class="btn btn-sm btn-outline-primary me-2" id="generateInteractive" disabled>
@@ -300,6 +300,43 @@
                 </h5>
             </div>
         </div> -->
+    </div>
+
+    <!-- Task Name Modal -->
+    <div class="modal fade" id="taskNameModal" tabindex="-1" aria-labelledby="taskNameModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+            <h5 class="modal-title" id="taskNameModalLabel">Name Your Visualization</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+            <p>Enter a descriptive name for this visualization or leave it blank to use the default.</p>
+            <div class="mb-3">
+                <label for="taskName" class="form-label">Task Name</label>
+                <input type="text" class="form-control" id="taskName" placeholder="My Custom Visualization">
+            </div>
+            </div>
+            <div class="modal-body" id="taskStatusArea" style="display: none;">
+            <div class="d-flex align-items-center mb-3">
+                <div class="spinner-border text-primary me-3" role="status">
+                <span class="visually-hidden">Loading...</span>
+                </div>
+                <div>
+                <h6 class="mb-0" id="taskStatusText">Processing...</h6>
+                <small class="text-muted" id="taskIdText"></small>
+                </div>
+            </div>
+            <div class="progress" style="height: 10px;">
+                <div class="progress-bar progress-bar-striped progress-bar-animated" id="taskProgressBar" role="progressbar" style="width: 100%" aria-valuenow="100" aria-valuemin="0" aria-valuemax="100"></div>
+            </div>
+            </div>
+            <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-primary" id="confirmTaskName">Generate</button>
+            </div>
+        </div>
+        </div>
     </div>
 </div>
 
@@ -388,16 +425,40 @@
             // Get the plot type
             const plotType = $('#plotType').val();
             
-            // Call appropriate function based on plot type
+            // Update modal title based on plot type
+            $('#taskNameModalLabel').text(`Name Your ${plotType.toUpperCase()} Visualization`);
+            
+            // Set placeholder based on plot type
+            $('#taskName').attr('placeholder', `My ${plotType.charAt(0).toUpperCase() + plotType.slice(1)} Visualization`);
+            
+            // Show the modal
+            const taskNameModal = new bootstrap.Modal(document.getElementById('taskNameModal'));
+            taskNameModal.show();
+        });
+
+        // Handle the confirm button in the task name modal
+        $('#confirmTaskName').on('click', function() {
+            // Get the task name
+            const taskName = $('#taskName').val().trim();
+            
+            // Hide the name input and show the status area
+            $('.modal-body:first').hide();
+            $('#taskStatusArea').show();
+            $('#confirmTaskName').prop('disabled', true);
+            
+            // Get the plot type
+            const plotType = $('#plotType').val();
+            
+            // Call appropriate function based on plot type, passing the task name
             switch (plotType) {
                 case 'heatmap':
-                    generateHeatmap();
+                    generateHeatmap(taskName);
                     break;
                 case 'umap':
-                    generateUmap();
+                    generateUmap(taskName);
                     break;
                 case 'svd':
-                    generateSVD();
+                    generateSVD(taskName);
                     break;
             }
         });
@@ -909,9 +970,117 @@
                 subcohort2Select.append(`<option value="${index}">${subcohort.name}</option>`);
             });
         }
+                
+        // Function to poll for task status
+        function pollTaskStatus(taskId, taskType) {
+            // Create a status area if it doesn't exist
+            if ($('#taskStatusArea').length === 0) {
+                $('body').append(`
+                    <div id="taskStatusArea" class="position-fixed bottom-0 end-0 p-3" style="z-index: 5">
+                        <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                            <div class="toast-header">
+                                <strong class="me-auto">Task Status: <span id="taskStatusLabel">Processing</span></strong>
+                                <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                            </div>
+                            <div class="toast-body">
+                                <div class="d-flex align-items-center mb-2">
+                                    <div class="spinner-border spinner-border-sm text-primary me-2" id="taskSpinner" role="status">
+                                        <span class="visually-hidden">Processing...</span>
+                                    </div>
+                                    <div>Task ID: <span id="taskIdLabel">${taskId}</span></div>
+                                </div>
+                                <div class="progress" style="height: 5px;">
+                                    <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `);
+            } else {
+                // Update existing status area
+                $('#taskIdLabel').text(taskId);
+                $('#taskStatusLabel').text('Processing');
+                $('#taskSpinner').show();
+                $('.progress-bar').addClass('progress-bar-animated').css('width', '100%');
+                $('.toast').toast('show');
+            }
+            
+            const checkStatus = function() {
+                $.ajax({
+                    url: `/api/task_status/${taskId}`,
+                    type: 'GET',
+                    success: function(response) {
+                        // Update status display
+                        $('#taskStatusLabel').text(response.status.charAt(0).toUpperCase() + response.status.slice(1));
+                        
+                        if (response.status === 'completed') {
+                            // Task is complete, stop spinner and update progress
+                            $('#taskSpinner').hide();
+                            $('.progress-bar').removeClass('progress-bar-animated').css('width', '100%');
+                            
+                            // Show success message
+                            showAlert(`${taskType.charAt(0).toUpperCase() + taskType.slice(1)} generated successfully!`, 'success');
+                            
+                            // Hide the loading spinner
+                            $('#loadingSpinner').hide();
+                            
+                            // Load the visualization
+                            const iframe = `<iframe src="${response.result_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                            $('#heatmapPlot').html(iframe).show();
+                            
+                            // Enable download buttons
+                            $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.result_path);
+                            $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.result_path);
+                            $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.result_path).attr('plot-type', taskType);
+                            
+                            // Auto-dismiss the status toast after 5 seconds
+                            setTimeout(() => {
+                                $('.toast').toast('hide');
+                            }, 5000);
+                            
+                        } else if (response.status === 'failed') {
+                            // Task failed
+                            $('#taskSpinner').hide();
+                            $('.progress-bar').removeClass('progress-bar-animated').addClass('bg-danger').css('width', '100%');
+                            $('#taskStatusLabel').text('Failed');
+                            
+                            // Show error message
+                            showAlert(`Error generating ${taskType}: ${response.error || 'Unknown error'}`, 'danger');
+                            
+                            // Restore placeholder if needed
+                            $('#loadingSpinner').hide();
+                            if($('#plotPlaceholder').length === 0) {
+                                $('#heatmapContainer').append(`
+                                    <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                                        <div class="text-center p-4">
+                                            <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                                            <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                                        </div>
+                                    </div>
+                                `);
+                            }
+                            $('#plotPlaceholder').show();
+                            
+                        } else {
+                            // Task is still processing, check again in 2 seconds
+                            setTimeout(checkStatus, 2000);
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        // Handle error
+                        console.error("Error checking task status:", status, error);
+                        // Try again after a delay
+                        setTimeout(checkStatus, 5000);
+                    }
+                });
+            };
+            
+            // Start checking status
+            checkStatus();
+        }
         
-        // Function to generate heatmap
-        function generateHeatmap() {
+        // Generate heatmap
+        function generateHeatmap(taskName = '') {
             const scoreType = $('#scoreType').val();
             const stdDevThreshold = parseFloat($('#stdDevThreshold').val());
             const compactView = $('#compactView').is(':checked');
@@ -942,8 +1111,22 @@
                 compact_view: compactView,
                 pgs_ids: selectedPgsIds,
                 cohort: selectedCohort !== "ALL" ? selectedCohort : null, 
-                subcohorts: activeSubcohorts
+                subcohorts: activeSubcohorts,
+                name: taskName // Add task name to the request
             };
+            
+            // Close the task name modal if it's open
+            const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+            if (taskNameModal) {
+                taskNameModal.hide();
+                
+                // Reset modal for next use
+                setTimeout(() => {
+                    $('.modal-body:first').show();
+                    $('#taskStatusArea').hide();
+                    $('#confirmTaskName').prop('disabled', false);
+                }, 500);
+            }
             
             // Send API request
             $.ajax({
@@ -952,28 +1135,41 @@
                 contentType: 'application/json',
                 data: JSON.stringify(requestData),
                 success: function(response) {
-                    $('#loadingSpinner').hide();
-
-                    if (!response || !response.file_path) {
+                    // Check if we received a task ID (background task) or direct file path
+                    if (response.task_id) {
+                        // We got a task ID - this is the new background task system
+                        const taskId = response.task_id;
+                        
+                        // Show task info in the alert
+                        showAlert(`Heatmap generation started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                        
+                        // Start polling for task status
+                        pollTaskStatus(taskId, 'heatmap');
+                    } else if (response.file_path) {
+                        // We got a direct file path - this is the old immediate response
+                        // Handle as before
+                        $('#loadingSpinner').hide();
+                        
+                        // Create an iframe to display the heatmap
+                        const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                        $('#heatmapPlot').html(iframe).show();
+                        
+                        // Enable download buttons
+                        $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'heatmap');
+                        
+                        // Show cohort info in the alert
+                        const cohortInfo = selectedCohort !== "ALL" ? 
+                            `Filtered to ${selectedCohort} cohort` : 
+                            'Showing all samples';
+                        
+                        showAlert(`Heatmap generated successfully. ${cohortInfo}`, 'success');
+                    } else {
+                        // Unexpected response format
+                        $('#loadingSpinner').hide();
                         showAlert('Error: Invalid response from server', 'danger');
-                        return;
                     }
-                    
-                    // Create an iframe to display the heatmap
-                    const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
-                    $('#heatmapPlot').html(iframe).show();
-                    
-                    // Enable download buttons
-                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
-                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
-                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'heatmap');
-                    
-                    // Show cohort info in the alert
-                    const cohortInfo = selectedCohort !== "ALL" ? 
-                        `Filtered to ${selectedCohort} cohort` : 
-                        'Showing all samples';
-                    
-                    showAlert(`Heatmap generated successfully. ${cohortInfo}`, 'success');
                 },
                 error: function(xhr, status, error) {
                     $('#loadingSpinner').hide();
@@ -1005,8 +1201,8 @@
             });
         }
 
-        // Function to generate UMAP plot
-        function generateUmap() {
+        // Generate UMAP plot
+        function generateUmap(taskName = '') {
             const scoreType = $('#scoreType').val();
             const nNeighbors = parseInt($('#nNeighbors').val() || 15); // Default value: 15
             const minDist = parseFloat($('#minDist').val() || 0.1);    // Default value: 0.1
@@ -1035,8 +1231,20 @@
                 min_dist: minDist,
                 pgs_ids: selectedPgsIds,
                 cohort: selectedCohort !== "ALL" ? selectedCohort : null,
-                view_type: viewType
+                view_type: viewType,
+                name: taskName // Add task name to the request
             };
+            
+            // Close the task name modal if it's open
+            const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+            if (taskNameModal) {
+                taskNameModal.hide();
+            }
+            
+            // Reset modal for next use
+            $('#taskNameModal .modal-body:first').show();
+            $('#taskNameModal #taskStatusArea').hide();
+            $('#taskNameModal #confirmTaskName').prop('disabled', false);
             
             // Send API request
             $.ajax({
@@ -1045,28 +1253,41 @@
                 contentType: 'application/json',
                 data: JSON.stringify(requestData),
                 success: function(response) {
-                    $('#loadingSpinner').hide();
-
-                    if (!response || !response.file_path) {
+                    // Check if we received a task ID (background task) or direct file path
+                    if (response.task_id) {
+                        // We got a task ID - this is the new background task system
+                        const taskId = response.task_id;
+                        
+                        // Show task info in the alert
+                        showAlert(`UMAP generation started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                        
+                        // Start polling for task status
+                        pollTaskStatus(taskId, 'umap');
+                    } else if (response.file_path) {
+                        // We got a direct file path - this is the old immediate response
+                        // Handle as before
+                        $('#loadingSpinner').hide();
+                        
+                        // Create an iframe to display the UMAP plot
+                        const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                        $('#heatmapPlot').html(iframe).show();
+                        
+                        // Enable download buttons 
+                        $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'umap');
+                        
+                        // Show cohort info in the alert
+                        const cohortInfo = selectedCohort !== "ALL" ? 
+                            `Filtered to ${selectedCohort} cohort` : 
+                            'Showing all samples';
+                        
+                        showAlert(`UMAP plot generated successfully. ${cohortInfo}`, 'success');
+                    } else {
+                        // Unexpected response format
+                        $('#loadingSpinner').hide();
                         showAlert('Error: Invalid response from server', 'danger');
-                        return;
                     }
-                    
-                    // Create an iframe to display the UMAP plot
-                    const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
-                    $('#heatmapPlot').html(iframe).show();
-                    
-                    // Enable download buttons 
-                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
-                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
-                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'umap')
-                    
-                    // Show cohort info in the alert
-                    const cohortInfo = selectedCohort !== "ALL" ? 
-                        `Filtered to ${selectedCohort} cohort` : 
-                        'Showing all samples';
-                    
-                    showAlert(`UMAP plot generated successfully. ${cohortInfo}`, 'success');
                 },
                 error: function(xhr, status, error) {
                     $('#loadingSpinner').hide();
@@ -1097,9 +1318,9 @@
                 }
             });
         }
-   
-        // SVD generation function
-        function generateSVD() {
+
+        // Generate SVD
+        function generateSVD(taskName = '') {
             // Show loading spinner
             $('#loadingSpinner').show();
             if($('#plotPlaceholder').length > 0) {
@@ -1120,7 +1341,6 @@
                 maxVectors = parseInt($('#maxVectors').val());
             }
 
-
             // Get selected PGS IDs
             let pgsIds = [];
             if (!$('#selectAllPgs').is(':checked')) {
@@ -1128,40 +1348,100 @@
                 console.log(pgsIds.length)
             }
             
+            // Prepare request data
+            const requestData = {
+                score_type: scoreType,
+                pgs_ids: pgsIds.length > 0 ? pgsIds : null,
+                cohort: cohort,
+                plot_type: svdPlotType,
+                perspective: perspective,
+                max_vectors: maxVectors,
+                name: taskName // Add task name to the request
+            };
+            
+            // Close the task name modal if it's open
+            const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+            if (taskNameModal) {
+                taskNameModal.hide();
+                
+                // Reset modal for next use
+                setTimeout(() => {
+                    $('.modal-body:first').show();
+                    $('#taskStatusArea').hide();
+                    $('#confirmTaskName').prop('disabled', false);
+                }, 500);
+            }
+            
             // Make API request
             $.ajax({
                 url: '/api/generate_svd_image',
                 method: 'POST',
                 contentType: 'application/json',
-                data: JSON.stringify({
-                    score_type: scoreType,
-                    pgs_ids: pgsIds.length > 0 ? pgsIds : null,
-                    cohort: cohort,
-                    plot_type: svdPlotType,
-                    perspective: perspective,
-                    max_vectors: maxVectors
-                }),
+                data: JSON.stringify(requestData),
                 success: function(response) {
-                    // Hide loading spinner
-                    $('#loadingSpinner').hide();
-                    
-                    // Display the SVD visualization
-                    $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
-                    $('#heatmapPlot').show();
-                    
-                    // Enable download buttons 
-                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
-                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
-                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'svd')
+                    // Check if we received a task ID (background task) or direct file path
+                    if (response.task_id) {
+                        // We got a task ID - this is the new background task system
+                        const taskId = response.task_id;
+                        
+                        // Show task info in the alert
+                        showAlert(`SVD visualization started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                        
+                        // Start polling for task status
+                        pollTaskStatus(taskId, 'svd');
+                    } else if (response.file_path) {
+                        // We got a direct file path - this is the old immediate response
+                        // Handle as before
+                        $('#loadingSpinner').hide();
+                        
+                        // Display the SVD visualization
+                        $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
+                        $('#heatmapPlot').show();
+                        
+                        // Enable download buttons 
+                        $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'svd');
+                        
+                        // Show success message
+                        showAlert('SVD visualization generated successfully.', 'success');
+                    } else {
+                        // Unexpected response format
+                        $('#loadingSpinner').hide();
+                        showAlert('Error: Invalid response from server', 'danger');
+                    }
                 },
-                error: function(error) {
+                error: function(xhr, status, error) {
                     // Hide loading spinner and show error
                     $('#loadingSpinner').hide();
-                    alert('Error generating SVD visualization: ' + error.responseJSON.detail);
+                    
+                    console.error("AJAX error:", status, error);
+                    console.error("Response status:", xhr.status);
+                    console.error("Response text:", xhr.responseText);
+                    
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                    } catch (e) {
+                        showAlert('Error generating SVD visualization: ' + error, 'danger');
+                    }
+                    
+                    // Restore placeholder if needed
+                    if($('#plotPlaceholder').length === 0) {
+                        $('#heatmapContainer').append(`
+                            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                                <div class="text-center p-4">
+                                    <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                                    <p class="text-muted">Select parameters and click "Generate SVD" to visualize the data.</p>
+                                </div>
+                            </div>
+                        `);
+                    }
+                    $('#plotPlaceholder').show();
                 }
             });
         }
-        
+
         // Show alert message
         function showAlert(message, type) {
             const alert = `
