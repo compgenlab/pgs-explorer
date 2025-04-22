@@ -26,6 +26,7 @@ import hashlib
 import umap
 import time
 import uuid 
+from bs4 import BeautifulSoup
 
 # Initialize FastAPI
 app = FastAPI(title="PGS Visualizer", description="Tool for visualizing Polygenic Score data")
@@ -44,7 +45,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
 
 # SQLite Database Setup
-db_path = "/Users/nsabry/PGSVisualizer/db/pgs_data.db"
+db_path = "/data/dev/db/pgs_data.db"
 
 # def initialize_db():
 #     """Initialize database if it doesn't exist"""
@@ -286,6 +287,10 @@ class PlotResponse(BaseModel):
     plot_url: str
     table_data: List[Dict[str, Any]]
 
+class InteractiveRequest(BaseModel):
+    plot_type: str = "umap"
+    plot_url: str
+
 # Frontend routes
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
@@ -350,6 +355,7 @@ def get_pgs_list():
 @app.get("/api/score_types")
 def get_score_types():
     """Fetches all distinct score types available in the database."""
+    print("hi nadia")
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
     
@@ -559,32 +565,31 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
                 'Publication_ID': 'Unknown'
             }
     
-    # Modified sample ID fetching with cohort filtering
+    # Modified sample ID fetching with population filtering
     print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
-    
+
+
     if cohort and cohort != "ALL":
-        # Get sample IDs for the selected cohort
-        cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
-        cohort_file = os.path.join(cohorts_dir, f"{cohort}.txt")
+        # Query the ancestry table to get sample IDs for the specified population
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
         
-        if os.path.exists(cohort_file):
-            with open(cohort_file, "r") as f:
-                cohort_sample_ids = [line.strip() for line in f if line.strip()]
+        if cohort_result:
+            # Parse the JSON array of sample IDs
+            cohort_sample_ids = json.loads(cohort_result[0])
+            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} population")
             
-            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} cohort")
-            
-            # Use the cohort sample IDs in the query
-            placeholders = ','.join(['?'] * len(cohort_sample_ids))
+            # Query scores with population filtering
             cursor.execute(f"""
                 SELECT DISTINCT SAMPLE_ID 
                 FROM scores 
                 WHERE SCORE_TYPE = ? 
                 AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                AND SAMPLE_ID IN ({placeholders})
+                AND SAMPLE_ID IN ({','.join(['?']*len(cohort_sample_ids))})
                 ORDER BY SAMPLE_ID
             """, [score_type] + pgs_ids + cohort_sample_ids)
         else:
-            print(f"Warning: Cohort file {cohort_file} not found. Using all samples.")
+            print(f"Warning: Population {cohort} not found in database. Using all samples.")
             cursor.execute(f"""
                 SELECT DISTINCT SAMPLE_ID 
                 FROM scores 
@@ -593,7 +598,7 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
                 ORDER BY SAMPLE_ID
             """, [score_type] + pgs_ids)
     else:
-        # No cohort filtering, use original query
+        # No population filtering
         cursor.execute(f"""
             SELECT DISTINCT SAMPLE_ID 
             FROM scores 
@@ -602,12 +607,7 @@ def generate_static_heatmap_for_large_dataset(db_path, score_type='Z_norm2', max
             ORDER BY SAMPLE_ID
         """, [score_type] + pgs_ids)
     
-    sample_ids = [row[0] for row in cursor.fetchall()]
-    print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
-    
-    if cohort and cohort != "ALL":
-        print(f"Using {len(sample_ids)} samples from {cohort} cohort.")
-    
+    sample_ids = [row[0] for row in cursor.fetchall()]    
     print(f"Large dataset optimization: {len(sample_ids)} samples × {len(pgs_ids)} PGS IDs")
     
     # Calculate overall statistics for outlier detection
@@ -1343,6 +1343,8 @@ async def generate_umap(request: UMAPRequest):
             request.view_type  
         )
 
+        print(f"Request hash: {request_hash}")
+
         # Check if we already have a file with this hash
         for filename in os.listdir("temp"):
             if filename.endswith(".html") and request_hash in filename and "umap" in filename:
@@ -1429,14 +1431,8 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
     
     # Get PGS IDs 
     if specific_pgs_ids:
-        placeholders = ','.join(['?'] * len(specific_pgs_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            AND PGS_ID IN ({placeholders})
-            ORDER BY PGS_ID
-        """, [score_type] + specific_pgs_ids)
+        pgs_ids = specific_pgs_ids
+        print(f"Using {len(pgs_ids)} provided PGS_IDs")
     else:
         cursor.execute("""
             SELECT DISTINCT PGS_ID 
@@ -1444,9 +1440,8 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
             WHERE SCORE_TYPE = ?
             ORDER BY PGS_ID
         """, (score_type,))
-    
-    pgs_ids = [row[0] for row in cursor.fetchall()]
-    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+        pgs_ids = [row[0] for row in cursor.fetchall()]
+        print(f"Found {len(pgs_ids)} PGS_IDs for score type {score_type}")
     
 
     # Get metadata for PGS IDs
@@ -1481,87 +1476,55 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
     print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
     
     if cohort and cohort != "ALL":
-        # Get sample IDs for the selected cohort
-        cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
-        cohort_file = os.path.join(cohorts_dir, f"{cohort}.txt")
-        
-        if os.path.exists(cohort_file):
-            with open(cohort_file, "r") as f:
-                cohort_sample_ids = [line.strip() for line in f if line.strip()]
-            
-            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} cohort")
-            
-            # Use the cohort sample IDs in the query
-            placeholders = ','.join(['?'] * len(cohort_sample_ids))
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                AND SAMPLE_ID IN ({placeholders})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids + cohort_sample_ids)
-        else:
-            print(f"Warning: Cohort file {cohort_file} not found. Using all samples.")
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids)
+        # Get sample IDs from the ancestry_groups table
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
+        sample_ids = json.loads(cohort_result[0])
     else:
-        # No cohort filtering, use original query
-        cursor.execute(f"""
-            SELECT DISTINCT SAMPLE_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ? 
-            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-            ORDER BY SAMPLE_ID
-        """, [score_type] + pgs_ids)
-    
-    sample_ids = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT DISTINCT SAMPLE_ID FROM scores")
+        sample_ids = [row[0] for row in cursor.fetchall()]
+        print(f"Using {len(sample_ids)} total samples")
+
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
     
     if cohort and cohort != "ALL":
         print(f"Using {len(sample_ids)} samples from {cohort} cohort.")
     
-    print("Creating matrix data structure...")
-    
-    # Store the data as a sparse structure (dictionary of dictionaries)
-    data_dict = defaultdict(dict)
+    print("creating matrix data structure...")
+    # Build placeholders for the IN clauses
+    sample_placeholders = ','.join(['?'] * len(sample_ids))
+    pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+
+    # Create the temp table with proper placeholders
+    query = f"""
+        CREATE TEMP TABLE temp_filtered_scores AS
+        SELECT SAMPLE_ID, PGS_ID, SCORE
+        FROM scores
+        WHERE SCORE_TYPE = ?
+        AND SAMPLE_ID IN ({sample_placeholders})
+        AND PGS_ID IN ({pgs_placeholders})
+    """
+
+    # Parameters list: first the score_type, then all sample_ids, then all pgs_ids
+    params = [score_type] + sample_ids + pgs_ids
+    cursor.execute(query, params)
+
+    # Create an index on the temp table for faster retrieval
+    cursor.execute("CREATE INDEX idx_temp_filtered ON temp_filtered_scores(SAMPLE_ID, PGS_ID)")
+
+    # Fetch all results at once
+    cursor.execute("SELECT SAMPLE_ID, PGS_ID, SCORE FROM temp_filtered_scores")
+
+    data_dict = {}
     scores_list = []
-    
-    # Process in chunks to handle large datasets efficiently
-    chunk_size = 1000000
-    offset = 0
-    
-    print("Fetching scores in chunks...")
-    while True:
-        query = """
-            SELECT SAMPLE_ID, PGS_ID, SCORE
-            FROM scores
-            WHERE SCORE_TYPE = ?
-            AND SAMPLE_ID IN ({})
-            AND PGS_ID IN ({})
-            LIMIT {} OFFSET {}
-        """.format(','.join(['?']*len(sample_ids)), 
-                  ','.join(['?']*len(pgs_ids)),
-                  chunk_size, offset)
-        
-        cursor.execute(query, [score_type] + sample_ids + pgs_ids)
-        chunk = cursor.fetchall()
-        
-        if not chunk:
-            break
-            
-        for sample_id, pgs_id, score in chunk:
-            data_dict[sample_id][pgs_id] = score
-            scores_list.append(score)
-        
-        offset += chunk_size
-        print(f"Processed {offset} rows...")
-    
+
+    for sample_id, pgs_id, score in cursor:
+        if sample_id not in data_dict:
+            data_dict[sample_id] = {}
+        data_dict[sample_id][pgs_id] = score
+        scores_list.append(score)
+    print("Finishing constructing matrix.")
+
     # Close database connection
     conn.close()
 
@@ -1578,7 +1541,8 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
             sample_ids, pgs_ids, data_dict, n_neighbors, min_dist, 
             score_type, cohort, pgs_metadata
         )
-    
+
+
 def generate_sample_based_umap(sample_ids, pgs_ids, data_dict, n_neighbors, min_dist, score_type, cohort, db_path):
     print("Creating matrix for clustering...")
     
@@ -1927,30 +1891,31 @@ def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None
     
     pgs_ids = [row[0] for row in cursor.fetchall()]
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
-    
-    # Get sample IDs with cohort filtering if needed
+            
+    # Modified sample ID fetching with population filtering
+    print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
+
     if cohort and cohort != "ALL":
-        # Use your existing cohort filtering code here
-        cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
-        cohort_file = os.path.join(cohorts_dir, f"{cohort}.txt")
+        # Query the ancestry table to get sample IDs for the specified population
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
         
-        if os.path.exists(cohort_file):
-            with open(cohort_file, "r") as f:
-                cohort_sample_ids = [line.strip() for line in f if line.strip()]
+        if cohort_result:
+            # Parse the JSON array of sample IDs
+            cohort_sample_ids = json.loads(cohort_result[0])
+            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} population")
             
-            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} cohort")
-            
-            placeholders = ','.join(['?'] * len(cohort_sample_ids))
+            # Query scores with population filtering
             cursor.execute(f"""
                 SELECT DISTINCT SAMPLE_ID 
                 FROM scores 
                 WHERE SCORE_TYPE = ? 
                 AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                AND SAMPLE_ID IN ({placeholders})
+                AND SAMPLE_ID IN ({','.join(['?']*len(cohort_sample_ids))})
                 ORDER BY SAMPLE_ID
             """, [score_type] + pgs_ids + cohort_sample_ids)
         else:
-            print(f"Warning: Cohort file {cohort_file} not found. Using all samples.")
+            print(f"Warning: Population {cohort} not found in database. Using all samples.")
             cursor.execute(f"""
                 SELECT DISTINCT SAMPLE_ID 
                 FROM scores 
@@ -1959,6 +1924,7 @@ def perform_svd_analysis(db_path, score_type, specific_pgs_ids=None, cohort=None
                 ORDER BY SAMPLE_ID
             """, [score_type] + pgs_ids)
     else:
+        # No population filtering
         cursor.execute(f"""
             SELECT DISTINCT SAMPLE_ID 
             FROM scores 
@@ -2616,37 +2582,31 @@ def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_v
 
 @app.get("/api/permanent_cohorts")
 async def get_permanent_cohorts():
-    """Get list of permanent cohorts from the cohorts directory."""
-    cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
-    
-    if not os.path.exists(cohorts_dir):
-        return {"cohorts": []}
-    
-    cohort_list = []
-    
-    # Look for text files in the cohorts directory
-    for filename in os.listdir(cohorts_dir):
-        if not filename.endswith(".txt"):
-            continue
-            
-        # Extract cohort name from filename
-        name = filename.replace(".txt", "")
-        filepath = os.path.join(cohorts_dir, filename)
+    """Get list of permanent cohorts from the ancestry groups."""
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
         
-        # Read sample IDs from file
-        try:
-            with open(filepath, "r") as f:
-                sample_ids = [line.strip() for line in f if line.strip()]
-                
+        # Query all populations and their sample IDs from ancestry_groups
+        cursor.execute("SELECT population, sample_ids FROM ancestry_groups")
+        rows = cursor.fetchall()
+        cohort_list = []
+        
+        for population, sample_ids_json in rows:
+            # Parse the JSON array of sample IDs
+            sample_ids = json.loads(sample_ids_json)
+            print(f"For {population} loading {len(sample_ids)} samples.")
             if sample_ids:
                 cohort_list.append({
-                    "name": name,
+                    "name": population,
                     "sample_ids": sample_ids
                 })
-        except Exception as e:
-            print(f"Error reading cohort file {filename}: {e}")
+        
+        return {"cohorts": cohort_list}
     
-    return {"cohorts": cohort_list}
+    except Exception as e:
+        print(f"Error retrieving populations from database: {e}")
+        return {"cohorts": []}
 
 @app.post("/api/generate_distribution")
 async def generate_distribution(request: DistributionRequest):
@@ -3196,9 +3156,6 @@ async def get_multi_cohort_distribution_with_ids(pgs: str, score_type: str, coho
 
     return {"cohorts": cohort_data}
 
-# Path for storing generated plots
-PLOTS_DIR = os.path.join("static", "plots")
-os.makedirs(PLOTS_DIR, exist_ok=True)
 
 def calculate_percentile(value: float, array: List[float]) -> float:
     """Calculate the percentile of a value in an array."""
@@ -3216,8 +3173,8 @@ async def generate_subcohort_plot(request: PlotRequest):
     
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-
+    cursor = conn.cursor() 
+    
     # Retrieve scores for the given PGS and score type
     cursor.execute(
         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
@@ -3234,20 +3191,19 @@ async def generate_subcohort_plot(request: PlotRequest):
     # Create a dictionary mapping SAMPLE_ID to SCORE
     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
     
-    # Get base cohort sample IDs from cohorts directory
-    cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
-    cohort_file = os.path.join(cohorts_dir, f"{request.base_cohort}.txt")
-    
-    if not os.path.exists(cohort_file):
+    # Get base cohort sample IDs from ancestry groups
+    cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (request.base_cohort,))
+    cohort_result = cursor.fetchone()
+
+    if not cohort_result:
         raise HTTPException(
             status_code=404,
-            detail=f"Base cohort file '{cohort_file}' not found"
+            detail=f"Base cohort '{request.base_cohort}' not found in database"
         )
-    
-    # Read sample IDs from file
-    with open(cohort_file, "r") as f:
-        base_sample_ids = [line.strip() for line in f if line.strip()]
-    
+
+    # Parse the JSON array of sample IDs
+    base_sample_ids = json.loads(cohort_result[0])
+
     # Filter to include only samples that exist in our data
     base_valid_samples = [
         {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
@@ -3685,14 +3641,14 @@ async def generate_subcohort_plot(request: PlotRequest):
     
     # Save plot to file
     plot_id = str(uuid.uuid4())
-    plot_path = os.path.join(PLOTS_DIR, f"{plot_id}.html")
-    plot_url = f"/static/plots/{plot_id}.html"
+    plot_path = os.path.join("/", f"{plot_id}.html")
+    plot_url = f"/temp/{plot_id}.html"
     
     fig.write_html(plot_path, include_plotlyjs="cdn")
     
     return PlotResponse(plot_url=plot_url, table_data=table_data)
 
-# Add the OR calculation functions (same logic as in the frontend JavaScript)
+# OR calculation functions
 def calculate_OR_by_bin_cumulative(data, bin_size):
     """Calculate odds ratio by histogram bin (cumulative)."""
     all_values = data[0]["values"] + data[1]["values"]
@@ -4015,3 +3971,462 @@ def calculate_OR_by_decile_vs_cumulative(data, num_deciles=10):
         "confidenceIntervals": confidence_intervals, 
         "decileBreakpoints": [float(bp) for bp in decile_breakpoints]
     }
+
+@app.post("/api/generate_interactive_plot")
+def interactive_filter_router(request: InteractiveRequest):
+    if request.plot_type == "umap":
+        output_url = add_interactive_filter_umap(html_file_path=request.plot_url)
+    else:
+        raise HTTPException(status_code=501, detail=f"Interactive plot generation for {request.plot_type} not available at this time.")
+    return PlotResponse(plot_url=output_url, table_data=[{}])
+
+def add_interactive_filter_umap(html_file_path, output_file_path=None):
+    """
+    Add interactive filtering capability to a saved Plotly HTML file,
+    properly extracting IDs from hover text values
+    """
+    # Create output path if not provided
+    if output_file_path is None:
+        file_name, file_ext = os.path.splitext(html_file_path)
+        output_file_path = f"{file_name}_interactive{file_ext}"
+        output_file_path = output_file_path[1:]
+    
+    # Read the original HTML file
+    with open(html_file_path[1:], 'r', encoding='utf-8') as file:
+        html_content = file.read()
+    
+    # Parse HTML
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Add CSS for the filter UI
+    style_tag = soup.new_tag('style')
+    style_tag.string = """
+    .filter-controls {
+        padding: 15px;
+        margin: 10px 0;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        background-color: #f9f9f9;
+        font-family: Arial, sans-serif;
+    }
+    .filter-row {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 10px;
+        align-items: center;
+    }
+    .filter-input {
+        flex-grow: 1;
+        padding: 8px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+    }
+    .filter-button {
+        padding: 8px 15px;
+        background-color: #4CAF50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    .filter-button:hover {
+        background-color: #45a049;
+    }
+    .reset-button {
+        padding: 8px 15px;
+        background-color: #f44336;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+    .reset-button:hover {
+        background-color: #d32f2f;
+    }
+    #filter-status {
+        margin-top: 10px;
+        padding: 5px;
+        color: #666;
+    }
+    """
+    soup.head.append(style_tag)
+    
+    # Create filter control elements
+    filter_div = soup.new_tag('div')
+    filter_div['class'] = 'filter-controls'
+    filter_div.append(soup.new_tag('h3'))
+    filter_div.h3.string = 'Filter Points by ID'
+    
+    # File upload row
+    file_row = soup.new_tag('div')
+    file_row['class'] = 'filter-row'
+    
+    file_label = soup.new_tag('label')
+    file_label['for'] = 'id-file-input'
+    file_label.string = 'Upload ID file:'
+    file_row.append(file_label)
+    
+    file_input = soup.new_tag('input')
+    file_input['type'] = 'file'
+    file_input['id'] = 'id-file-input'
+    file_input['class'] = 'filter-input'
+    file_input['accept'] = '.txt,.csv'
+    file_row.append(file_input)
+    
+    apply_button = soup.new_tag('button')
+    apply_button['id'] = 'apply-filter'
+    apply_button['class'] = 'filter-button'
+    apply_button.string = 'Apply Filter'
+    file_row.append(apply_button)
+    
+    reset_button = soup.new_tag('button')
+    reset_button['id'] = 'reset-filter'
+    reset_button['class'] = 'reset-button'
+    reset_button.string = 'Reset'
+    file_row.append(reset_button)
+    
+    filter_div.append(file_row)
+    
+    # Manual input row
+    manual_row = soup.new_tag('div')
+    manual_row['class'] = 'filter-row'
+    
+    manual_label = soup.new_tag('label')
+    manual_label['for'] = 'manual-ids'
+    manual_label.string = 'Or enter IDs manually:'
+    manual_row.append(manual_label)
+    
+    manual_input = soup.new_tag('input')
+    manual_input['type'] = 'text'
+    manual_input['id'] = 'manual-ids'
+    manual_input['class'] = 'filter-input'
+    manual_input['placeholder'] = 'Comma-separated IDs'
+    manual_row.append(manual_input)
+    
+    manual_button = soup.new_tag('button')
+    manual_button['id'] = 'apply-manual-filter'
+    manual_button['class'] = 'filter-button'
+    manual_button.string = 'Apply'
+    manual_row.append(manual_button)
+    
+    filter_div.append(manual_row)
+    
+    # Status display
+    status_div = soup.new_tag('div')
+    status_div['id'] = 'filter-status'
+    filter_div.append(status_div)
+    
+    # Find the plotly div and insert our filter controls before it
+    plotly_div = soup.select_one('div.plotly-graph-div')
+    if plotly_div:
+        plotly_div.insert_before(filter_div)
+    
+    # Add the JavaScript for filtering functionality
+    script_tag = soup.new_tag('script')
+    script_tag.string = """
+// JavaScript for interactive filtering with hover text ID extraction
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('Hover text ID filter script loaded');
+    
+    // Store original trace data for reset functionality
+    let originalTraceData = [];
+    let plotDiv = document.querySelector('.plotly-graph-div');
+    
+    if (!plotDiv) {
+        console.error('Could not find Plotly graph element');
+        return;
+    }
+    
+    console.log('Found plot div:', plotDiv.id);
+    
+    // Wait for Plotly to be fully initialized
+    const checkPlotlyInterval = setInterval(() => {
+        if (window.Plotly && plotDiv.data) {
+            clearInterval(checkPlotlyInterval);
+            console.log('Plotly initialized with data');
+            
+            // Store only the necessary data from each trace
+            try {
+                plotDiv.data.forEach(trace => {
+                    // Create a safe copy without circular references
+                    let safeCopy = {
+                        x: trace.x ? trace.x.slice() : [],
+                        y: trace.y ? trace.y.slice() : [],
+                        mode: trace.mode,
+                        type: trace.type,
+                        name: trace.name,
+                        text: trace.text ? (Array.isArray(trace.text) ? trace.text.slice() : trace.text) : null,
+                        ids: trace.ids ? trace.ids.slice() : null,
+                        customdata: trace.customdata ? trace.customdata.slice() : null,
+                        hovertext: trace.hovertext ? (Array.isArray(trace.hovertext) ? trace.hovertext.slice() : trace.hovertext) : null,
+                        hovertemplate: trace.hovertemplate,
+                        marker: trace.marker ? {
+                            size: trace.marker.size,
+                            color: Array.isArray(trace.marker.color) ? trace.marker.color.slice() : trace.marker.color,
+                            opacity: Array.isArray(trace.marker.opacity) ? trace.marker.opacity.slice() : trace.marker.opacity,
+                            symbol: trace.marker.symbol,
+                            line: trace.marker.line ? {
+                                width: trace.marker.line.width,
+                                color: trace.marker.line.color
+                            } : null
+                        } : null
+                    };
+                    originalTraceData.push(safeCopy);
+                });
+                console.log('Original trace data stored safely');
+                
+                // Analyze first few hover texts to detect format (for console debugging)
+                analyzeHoverTextFormat();
+            } catch (error) {
+                console.error('Error storing original data:', error);
+            }
+            
+            // Setup event listeners
+            document.getElementById('apply-filter').addEventListener('click', function() {
+                const fileInput = document.getElementById('id-file-input');
+                if (fileInput.files.length > 0) {
+                    processFile(fileInput.files[0]);
+                } else {
+                    updateStatus('Please select a file to upload', 'error');
+                }
+            });
+            
+            document.getElementById('apply-manual-filter').addEventListener('click', function() {
+                const manualInput = document.getElementById('manual-ids').value.trim();
+                if (manualInput) {
+                    const ids = manualInput.split(',').map(id => id.trim()).filter(id => id);
+                    applyFilter(ids);
+                } else {
+                    updateStatus('Please enter IDs to filter', 'error');
+                }
+            });
+            
+            document.getElementById('reset-filter').addEventListener('click', resetFilter);
+            
+            updateStatus('Filter controls ready. Upload a file with sample IDs or enter IDs manually.', 'info');
+        }
+    }, 200);
+    
+    // Analyze hover text format (for debugging in console)
+    function analyzeHoverTextFormat() {
+        if (!plotDiv || !plotDiv.data) {
+            console.error('Plot data not available');
+            return;
+        }
+        
+        console.log('Analyzing hover text format...');
+        
+        plotDiv.data.forEach((trace, i) => {
+            if (trace.type === 'scatter' || trace.type === 'scattergl') {
+                if (!trace.text || trace.text.length === 0) {
+                    console.log('No hover text found in trace ' + i);
+                    return;
+                }
+                
+                // Get first few hover texts to analyze
+                const samples = Array.isArray(trace.text) ? trace.text.slice(0, 3) : [trace.text];
+                
+                console.log(`Sample hover texts from trace ${i}:`);
+                for (let j = 0; j < samples.length; j++) {
+                    const hoverText = samples[j];
+                    console.log(`  Sample ${j + 1}: "${hoverText}"`);
+                    
+                    // Check for "Sample: XXX" pattern
+                    const sampleMatch = hoverText.match(/Sample:\s*([^<]+)/);
+                    if (sampleMatch && sampleMatch[1]) {
+                        console.log(`    → Extracted Sample ID: "${sampleMatch[1].trim()}"`);
+                    }
+                    
+                    // Check for "PGS ID: XXX" pattern
+                    const pgsMatch = hoverText.match(/PGS ID:\s*([^<]+)/);
+                    if (pgsMatch && pgsMatch[1]) {
+                        console.log(`    → Extracted PGS ID: "${pgsMatch[1].trim()}"`);
+                    }
+                }
+            }
+        });
+    }
+    
+    function extractIdFromHoverText(hoverText) {
+        // If empty or invalid, return null
+        if (!hoverText || typeof hoverText !== 'string') {
+            return null;
+        }
+        
+        // Try to extract Sample ID
+        const sampleMatch = hoverText.match(/Sample:\s*([^<]+)/);
+        if (sampleMatch && sampleMatch[1]) {
+            return sampleMatch[1].trim();
+        }
+        
+        // Try to extract PGS ID
+        const pgsMatch = hoverText.match(/PGS ID:\s*([^<]+)/);
+        if (pgsMatch && pgsMatch[1]) {
+            return pgsMatch[1].trim();
+        }
+        
+        // If no pattern matches, return null
+        return null;
+    }
+    
+    function processFile(file) {
+        console.log('Processing file:', file.name);
+        updateStatus('Reading file...', 'info');
+        
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            console.log('File loaded');
+            const content = e.target.result;
+            let ids = [];
+            
+            // Simple parsing based on file extension
+            if (file.name.endsWith('.csv')) {
+                // Assume CSV has one ID per line or is comma-separated
+                ids = content.split(/[\\r\\n,]+/).filter(id => id.trim() !== '');
+            } else {
+                // Assume plain text with one ID per line
+                ids = content.split(/[\\r\\n]+/).filter(id => id.trim() !== '');
+            }
+            
+            console.log(`Extracted ${ids.length} IDs from file`);
+            console.log('Sample IDs from file:', ids.slice(0, 5));
+            
+            applyFilter(ids);
+        };
+        
+        reader.onerror = function() {
+            console.error('Error reading file');
+            updateStatus('Error reading file', 'error');
+        };
+        
+        reader.readAsText(file);
+    }
+    
+    function applyFilter(idsToHighlight) {
+        if (!plotDiv || !plotDiv.data) {
+            console.error('Plot data not available');
+            updateStatus('Error: Plot data not accessible', 'error');
+            return;
+        }
+        
+        console.log(`Applying filter with ${idsToHighlight.length} IDs`);
+        
+        // Create a set for faster lookups
+        const idSet = new Set(idsToHighlight.map(id => id.trim()));
+        
+        // Create modified traces
+        let newData = [];
+        let totalMatches = 0;
+        
+        plotDiv.data.forEach((trace, i) => {
+            // Create a new trace based on the original
+            let newTrace = {};
+            Object.assign(newTrace, trace);
+            
+            if (newTrace.type === 'scatter' || newTrace.type === 'scattergl') {
+                console.log(`Processing trace ${i}, with ${newTrace.x.length} points`);
+                
+                // Create new marker properties
+                let newMarker = {};
+                if (newTrace.marker) {
+                    Object.assign(newMarker, newTrace.marker);
+                } else {
+                    newMarker = { size: 6, color: '#1f77b4', opacity: 1 };
+                }
+                
+                // Extract IDs from hover text
+                let matchCount = 0;
+                
+                if (newTrace.text && newTrace.text.length > 0) {
+                    // Create color and opacity arrays
+                    const colors = [];
+                    const opacities = [];
+                    
+                    // Determine original colors and create new colors
+                    const originalColors = Array.isArray(newMarker.color) ? 
+                        newMarker.color : 
+                        Array(newTrace.x.length).fill(newMarker.color || '#1f77b4');
+                    
+                    const originalOpacities = Array.isArray(newMarker.opacity) ? 
+                        newMarker.opacity : 
+                        Array(newTrace.x.length).fill(newMarker.opacity || 1);
+                    
+                    // Process each point's hover text
+                    for (let j = 0; j < newTrace.x.length; j++) {
+                        const hoverText = Array.isArray(newTrace.text) ? newTrace.text[j] : newTrace.text;
+                        const extractedId = extractIdFromHoverText(hoverText);
+                        
+                        if (extractedId && idSet.has(extractedId)) {
+                            // Highlighted point - keep original color and opacity
+                            colors.push(originalColors[j]);
+                            opacities.push(originalOpacities[j]);
+                            matchCount++;
+                        } else {
+                            // Non-highlighted point - gray color and reduced opacity
+                            colors.push('#cccccc');
+                            opacities.push(0.3);
+                        }
+                    }
+                    
+                    // Update marker properties
+                    newMarker.color = colors;
+                    newMarker.opacity = opacities;
+                    newTrace.marker = newMarker;
+                    
+                    console.log(`Updated colors for ${matchCount} highlighted points out of ${newTrace.x.length} total points`);
+                    totalMatches += matchCount;
+                } else {
+                    console.log('No text property found for ID extraction in trace ' + i);
+                }
+            }
+            
+            newData.push(newTrace);
+        });
+        
+        // Update the plot with new traces
+        try {
+            Plotly.react(plotDiv, newData, plotDiv.layout);
+            updateStatus(`Filter applied: ${totalMatches} points highlighted out of ${idsToHighlight.length} IDs`, 'success');
+        } catch (error) {
+            console.error('Error updating plot:', error);
+            updateStatus('Error updating plot. Check browser console for details.', 'error');
+        }
+    }
+    
+    function resetFilter() {
+        console.log('Resetting filter');
+        
+        if (originalTraceData.length > 0) {
+            // Restore original data
+            try {
+                Plotly.react(plotDiv, originalTraceData, plotDiv.layout);
+                updateStatus('Filter reset - showing all points with original colors', 'info');
+            } catch (error) {
+                console.error('Error resetting plot:', error);
+                updateStatus('Error resetting plot. Check browser console for details.', 'error');
+            }
+        } else {
+            updateStatus('Error: Original data not available', 'error');
+        }
+    }
+    
+    function updateStatus(message, type) {
+        const statusElement = document.getElementById('filter-status');
+        if (statusElement) {
+            statusElement.textContent = message;
+            statusElement.style.color = type === 'error' ? '#f44336' : 
+                                       type === 'success' ? '#4CAF50' : '#666';
+        }
+        console.log(`Status: ${message} (${type})`);
+    }
+});
+    """
+    soup.body.append(script_tag)
+    
+    # Write the modified HTML to the output file
+    with open(output_file_path, 'w', encoding='utf-8') as file:
+        file.write(str(soup))
+    
+    print(f"Interactive filter added successfully!")
+    print(f"Modified file saved to: {output_file_path}")
+    return output_file_path

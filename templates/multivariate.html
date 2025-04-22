@@ -60,10 +60,10 @@
 
 <div class="row">
     <div class="col-md-3">
-        <!-- Configuration panel -->
+        <!-- Plot Type & Configuration panel -->
         <div class="card shadow mb-3">
             <div class="card-header">
-                <h5 class="mb-0">Configuration</h5>
+                <h5 class="mb-0"><i class="fas fa-chart-area me-2"></i>Plot Configuration</h5>
             </div>
             <div class="card-body">
                 <div class="mb-3">
@@ -76,27 +76,69 @@
                     <div class="form-text">Select visualization type</div>
                 </div>
                 
-                <div class="mb-3">
-                    <label for="viewType" class="form-label">UMAP Perspective</label>
-                    <select class="form-select" id="viewType" name="viewType">
-                        <option value="sample" selected>Sample-centered (samples as points)</option>
-                        <option value="score">Score-centered (PGS scores as points)</option>
-                    </select>
-                    <div class="form-text">Choose whether points represent samples or PGS scores</div>
+                <!-- UMAP-specific controls -->
+                <div id="umapControls">
+                    <div class="mb-3">
+                        <label for="viewType" class="form-label">UMAP Perspective</label>
+                        <select class="form-select" id="viewType" name="viewType">
+                            <option value="sample" selected>Sample-centered (samples as points)</option>
+                            <option value="score">Score-centered (PGS scores as points)</option>
+                        </select>
+                        <div class="form-text">Choose whether points represent samples or PGS scores</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="nNeighbors" class="form-label">Neighbors</label>
+                        <input type="number" class="form-control" id="nNeighbors" name="nNeighbors" 
+                            value="15" min="1" max="10" step="1">
+                        <div class="form-text">Number of neighbors</div>
+                    </div>
+                                    
+                    <div class="mb-3">
+                        <label for="minDist" class="form-label">Min Distance</label>
+                        <input type="number" class="form-control" id="minDist" name="minDist" 
+                            value="0.1" min="0" max="1" step="0.01">
+                        <div class="form-text">Closeness of points</div>
+                    </div>
                 </div>
-
-                <div class="mb-3" id="svdPlotTypeContainer" style="display: none;">
-                    <label for="svdPlotType" class="form-label">SVD Plot Type</label>
-                    <select class="form-select" id="svdPlotType" name="svdPlotType">
-                        <option value="combined" selected>Combined SVD Dashboard</option>
-                        <option value="scree">Scree Plot</option>
-                        <option value="biplot">Biplot</option>
-                        <option value="component_weights">Component Weights</option>
-                        <option value="heatmap">Component Heatmap</option>
-                    </select>
-                    <div class="form-text">Choose SVD visualization type</div>
+                
+                <!-- SVD-specific controls -->
+                <div id="svdControls" style="display: none;">
+                    <div class="mb-3">
+                        <label for="svdPlotType" class="form-label">SVD Plot Type</label>
+                        <select class="form-select" id="svdPlotType" name="svdPlotType">
+                            <option value="combined" selected>Combined SVD Dashboard</option>
+                            <option value="scree">Scree Plot</option>
+                            <option value="biplot">Biplot</option>
+                            <option value="component_weights">Component Weights</option>
+                            <option value="heatmap">Component Heatmap</option>
+                        </select>
+                        <div class="form-text">Choose SVD visualization type</div>
+                    </div>
+                    
+                    <div class="mb-3" id="biplotControlsContainer">
+                        <h6 class="mb-3 border-bottom pb-2">Biplot Visualization Controls</h6>
+    
+                        <label for="biplotPerspective" class="form-label">Biplot Perspective</label>
+                        <select class="form-select" id="biplotPerspective" name="biplotPerspective">
+                            <option value="sample" selected>Sample-centered (samples as points)</option>
+                            <option value="score">Score-centered (PGS scores as points)</option>
+                        </select>
+                        <div class="form-text">Choose whether points represent samples or scores</div>
+                        
+                        <div class="mt-3">
+                            <label for="maxVectors" class="form-label">Max vectors: <span id="maxVectorsValue">20</span></label>
+                            <input type="range" class="form-range" id="maxVectors" min="5" max="100" value="20">
+                            <div class="d-flex justify-content-between">
+                                <small>5</small>
+                                <small>100</small>
+                            </div>
+                            <div class="form-text">Limit vectors for better readability</div>
+                        </div>
+                    </div>
                 </div>
-
+                
+                <!-- Common controls -->
                 <div class="mb-3">
                     <label for="stdDevThreshold" class="form-label">Std Dev Threshold</label>
                     <input type="number" class="form-control" id="stdDevThreshold" name="stdDevThreshold" 
@@ -105,55 +147,27 @@
                 </div>
                 
                 <div class="mb-3">
-                    <label for="nNeighbors" class="form-label">Neighbors</label>
-                    <input type="number" class="form-control" id="nNeighbors" name="nNeighbors" 
-                        value="15" min="1" max="10" step="1">
-                    <div class="form-text">Number of neighbors</div>
-                </div>
-                                
-                <div class="mb-3">
-                    <label for="minDist" class="form-label">Min Distance</label>
-                    <input type="number" class="form-control" id="minDist" name="minDist" 
-                        value="0.1" min="0" max="1" step="0.01">
-                    <div class="form-text">Closeness of points</div>
-                </div>
-
-                <div class="mb-3">
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="dendrogramView" name="dendrogramView">
                         <label class="form-check-label" for="dendrogramView">Include Dendrogram</label>
                     </div>
                 </div>
                 
-                <div class="mb-3" id="biplotControlsContainer" style="display: none;">
-                    <h6 class="mb-3 border-bottom pb-2">Biplot Visualization Controls</h6>
-
-                    <label for="biplotPerspective" class="form-label">Biplot Perspective</label>
-                    <select class="form-select" id="biplotPerspective" name="biplotPerspective">
-                        <option value="sample" selected>Sample-centered (samples as points)</option>
-                        <option value="score">Score-centered (PGS scores as points)</option>
-                    </select>
-                    <div class="form-text">Choose whether points represent samples or scores</div>
-                    
-                    <div class="mt-3">
-                        <label for="maxVectors" class="form-label">Max vectors to display: <span id="maxVectorsValue">20</span></label>
-                        <input type="range" class="form-range" id="maxVectors" min="5" max="100" value="20">
-                        <div class="d-flex justify-content-between">
-                            <small>5</small>
-                            <small>100</small>
-                        </div>
-                        <div class="form-text">Limit the number of vectors for better readability</div>
-                    </div>
-                    <hr class="mt-4 mb-3">
-
-                </div>
-                <div class="mb-3">
-                    <label for="scoreType" class="form-label">Score Type</label>
-                    <select class="form-select" id="scoreType" name="scoreType" required>
-                        <option value="" selected disabled>Select Score Type</option>
-                    </select>
-                </div>
                 
+                <div class="d-grid mt-4">
+                    <button type="submit" class="btn btn-primary" id="generateButton">
+                        <i class="fas fa-chart-area me-1"></i> Generate Plot
+                    </button>
+                </div>
+            </div>
+        </div>
+    
+        <!-- Cohort Selection panel -->
+        <div class="card shadow mb-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-users me-2"></i>Cohort Selection</h5>
+            </div>
+            <div class="card-body">
                 <div class="mb-3">
                     <label for="cohortSelection" class="form-label">Sample Cohort</label>
                     <select class="form-select" id="cohortSelection">
@@ -163,64 +177,8 @@
                     <div class="form-text">Filter samples by population cohort</div>
                 </div>
                 
-                <div class="d-grid mt-4">
-                    <button type="submit" class="btn btn-primary" id="generateButton">
-                        <i class="fas fa-chart-area me-1"></i> Generate Plot
-                    </button>
-                </div>
-            </div>
-        </div>
-
-        <!-- PGS Management panel -->
-        <div class="card shadow mb-4">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-dna me-2"></i>PGS Management
-                </h5>
-            </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="checkbox" id="selectAllPgs">
-                        <label class="form-check-label" for="selectAllPgs">
-                            Use all available PGS IDs
-                        </label>
-                    </div>
-                </div>
-                
-                <div id="manualPgsSelection">
-                    <div class="mb-3">
-                        <label for="pgsIdsInput" class="form-label">Add PGS IDs</label>
-                        <textarea class="form-control" id="pgsIdsInput" rows="3" placeholder="Enter PGS IDs, one per line"></textarea>
-                        <!-- <div class="form-text">Maximum of <span id="maxPgsValue"></span> PGS IDs will be used.</div> -->
-                    </div>
-                    
-                    <div class="d-grid">
-                        <button type="button" class="btn btn-success" id="addPgsBtn">
-                            <i class="fas fa-plus me-1"></i> Add PGS IDs
-                        </button>
-                    </div>
-                </div>
-                
-                <hr>
-                
-                <h6 class="mb-3">Selected PGS IDs</h6>
-                <div id="pgsList" class="mb-3" style="max-height: 300px; overflow-y: auto;">
-                    <div class="text-center text-muted py-3" id="noPgs">
-                        No PGS IDs added yet
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Subcohort Management panel -->
-        <div class="card shadow" id="subcohortManagementPanel">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-users me-2"></i>Subcohort Management
-                </h5>
-            </div>
-            <div class="card-body">
+                <!-- Subcohort Management -->
+                <h6 class="mb-3 mt-4 border-bottom pb-2">Subcohort Definition</h6>
                 <div class="mb-3">
                     <label for="subcohortName" class="form-label">Subcohort Name</label>
                     <input type="text" class="form-control" id="subcohortName" placeholder="e.g., Cases">
@@ -236,21 +194,61 @@
                 
                 <div class="mb-3">
                     <label for="sampleIdsInput" class="form-label">Sample IDs</label>
-                    <textarea class="form-control" id="sampleIdsInput" rows="6" placeholder="Enter sample IDs, one per line"></textarea>
+                    <textarea class="form-control" id="sampleIdsInput" rows="4" placeholder="Enter sample IDs, one per line"></textarea>
                 </div>
                 
-                <div class="d-grid">
+                <div class="d-grid mb-3">
                     <button type="button" class="btn btn-success" id="addSubcohortBtn">
                         <i class="fas fa-plus me-1"></i> Add Subcohort
                     </button>
                 </div>
                 
-                <hr>
-                
                 <h6 class="mb-3">Active Subcohorts</h6>
                 <div id="subcohortsList" class="mb-3">
                     <div class="text-center text-muted py-3" id="noSubcohorts">
                         No subcohorts added yet
+                    </div>
+                </div>
+            </div>
+        </div>
+    
+        <!-- PGS Selection panel -->
+        <div class="card shadow mb-3">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-dna me-2"></i>PGS Selection</h5>
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" id="selectAllPgs">
+                        <label class="form-check-label" for="selectAllPgs">
+                            Use all available PGS IDs
+                        </label>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="scoreType" class="form-label">Score Type</label>
+                    <select class="form-select" id="scoreType" name="scoreType" required>
+                        <option value="" selected disabled>Select Score Type</option>
+                    </select>
+                </div>
+                <div id="manualPgsSelection">
+                    <div class="mb-3">
+                        <label for="pgsIdsInput" class="form-label">Add PGS IDs</label>
+                        <textarea class="form-control" id="pgsIdsInput" rows="3" placeholder="Enter PGS IDs, one per line"></textarea>
+                    </div>
+                    
+                    <div class="d-grid mb-3">
+                        <button type="button" class="btn btn-success" id="addPgsBtn">
+                            <i class="fas fa-plus me-1"></i> Add PGS IDs
+                        </button>
+                    </div>
+                </div>
+                
+                <h6 class="mb-3">Selected PGS IDs</h6>
+                <div id="pgsList" class="mb-3" style="max-height: 200px; overflow-y: auto;">
+                    <div class="text-center text-muted py-3" id="noPgs">
+                        No PGS IDs added yet
                     </div>
                 </div>
             </div>
@@ -265,6 +263,9 @@
                     <i class="fas fa-th me-2"></i>Heatmap Visualization
                 </h5>
                 <div>
+                    <button class="btn btn-sm btn-outline-primary me-2" id="generateInteractive" disabled>
+                        <i class="fas fa-magic me-1"></i>Generate Interactive Plot
+                    </button>
                     <button class="btn btn-sm btn-outline-primary me-2" id="downloadPngBtn" disabled>
                         <i class="fas fa-external-link-alt me-1"></i>View in New Tab
                     </button>
@@ -420,6 +421,39 @@
             window.open(filePath, '_blank');
         });
         
+        $('#generateInteractive').on('click', function() {
+            const filePath = $(this).attr('data-filepath');
+            const plotType = $(this).attr('plot-type')
+            if (!filePath) return;
+            const requestData = {
+                plot_type: plotType,
+                plot_url: filePath
+            };
+
+            // Send API request
+            $.ajax({
+                url: '/api/generate_interactive_plot',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(requestData),
+                success: function(response) {
+                    if (!response || !response.plot_url) {
+                        showAlert('Error: Invalid response from server', 'danger');
+                        return;
+                    }
+                    window.open(response.plot_url, '_blank');
+                },
+                error: function(xhr, status, error) {
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                    } catch (e) {
+                        showAlert('Error generating interactive UMAP: ' + error, 'danger');
+                    }
+                }
+            });
+        });
+
         // Initialize color picker
         $('#subcohortColor').on('input', function() {
             $('#colorPreview').css('background-color', $(this).val());
@@ -470,32 +504,36 @@
         function updatePlotTypeControls() {
             const plotType = $('#plotType').val();
             const svdPlotType = $('#svdPlotType').val();
-            
+            const subcohortSections = $('#cohortSelection').parent().nextAll();
+
             // First, hide all specialized controls
-            $('#nNeighbors').parent().hide();
-            $('#minDist').parent().hide();
+            $('#umapControls').hide();
+            $('#svdControls').hide();
+            $('#biplotControlsContainer').hide();
             $('#dendrogramView').parent().hide();
             $('#stdDevThreshold').parent().hide();
-            $('#viewType').parent().hide();
-            $('#svdPlotTypeContainer').hide();
-            $('#biplotControlsContainer').hide();
-            $('#subcohortManagementPanel').hide();
             
+            if (plotType === 'heatmap') {
+                // Show subcohort management for heatmap only
+                subcohortSections.show();
+            } else {
+                // Hide subcohort management for other plot types
+                subcohortSections.hide();
+            }
+            // Plot-specific controls
             if (plotType === 'heatmap') {
                 // Show heatmap-specific controls
                 $('#dendrogramView').parent().show();
                 $('#stdDevThreshold').parent().show();
-                $('#subcohortManagementPanel').show();
             } 
             else if (plotType === 'umap') {
                 // Show UMAP-specific controls
-                $('#nNeighbors').parent().show();
-                $('#minDist').parent().show();
-                $('#viewType').parent().show();
+                $('#umapControls').show();
+                $('#stdDevThreshold').parent().show();
             } 
             else if (plotType === 'svd') {
                 // Show SVD-specific controls
-                $('#svdPlotTypeContainer').show();
+                $('#svdControls').show();
                 
                 // Show biplot perspective controls only for biplot or combined views
                 if (svdPlotType === 'biplot' || svdPlotType === 'combined') {
@@ -503,7 +541,7 @@
                 }
             }
         }
-   
+
         function populateScoreTypeDropdown() {
             const scoreTypes = [
                 'SUM',
@@ -928,6 +966,7 @@
                     // Enable download buttons
                     $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                     $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'heatmap');
                     
                     // Show cohort info in the alert
                     const cohortInfo = selectedCohort !== "ALL" ? 
@@ -1020,6 +1059,7 @@
                     // Enable download buttons 
                     $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                     $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'umap')
                     
                     // Show cohort info in the alert
                     const cohortInfo = selectedCohort !== "ALL" ? 
@@ -1112,6 +1152,7 @@
                     // Enable download buttons 
                     $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                     $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'svd')
                 },
                 error: function(error) {
                     // Hide loading spinner and show error
@@ -1133,5 +1174,6 @@
         }
         
     });
+
 </script>
 {% endblock %}
