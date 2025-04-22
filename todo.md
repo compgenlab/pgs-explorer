@@ -1,7 +1,7 @@
 # TODO - nadia
 
 ## Top priority
-- [ ]   Move plotly filter py file into app.py
+- [x]   Move plotly filter py file into app.py
 - [ ]   Expand filter logic to work for pca, tsne
 - [ ]   Add tsne, basic pca (instead of biplot) 
 - [ ]   Add hover texts for svd, pca, tsne
@@ -31,4 +31,4 @@
 
 ## Repo 
 - [ ]   sample/demo database for testing
-- [ ]   db to to iu jetstream?
+- [x]   db to to iu jetstream?

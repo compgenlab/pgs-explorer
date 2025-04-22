@@ -1431,14 +1431,8 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
     
     # Get PGS IDs 
     if specific_pgs_ids:
-        placeholders = ','.join(['?'] * len(specific_pgs_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            AND PGS_ID IN ({placeholders})
-            ORDER BY PGS_ID
-        """, [score_type] + specific_pgs_ids)
+        pgs_ids = specific_pgs_ids
+        print(f"Using {len(pgs_ids)} provided PGS_IDs")
     else:
         cursor.execute("""
             SELECT DISTINCT PGS_ID 
@@ -1446,9 +1440,8 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
             WHERE SCORE_TYPE = ?
             ORDER BY PGS_ID
         """, (score_type,))
-    
-    pgs_ids = [row[0] for row in cursor.fetchall()]
-    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+        pgs_ids = [row[0] for row in cursor.fetchall()]
+        print(f"Found {len(pgs_ids)} PGS_IDs for score type {score_type}")
     
 
     # Get metadata for PGS IDs
@@ -1483,87 +1476,55 @@ def generate_umap_html(db_path, score_type, n_neighbors=15, min_dist=0.1, specif
     print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
     
     if cohort and cohort != "ALL":
-        # Get sample IDs for the selected cohort
-        cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
-        cohort_file = os.path.join(cohorts_dir, f"{cohort}.txt")
-        
-        if os.path.exists(cohort_file):
-            with open(cohort_file, "r") as f:
-                cohort_sample_ids = [line.strip() for line in f if line.strip()]
-            
-            print(f"Filtering to {len(cohort_sample_ids)} samples from {cohort} cohort")
-            
-            # Use the cohort sample IDs in the query
-            placeholders = ','.join(['?'] * len(cohort_sample_ids))
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                AND SAMPLE_ID IN ({placeholders})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids + cohort_sample_ids)
-        else:
-            print(f"Warning: Cohort file {cohort_file} not found. Using all samples.")
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids)
+        # Get sample IDs from the ancestry_groups table
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
+        sample_ids = json.loads(cohort_result[0])
     else:
-        # No cohort filtering, use original query
-        cursor.execute(f"""
-            SELECT DISTINCT SAMPLE_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ? 
-            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-            ORDER BY SAMPLE_ID
-        """, [score_type] + pgs_ids)
-    
-    sample_ids = [row[0] for row in cursor.fetchall()]
+        cursor.execute("SELECT DISTINCT SAMPLE_ID FROM scores")
+        sample_ids = [row[0] for row in cursor.fetchall()]
+        print(f"Using {len(sample_ids)} total samples")
+
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
     
     if cohort and cohort != "ALL":
         print(f"Using {len(sample_ids)} samples from {cohort} cohort.")
     
-    print("Creating matrix data structure...")
-    
-    # Store the data as a sparse structure (dictionary of dictionaries)
-    data_dict = defaultdict(dict)
+    print("creating matrix data structure...")
+    # Build placeholders for the IN clauses
+    sample_placeholders = ','.join(['?'] * len(sample_ids))
+    pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+
+    # Create the temp table with proper placeholders
+    query = f"""
+        CREATE TEMP TABLE temp_filtered_scores AS
+        SELECT SAMPLE_ID, PGS_ID, SCORE
+        FROM scores
+        WHERE SCORE_TYPE = ?
+        AND SAMPLE_ID IN ({sample_placeholders})
+        AND PGS_ID IN ({pgs_placeholders})
+    """
+
+    # Parameters list: first the score_type, then all sample_ids, then all pgs_ids
+    params = [score_type] + sample_ids + pgs_ids
+    cursor.execute(query, params)
+
+    # Create an index on the temp table for faster retrieval
+    cursor.execute("CREATE INDEX idx_temp_filtered ON temp_filtered_scores(SAMPLE_ID, PGS_ID)")
+
+    # Fetch all results at once
+    cursor.execute("SELECT SAMPLE_ID, PGS_ID, SCORE FROM temp_filtered_scores")
+
+    data_dict = {}
     scores_list = []
-    
-    # Process in chunks to handle large datasets efficiently
-    chunk_size = 1000000
-    offset = 0
-    
-    print("Fetching scores in chunks...")
-    while True:
-        query = """
-            SELECT SAMPLE_ID, PGS_ID, SCORE
-            FROM scores
-            WHERE SCORE_TYPE = ?
-            AND SAMPLE_ID IN ({})
-            AND PGS_ID IN ({})
-            LIMIT {} OFFSET {}
-        """.format(','.join(['?']*len(sample_ids)), 
-                  ','.join(['?']*len(pgs_ids)),
-                  chunk_size, offset)
-        
-        cursor.execute(query, [score_type] + sample_ids + pgs_ids)
-        chunk = cursor.fetchall()
-        
-        if not chunk:
-            break
-            
-        for sample_id, pgs_id, score in chunk:
-            data_dict[sample_id][pgs_id] = score
-            scores_list.append(score)
-        
-        offset += chunk_size
-        print(f"Processed {offset} rows...")
-    
+
+    for sample_id, pgs_id, score in cursor:
+        if sample_id not in data_dict:
+            data_dict[sample_id] = {}
+        data_dict[sample_id][pgs_id] = score
+        scores_list.append(score)
+    print("Finishing constructing matrix.")
+
     # Close database connection
     conn.close()
 
@@ -4028,9 +3989,10 @@ def add_interactive_filter_umap(html_file_path, output_file_path=None):
     if output_file_path is None:
         file_name, file_ext = os.path.splitext(html_file_path)
         output_file_path = f"{file_name}_interactive{file_ext}"
+        output_file_path = output_file_path[1:]
     
     # Read the original HTML file
-    with open(html_file_path, 'r', encoding='utf-8') as file:
+    with open(html_file_path[1:], 'r', encoding='utf-8') as file:
         html_content = file.read()
     
     # Parse HTML
