@@ -53,6 +53,15 @@
                     </li>
                 </ul>
             </div>
+            <div class="dropdown ms-2">
+                <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                  Recent Requests
+                  <span class="badge bg-info text-dark ms-1" id="pendingRequestsCount">0</span>
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="recentRequestsDropdown" id="recentRequestsList" style="width: 300px;">
+                  <li><p class="dropdown-item text-center text-muted">No recent requests</p></li>
+                </ul>
+            </div>
         </div>
     </nav>
 
@@ -80,3 +89,117 @@
     {% block scripts %}{% endblock %}
 </body>
 </html>
+<script>
+    // Function to update the recent requests dropdown
+    function updateRecentRequestsDropdown() {
+        $.ajax({
+            url: '/api/list_tasks',
+            type: 'GET',
+            data: { limit: 5 },
+            success: function(response) {
+                const $dropdown = $('#recentRequestsList');
+                $dropdown.empty();
+                
+                if (response.length === 0) {
+                    $dropdown.append('<li><p class="dropdown-item text-center text-muted">No recent requests</p></li>');
+                    $('#pendingRequestsCount').text('0').hide();
+                    return;
+                }
+                
+                // Count pending requests
+                const pendingCount = response.filter(task => task.status === 'processing' || task.status === 'queued').length;
+                if (pendingCount > 0) {
+                    $('#pendingRequestsCount').text(pendingCount).show();
+                } else {
+                    $('#pendingRequestsCount').hide();
+                }
+                
+                // Add each task to the dropdown
+                response.forEach(task => {
+                    // Get status icon
+                    let statusIcon = '';
+                    if (task.status === 'completed') {
+                        statusIcon = '<span class="status-dot status-completed"></span>';
+                    } else if (task.status === 'processing' || task.status === 'queued') {
+                        statusIcon = '<span class="status-dot status-processing"></span>';
+                    } else {
+                        statusIcon = '<span class="status-dot status-failed"></span>';
+                    }
+                    
+                    // Format date
+                    const createdDate = new Date(task.created_at);
+                    const formattedDate = createdDate.toLocaleString();
+                    
+                    // Create item
+                    const taskName = task.name || `${task.task_type.charAt(0).toUpperCase() + task.task_type.slice(1)} - ${task.task_id.substring(0, 6)}`;
+                    
+                    const $item = $(`
+                    <li>
+                        <a class="dropdown-item" href="${getTaskPageUrl(task.task_type, task.task_id)}">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <span class="text-truncate" style="max-width: 200px;">${statusIcon} ${taskName}</span>
+                            <small class="text-muted">${task.status}</small>
+                        </div>
+                        <small class="text-muted d-block">${formattedDate}</small>
+                        </a>
+                    </li>
+                    `);
+                    
+                    $dropdown.append($item);
+                });
+                
+                // Add link to all tasks
+                $dropdown.append('<li><hr class="dropdown-divider"></li>');
+                $dropdown.append('<li><a class="dropdown-item text-center" href="/tasks">View All Tasks</a></li>');
+            },
+            error: function(error) {
+                console.error('Error fetching recent tasks:', error);
+            }
+        });
+    }
+
+    // Add CSS for status dots
+    $('head').append(`
+        <style>
+            .status-dot {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 6px;
+            }
+            .status-completed {
+            background-color: #28a745;
+            }
+            .status-processing {
+            background-color: #ffc107;
+            }
+            .status-failed {
+            background-color: #dc3545;
+            }
+        </style>
+    `);
+
+    // Helper function to get the correct page URL for a task
+    function getTaskPageUrl(taskType, taskId) {
+        switch (taskType) {
+            case 'heatmap':
+            case 'umap':
+            case 'svd':
+            return `/multivariate?task_id=${taskId}`;
+            case 'distribution':
+            return `/distribution?task_id=${taskId}`;
+            case 'subcohort_plot':
+            return `/subcohorts?task_id=${taskId}`;
+            default:
+            return `/tasks?task_id=${taskId}`;
+        }
+    }
+
+    // Update dropdown on load and every 10 seconds
+    $(document).ready(function() {
+        updateRecentRequestsDropdown();
+        setInterval(updateRecentRequestsDropdown, 10000);
+    });
+
+</script>

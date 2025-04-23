@@ -102,6 +102,9 @@ class DistributionRequest(BaseModel):
     cohort_name: Optional[str] = None
     pgs_comparison: Optional[ScoreComparisonRequest] = None
 
+    # Job name
+    name: Optional[str] = None
+
 class PGSRequestItem(BaseModel):
     pgs_id: str
     color: str
@@ -123,6 +126,8 @@ class HeatmapRequest(BaseModel):
     pgs_ids: Optional[List[str]] = None
     cohort: Optional[str] = None
     subcohorts: Optional[List[Subcohort]] = None
+    # Job name
+    name: Optional[str] = None
 
 class UMAPRequest(BaseModel):
     score_type: str
@@ -131,6 +136,8 @@ class UMAPRequest(BaseModel):
     pgs_ids: Optional[List[str]] = None
     cohort: Optional[str] = None
     view_type: str = "sample"  
+    # Job name
+    name: Optional[str] = None
 
 class SVDRequest(BaseModel):
     score_type: str
@@ -139,7 +146,8 @@ class SVDRequest(BaseModel):
     plot_type: str = "combined"
     perspective: Optional[str] = "sample"
     max_vectors: Optional[int] = 20 
-    
+    # Job name
+    name: Optional[str] = None
     @validator('plot_type')
     def validate_plot_type(cls, v):
         allowed_types = ["scree", "biplot", "component_weights", "heatmap", "combined"]
@@ -187,6 +195,9 @@ class SubcohortPlotRequest(BaseModel):
     quantile_count: Optional[int] = None
     threshold_value: Optional[float] = None
     decile_count: Optional[int] = None
+    
+    # Job name
+    name: Optional[str] = None
 
 class PlotResponse(BaseModel):
     plot_url: str
@@ -202,6 +213,36 @@ class TaskResponse(BaseModel):
     name: Optional[str] = None
     status: str
     created_at: str
+
+# On startup, clear old tasks
+@app.on_event("startup")
+async def startup_recovery():
+    """Mark abandoned processing/queued tasks as failed when server starts up"""
+    try:
+        conn = sqlite3.connect(TASK_DB_PATH)
+        cursor = conn.cursor()
+        
+        # Find all tasks in processing or queued state
+        cursor.execute(
+            "SELECT task_id FROM image_tasks WHERE status IN ('processing', 'queued')"
+        )
+        abandoned_tasks = cursor.fetchall()
+        
+        if abandoned_tasks:
+            # Mark them as failed
+            for task in abandoned_tasks:
+                task_id = task[0]
+                cursor.execute(
+                    "UPDATE image_tasks SET status = ?, error = ?, completed_at = ? WHERE task_id = ?",
+                    ("failed", "Task abandoned due to server restart", datetime.now().isoformat(), task_id)
+                )
+            
+            conn.commit()
+            print(f"Marked {len(abandoned_tasks)} abandoned tasks as failed during startup")
+        
+        conn.close()
+    except Exception as e:
+        print(f"Error during startup recovery: {str(e)}")
 
 # Frontend routes
 @app.get("/", response_class=HTMLResponse)
@@ -226,6 +267,10 @@ async def subcohort_view(request: Request):
 @app.get("/metadata", response_class=HTMLResponse)
 async def metadata_view(request: Request):
     return templates.TemplateResponse("metadata.html", {"request": request})
+
+@app.get("/tasks", response_class=HTMLResponse)
+async def tasks_page(request: Request):
+    return templates.TemplateResponse("tasks.html", {"request": request})
 
 # API Routes
 @app.get("/api/metadata/{pgs_id}")
@@ -323,6 +368,7 @@ def get_pgs_data(pgs_id: str):
 @app.post("/api/generate_heatmap")
 async def generate_heatmap(request: HeatmapRequest, background_tasks: BackgroundTasks):
     """Generates a heatmap visualization and saves it as HTML file"""
+    print(f"Submitting job for task: {request.name}")
     return await process_image_request(
         request_data=request.dict(),
         task_type="heatmap",
@@ -1207,6 +1253,7 @@ def generate_heatmap_hash(score_type, std_dev_threshold, dendrogram_view, pgs_id
 @app.post("/api/generate_umap")
 async def generate_umap(request: UMAPRequest, background_tasks: BackgroundTasks):
     """Generates a UMAP visualization and saves it as HTML file"""
+    print(f"Submitting job for task: {request.name}")
     return await process_image_request(
         request_data=request.dict(),
         task_type="umap",
@@ -1619,6 +1666,7 @@ def generate_umap_hash(score_type, n_neighbors, min_dist, pgs_ids, cohort, view_
 @app.post("/api/generate_svd_image")
 async def generate_svd_image(request: SVDRequest, background_tasks: BackgroundTasks):
     """Routes to the appropriate SVD image generation function based on plot_type"""
+    print(f"Submitting job for task: {request.name}")
     return await process_image_request(
         request_data=request.dict(),
         task_type="svd",
@@ -2416,6 +2464,7 @@ async def get_permanent_cohorts():
 @app.post("/api/generate_distribution")
 async def generate_distribution(request: DistributionRequest, background_tasks: BackgroundTasks):
     """Generate distribution plots on the backend as a background task"""
+    print(f"Submitting job for task: {request.name}")
     return await process_image_request(
         request_data=request.dict(),
         task_type="distribution",
@@ -2880,6 +2929,7 @@ def calculate_percentile(value: float, array: List[float]) -> float:
 @app.post("/api/generate_subcohort_plot")
 async def generate_subcohort_plot(request: SubcohortPlotRequest, background_tasks: BackgroundTasks):
     """Generate a subcohort plot with odds ratio calculation as a background task"""
+    print(f"Submitting job for task: {request.name}")
     return await process_image_request(
         request_data=request.dict(),
         task_type="subcohort_plot",
