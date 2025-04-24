@@ -1,0 +1,388 @@
+{% extends "base.html" %}
+
+{% block title %}Task History{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+  <h1 class="mb-4">Task History</h1>
+  
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Your Visualization Tasks</h5>
+      <div>
+        <button id="refreshTasksBtn" class="btn btn-sm btn-outline-primary">
+          <i class="fas fa-sync-alt"></i> Refresh
+        </button>
+        <div class="btn-group ms-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            Filter by Type
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" id="taskTypeFilter">
+            <li><a class="dropdown-item active" href="#" data-type="all">All Types</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="#" data-type="heatmap">Heatmap</a></li>
+            <li><a class="dropdown-item" href="#" data-type="umap">UMAP</a></li>
+            <li><a class="dropdown-item" href="#" data-type="svd">SVD</a></li>
+            <li><a class="dropdown-item" href="#" data-type="distribution">Distribution</a></li>
+            <li><a class="dropdown-item" href="#" data-type="subcohort_plot">Subcohort Plot</a></li>
+          </ul>
+        </div>
+        <div class="btn-group ms-2">
+          <button type="button" class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+            Filter by Status
+          </button>
+          <ul class="dropdown-menu dropdown-menu-end" id="taskStatusFilter">
+            <li><a class="dropdown-item active" href="#" data-status="all">All Statuses</a></li>
+            <li><hr class="dropdown-divider"></li>
+            <li><a class="dropdown-item" href="#" data-status="queued">Queued</a></li>
+            <li><a class="dropdown-item" href="#" data-status="processing">Processing</a></li>
+            <li><a class="dropdown-item" href="#" data-status="completed">Completed</a></li>
+            <li><a class="dropdown-item" href="#" data-status="failed">Failed</a></li>
+          </ul>
+        </div>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th scope="col">Task ID</th>
+              <th scope="col">Task Name</th>
+              <th scope="col">Type</th>
+              <th scope="col">Status</th>
+              <th scope="col">Created</th>
+              <th scope="col">Completed</th>
+              <th scope="col">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="tasksTableBody">
+            <tr>
+              <td colspan="6" class="text-center py-4">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="d-flex justify-content-between align-items-center">
+        <div>
+          <span class="text-muted" id="taskCount">0 tasks</span>
+        </div>
+        <div>
+          <button id="prevPageBtn" class="btn btn-sm btn-outline-secondary" disabled>Previous</button>
+          <span class="mx-2" id="pageInfo">Page 1</span>
+          <button id="nextPageBtn" class="btn btn-sm btn-outline-secondary" disabled>Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Task Details Modal -->
+  <div class="modal fade" id="taskDetailsModal" tabindex="-1" aria-labelledby="taskDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="taskDetailsModalLabel">Task Details</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <strong>Task ID:</strong> <span id="detailsTaskId"></span>
+          </div>
+          <div class="mb-3">
+            <strong>Request Data:</strong>
+            <pre class="bg-light p-3 mt-2" id="detailsRequestData" style="max-height: 300px; overflow-y: auto;"></pre>
+          </div>
+          <div id="detailsErrorContainer" class="mb-3 d-none">
+            <strong>Error:</strong>
+            <div class="alert alert-danger mt-2" id="detailsError"></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="viewResultBtn">View Result</button>
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Task list state
+let currentPage = 1;
+let pageSize = 20;
+let totalTasks = 0;
+let currentTaskType = 'all';
+let currentTaskStatus = 'all';
+
+// Load tasks on page load and start periodic refresh
+$(document).ready(function() {
+  loadTasks();
+  
+  // Auto-refresh every 10 seconds
+  const refreshInterval = setInterval(loadTasks, 10000);
+  
+  // Stop refreshing when the page is hidden to save resources
+  document.addEventListener('visibilitychange', function() {
+    if (document.hidden) {
+      clearInterval(refreshInterval);
+    } else {
+      loadTasks();
+      setInterval(loadTasks, 10000);
+    }
+  });
+  
+  // Button event handlers
+  $('#refreshTasksBtn').on('click', loadTasks);
+  $('#prevPageBtn').on('click', prevPage);
+  $('#nextPageBtn').on('click', nextPage);
+  
+  // Filter event handlers
+  $('#taskTypeFilter').on('click', 'a', function(e) {
+    e.preventDefault();
+    $('#taskTypeFilter a').removeClass('active');
+    $(this).addClass('active');
+    currentTaskType = $(this).data('type');
+    currentPage = 1;
+    loadTasks();
+  });
+  
+  $('#taskStatusFilter').on('click', 'a', function(e) {
+    e.preventDefault();
+    $('#taskStatusFilter a').removeClass('active');
+    $(this).addClass('active');
+    currentTaskStatus = $(this).data('status');
+    currentPage = 1;
+    loadTasks();
+  });
+  
+  // View result button event handler
+  $('#viewResultBtn').on('click', function() {
+    const taskId = $('#detailsTaskId').text();
+    const taskType = $('#detailsTaskType').text();  // You'll need to add this element to store the task type
+    window.location.href = getTaskPageUrl(taskType, taskId);
+    });
+
+  $('.view-task-btn').on('click', function() {
+    const taskId = $(this).data('task-id');
+    const taskType = $(this).data('task-type');
+    window.location.href = getTaskPageUrl(taskType, taskId);
+    });
+});
+
+// Function to load tasks
+function loadTasks() {
+  let url = `/api/list_tasks?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}`;
+  
+  if (currentTaskType !== 'all') {
+    url += `&task_type=${currentTaskType}`;
+  }
+  
+  if (currentTaskStatus !== 'all') {
+    url += `&status=${currentTaskStatus}`;
+  }
+  
+  $.ajax({
+    url: url,
+    type: 'GET',
+    success: function(response) {
+      renderTasksTable(response);
+    },
+    error: function(error) {
+      console.error('Error loading tasks:', error);
+      $('#tasksTableBody').html(`
+        <tr>
+          <td colspan="6" class="text-center text-danger py-4">
+            <i class="fas fa-exclamation-triangle me-2"></i>
+            Failed to load tasks. Please try again.
+          </td>
+        </tr>
+      `);
+    }
+  });
+}
+
+// Function to render the tasks table
+function renderTasksTable(data) {
+  const tasks = data.tasks || data;
+  totalTasks = data.total || tasks.length;
+  
+  const $tableBody = $('#tasksTableBody');
+  $tableBody.empty();
+  
+  if (tasks.length === 0) {
+    $tableBody.html(`
+      <tr>
+        <td colspan="7" class="text-center text-muted py-4"><!-- Update colspan to 7 -->
+          <i class="fas fa-search me-2"></i>
+          No tasks found
+        </td>
+      </tr>
+    `);
+  } else {
+    tasks.forEach((task, index) => {
+      // Format dates
+      const createdDate = new Date(task.created_at);
+      const formattedCreatedDate = createdDate.toLocaleString();
+      
+      let formattedCompletedDate = '-';
+      if (task.completed_at) {
+        const completedDate = new Date(task.completed_at);
+        formattedCompletedDate = completedDate.toLocaleString();
+      }
+      
+      // Status badge
+      let statusBadge = '';
+      if (task.status === 'completed') {
+        statusBadge = '<span class="badge bg-success">Completed</span>';
+      } else if (task.status === 'processing') {
+        statusBadge = '<span class="badge bg-warning text-dark">Processing</span>';
+      } else if (task.status === 'queued') {
+        statusBadge = '<span class="badge bg-info text-dark">Queued</span>';
+      } else {
+        statusBadge = '<span class="badge bg-danger">Failed</span>';
+      }
+
+      // Task ID - get first 8 characters for display
+      const shortTaskId = task.task_id.substring(0, 8);
+
+      // Task name - use provided name or a default if none
+      const taskName = task.name || '(Unnamed task)';
+      
+      // Create row
+      const $row = $(`
+        <tr data-task-id="${task.task_id}" data-task-type="${task.task_type}">
+            <td class="text-monospace">${shortTaskId}</td>
+            <td class="text-truncate" style="max-width: 200px;">${taskName}</td>
+            <td>${task.task_type.charAt(0).toUpperCase() + task.task_type.slice(1).replace('_', ' ')}</td>
+            <td>${statusBadge}</td>
+            <td>${formattedCreatedDate}</td>
+            <td>${formattedCompletedDate}</td>
+            <td>
+            <div class="btn-group">
+                <button type="button" class="btn btn-sm btn-outline-primary view-task-btn" 
+                        data-task-id="${task.task_id}" 
+                        data-task-type="${task.task_type}">
+                <i class="fas fa-eye"></i>
+                </button>
+                <button type="button" class="btn btn-sm btn-outline-info task-details-btn" 
+                        data-task-id="${task.task_id}"
+                        data-task-type="${task.task_type}">
+                <i class="fas fa-info-circle"></i>
+                </button>
+            </div>
+            </td>
+        </tr>
+        `);
+      
+      $tableBody.append($row);
+    });
+    
+    // View result button event handler
+    $('#viewResultBtn').on('click', function() {
+        const taskId = $('#detailsTaskId').text();
+        const taskType = $('#detailsTaskType').text();  
+        window.location.href = getTaskPageUrl(taskType, taskId);
+    });
+
+    $('.view-task-btn').on('click', function() {
+        const taskId = $(this).data('task-id');
+        const taskType = $(this).data('task-type');
+        window.location.href = getTaskPageUrl(taskType, taskId);
+    });
+    
+    // Add task details button handler if not already added
+    $('.task-details-btn').on('click', function() {
+        const taskId = $(this).data('task-id');
+        showTaskDetails(taskId);
+    });
+  }
+  
+  // Update pagination
+  updatePagination();
+}
+
+// Function to update pagination controls
+function updatePagination() {
+  const totalPages = Math.ceil(totalTasks / pageSize);
+  $('#taskCount').text(`${totalTasks} task${totalTasks !== 1 ? 's' : ''}`);
+  $('#pageInfo').text(`Page ${currentPage} of ${totalPages || 1}`);
+  
+  $('#prevPageBtn').prop('disabled', currentPage <= 1);
+  $('#nextPageBtn').prop('disabled', currentPage >= totalPages);
+}
+
+// Previous page function
+function prevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    loadTasks();
+  }
+}
+
+// Next page function
+function nextPage() {
+  const totalPages = Math.ceil(totalTasks / pageSize);
+  if (currentPage < totalPages) {
+    currentPage++;
+    loadTasks();
+  }
+}
+
+// Function to show task details
+function showTaskDetails(taskId) {
+  $.ajax({
+    url: `/api/task_status/${taskId}`,
+    type: 'GET',
+    success: function(task) {
+      $('#detailsTaskId').text(task.task_id);
+      
+      try {
+        const requestData = JSON.parse(task.request_data);
+        $('#detailsRequestData').text(JSON.stringify(requestData, null, 2));
+      } catch (e) {
+        $('#detailsRequestData').text(task.request_data || 'No request data available');
+      }
+      
+      if (task.error) {
+        $('#detailsErrorContainer').removeClass('d-none');
+        $('#detailsError').text(task.error);
+      } else {
+        $('#detailsErrorContainer').addClass('d-none');
+      }
+      
+      $('#viewResultBtn').prop('disabled', task.status !== 'completed');
+      
+      const taskDetailsModal = new bootstrap.Modal(document.getElementById('taskDetailsModal'));
+      taskDetailsModal.show();
+    },
+    error: function(error) {
+      console.error('Error loading task details:', error);
+      alert('Failed to load task details. Please try again.');
+    }
+  });
+}
+
+// Helper function to get the correct page URL for a task
+function getTaskPageUrl(taskType, taskId) {
+  switch (taskType) {
+    case 'heatmap':
+    case 'umap':
+    case 'svd':
+      return `/multivariate?task_id=${taskId}`;
+    case 'distribution':
+      return `/distribution?task_id=${taskId}`;
+    case 'subcohort_plot':
+      return `/subcohorts?task_id=${taskId}`;
+    default:
+      return `/tasks?task_id=${taskId}`;
+  }
+}
+
+</script>
+{% endblock %}
