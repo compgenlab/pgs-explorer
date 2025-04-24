@@ -6,4 +6,4 @@ pgsexplorer/
 __pycache__/
 *.py[cod]
 *$py.class
-
+server.log
