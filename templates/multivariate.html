@@ -72,6 +72,8 @@
                         <option value="heatmap" selected>Heatmap</option>
                         <option value="umap">UMAP</option>
                         <option value="svd">SVD Analysis</option>
+                        <option value="pca">PCA</option>
+                        <option value="tsne">t-SNE</option>
                     </select>
                     <div class="form-text">Select visualization type</div>
                 </div>
@@ -137,7 +139,99 @@
                         </div>
                     </div>
                 </div>
-                
+
+                <!-- PCA-specific controls -->
+                <div id="pcaControls" style="display: none;">
+                    <div class="mb-3">
+                        <label for="pcaPerspective" class="form-label">PCA Perspective</label>
+                        <select class="form-select" id="pcaPerspective" name="pcaPerspective">
+                            <option value="sample" selected>Sample-centered (samples as points)</option>
+                            <option value="score">Score-centered (PGS scores as points)</option>
+                        </select>
+                        <div class="form-text">Choose whether points represent samples or PGS scores</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Components to Plot</label>
+                        <div class="row g-2">
+                            <div class="col-6">
+                                <label for="pcaXComponent" class="form-label">X-axis</label>
+                                <select class="form-select" id="pcaXComponent" name="pcaXComponent">
+                                    <option value="1" selected>PC1</option>
+                                    <option value="2">PC2</option>
+                                    <option value="3">PC3</option>
+                                    <option value="4">PC4</option>
+                                    <option value="5">PC5</option>
+                                </select>
+                            </div>
+                            <div class="col-6">
+                                <label for="pcaYComponent" class="form-label">Y-axis</label>
+                                <select class="form-select" id="pcaYComponent" name="pcaYComponent">
+                                    <option value="1">PC1</option>
+                                    <option value="2" selected>PC2</option>
+                                    <option value="3">PC3</option>
+                                    <option value="4">PC4</option>
+                                    <option value="5">PC5</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-text">Select which principal components to display</div>
+                    </div>
+                    
+                    <div class="mb-3" style="display: none;">
+                        <label for="pcaVarExplained" class="form-label">Show Variance Explained</label>
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="pcaVarExplained" name="pcaVarExplained" checked>
+                            <label class="form-check-label" for="pcaVarExplained">Include variance explained</label>
+                        </div>
+                        <div class="form-text">Display percentage of variance explained by each component</div>
+                    </div>
+
+                </div>
+
+                <!-- t-SNE specific controls -->
+                <div id="tsneControls" style="display: none;">
+                    <!-- Perspective selector remains unchanged -->
+                    <div class="mb-3">
+                        <label for="tsnePerspective" class="form-label">t-SNE Perspective</label>
+                        <select class="form-select" id="tsnePerspective" name="tsnePerspective">
+                            <option value="sample" selected>Sample-centered (samples as points)</option>
+                            <option value="score">Score-centered (PGS scores as points)</option>
+                        </select>
+                        <div class="form-text">Choose whether points represent samples or PGS scores</div>
+                    </div>
+
+                    <!-- Perplexity -->
+                    <div class="mb-3">
+                        <label class="form-label">Perplexity</label>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="range" class="form-range" id="tsnePerplexity" min="5" max="100" value="30">
+                            <input type="number" class="form-control" id="tsnePerplexityInput" min="5" max="100" value="30" style="width: 80px;">
+                        </div>
+                        <div class="form-text">Balance attention between local and global structure</div>
+                    </div>
+
+                    <!-- Iterations -->
+                    <div class="mb-3">
+                        <label class="form-label">Iterations</label>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="range" class="form-range" id="tsneIterations" min="250" max="2000" step="250" value="1000">
+                            <input type="number" class="form-control" id="tsneIterationsInput" min="250" max="2000" step="250" value="1000" style="width: 80px;">
+                        </div>
+                        <div class="form-text">More iterations can improve quality but takes longer</div>
+                    </div>
+
+                    <!-- Learning Rate -->
+                    <div class="mb-3">
+                        <label class="form-label">Learning Rate</label>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="range" class="form-range" id="tsneLearningRate" min="10" max="1000" step="10" value="200">
+                            <input type="number" class="form-control" id="tsneLearningRateInput" min="10" max="1000" step="10" value="200" style="width: 80px;">
+                        </div>
+                        <div class="form-text">Controls how quickly the algorithm converges</div>
+                    </div>
+                </div>
+
                 <!-- Common controls -->
                 <div class="mb-3">
                     <label for="stdDevThreshold" class="form-label">Std Dev Threshold</label>
@@ -472,6 +566,12 @@
                 case 'svd':
                     generateSVD(taskName);
                     break;
+                case 'pca':
+                    generatePCA(taskName);
+                    break;
+                case 'tsne':
+                    generateTSNE(taskName);
+                    break;
             }
         });
 
@@ -552,6 +652,26 @@
             }
         });
 
+        // Apply sync to all controls
+        syncSliderAndInput("tsnePerplexity", "tsnePerplexityInput");
+        syncSliderAndInput("tsneIterations", "tsneIterationsInput");
+        syncSliderAndInput("tsneLearningRate", "tsneLearningRateInput");
+        
+        function syncSliderAndInput(sliderId, inputId) {
+            const slider = document.getElementById(sliderId);
+            const input = document.getElementById(inputId);
+
+            // Slider updates input
+            slider.addEventListener('input', () => {
+                input.value = slider.value;
+            });
+
+            // Input updates slider
+            input.addEventListener('input', () => {
+                slider.value = input.value;
+            });
+        }
+
         // Function to load permanent cohorts
         function loadPermanentCohorts() {
             $.ajax({
@@ -582,35 +702,52 @@
             $('#umapControls').hide();
             $('#svdControls').hide();
             $('#biplotControlsContainer').hide();
+            $('#pcaControls').hide();
+            $('#tsneControls').hide();
             $('#dendrogramView').parent().hide();
-            $('#stdDevThreshold').parent().hide();
-            
+            $('#stdDevThreshold').parent().hide(); // Show by default for most plot types
+
+            // Handle subcohort sections visibility
             if (plotType === 'heatmap') {
                 // Show subcohort management for heatmap only
                 subcohortSections.show();
+                $('#stdDevThreshold').parent().show();
             } else {
                 // Hide subcohort management for other plot types
                 subcohortSections.hide();
             }
+            
             // Plot-specific controls
-            if (plotType === 'heatmap') {
-                // Show heatmap-specific controls
-                $('#dendrogramView').parent().show();
-                $('#stdDevThreshold').parent().show();
-            } 
-            else if (plotType === 'umap') {
-                // Show UMAP-specific controls
-                $('#umapControls').show();
-                $('#stdDevThreshold').parent().show();
-            } 
-            else if (plotType === 'svd') {
-                // Show SVD-specific controls
-                $('#svdControls').show();
-                
-                // Show biplot perspective controls only for biplot or combined views
-                if (svdPlotType === 'biplot' || svdPlotType === 'combined') {
-                    $('#biplotControlsContainer').show();
-                }
+            switch (plotType) {
+                case 'heatmap':
+                    // Show heatmap-specific controls
+                    $('#dendrogramView').parent().show();
+                    break;
+                    
+                case 'umap':
+                    // Show UMAP-specific controls
+                    $('#umapControls').show();
+                    break;
+                    
+                case 'svd':
+                    // Show SVD-specific controls
+                    $('#svdControls').show();
+                    
+                    // Show biplot perspective controls only for biplot or combined views
+                    if (svdPlotType === 'biplot' || svdPlotType === 'combined') {
+                        $('#biplotControlsContainer').show();
+                    }
+                    break;
+                    
+                case 'pca':
+                    // Show PCA-specific controls
+                    $('#pcaControls').show();
+                    break;
+                    
+                case 'tsne':
+                    // Show t-SNE specific controls
+                    $('#tsneControls').show();
+                    break;
             }
         }
 
@@ -1449,6 +1586,207 @@
                         `);
                     }
                     $('#plotPlaceholder').show();
+                }
+            });
+        }
+
+        // Generate PCA
+        function generatePCA(taskName = ''){
+            // Show loading spinner
+            $('#loadingSpinner').show();
+            if($('#plotPlaceholder').length > 0) {
+                $('#plotPlaceholder').remove();
+            }
+
+            // Get parameters
+            const scoreType = $('#scoreType').val();
+            const cohort = $('#cohortSelection').val();
+            const perspective = $('#pcaPerspective').val();
+
+            // Get selected PGS IDs
+            let pgsIds = [];
+            if (!$('#selectAllPgs').is(':checked')) {
+                pgsIds = pgsScores.map(p => p.id);
+                console.log(pgsIds.length)
+            }
+            
+            // Get requested axes 
+            const x_axis = $('#pcaXComponent').val();
+            const y_axis = $('#pcaYComponent').val();
+            const include_variance = $('#pcaVarExplained').val();
+
+            // Prepare request data
+            const requestData = {
+                score_type: scoreType,
+                pgs_ids: pgsIds.length > 0 ? pgsIds : null,
+                cohort: cohort,
+                perspective: perspective,
+                x_axis: x_axis,
+                y_axis: y_axis,
+                include_variance: include_variance,
+                name: taskName 
+            };
+            
+            // Close the task name modal if it's open
+            const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+            if (taskNameModal) {
+                taskNameModal.hide();
+                
+                // Reset modal for next use
+                setTimeout(() => {
+                    $('.modal-body:first').show();
+                    $('#taskStatusArea').hide();
+                    $('#confirmTaskName').prop('disabled', false);
+                }, 500);
+            }
+            
+            // Make API request
+            $.ajax({
+                url: '/api/generate_pca',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(requestData),
+                success: function(response) {
+                    // Check if we received a task ID (background task) or direct file path
+                    if (response.task_id) {
+                        // We got a task ID - this is the new background task system
+                        const taskId = response.task_id;
+                        
+                        // Show task info in the alert
+                        showAlert(`PCA visualization started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                        
+                        // Start polling for task status
+                        pollTaskStatus(taskId, 'svd');
+                    } else if (response.file_path) {
+                        // Handle as before
+                        $('#loadingSpinner').hide();
+                        
+                        // Display the PCA visualization
+                        $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
+                        $('#heatmapPlot').show();
+                        
+                        // Enable download buttons 
+                        $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'pca');
+                        console.log('this is def pca!')
+                        // Show success message
+                        showAlert('PCA visualization generated successfully.', 'success');
+                    } else {
+                        // Unexpected response format
+                        $('#loadingSpinner').hide();
+                        showAlert('Error: Invalid response from server', 'danger');
+                    }
+                },
+                error: function(xhr, status, error) {
+                    // Hide loading spinner and show error
+                    $('#loadingSpinner').hide();
+                    
+                    console.error("AJAX error:", status, error);
+                    console.error("Response status:", xhr.status);
+                    console.error("Response text:", xhr.responseText);
+                    
+                    try {
+                        const response = JSON.parse(xhr.responseText);
+                        showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                    } catch (e) {
+                        showAlert('Error generating SVD visualization: ' + error, 'danger');
+                    }
+                    
+                    // Restore placeholder if needed
+                    if($('#plotPlaceholder').length === 0) {
+                        $('#heatmapContainer').append(`
+                            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                                <div class="text-center p-4">
+                                    <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                                    <p class="text-muted">Select parameters and click "Generate PCA" to visualize the data.</p>
+                                </div>
+                            </div>
+                        `);
+                    }
+                    $('#plotPlaceholder').show();
+                }
+            });
+        }
+
+        // Generate t-SNE
+        function generateTSNE(taskName = '') {
+            // Show loading spinner
+            $('#loadingSpinner').show();
+            if ($('#plotPlaceholder').length > 0) {
+                $('#plotPlaceholder').remove();
+            }
+
+            // Get parameters
+            const scoreType = $('#scoreType').val();
+            const cohort = $('#cohortSelection').val();
+            const perspective = $('#tsnePerspective').val();  // Assuming same control is used
+
+            // Get selected PGS IDs
+            let pgsIds = [];
+            if (!$('#selectAllPgs').is(':checked')) {
+                pgsIds = pgsScores.map(p => p.id);
+            }
+
+            // t-SNE-specific parameters
+            const perplexity = parseInt($('#tsnePerplexity').val());
+            const iterations = parseInt($('#tsneIterations').val());
+            const learningRate = parseFloat($('#tsneLearningRate').val());
+
+            // Prepare request data
+            const requestData = {
+                score_type: scoreType,
+                pgs_ids: pgsIds.length > 0 ? pgsIds : null,
+                cohort: cohort,
+                perspective: perspective,
+                perplexity: perplexity,
+                iterations: iterations,
+                learning_rate: learningRate,
+                name: taskName
+            };
+
+            // Close the task name modal if it's open
+            const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+            if (taskNameModal) {
+                taskNameModal.hide();
+                setTimeout(() => {
+                    $('.modal-body:first').show();
+                    $('#taskStatusArea').hide();
+                    $('#confirmTaskName').prop('disabled', false);
+                }, 500);
+            }
+
+            // Make API request
+            $.ajax({
+                url: '/api/generate_tsne',
+                method: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(requestData),
+                success: function (response) {
+                    $('#loadingSpinner').hide();
+
+                    if (response.task_id) {
+                        showAlert(`t-SNE visualization started (Task ID: ${response.task_id}). You'll be notified when it's ready.`, 'info');
+                        pollTaskStatus(response.task_id, 'tsne');
+                    } else if (response.file_path) {
+                        $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
+                        $('#heatmapPlot').show();
+
+                        $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                        $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'tsne');
+
+                        showAlert('t-SNE visualization generated successfully.', 'success');
+                    } else {
+                        showAlert('Error: Invalid response from server', 'danger');
+                    }
+                },
+                error: function (xhr, status, error) {
+                    $('#loadingSpinner').hide();
+                    console.error("AJAX error:", status, error);
+                    console.error("Response status:", xhr.status);
+                    console.error("Response text:", xhr.responseText);
+                    showAlert('Error generating t-SNE visualization. See console for details.', 'danger');
                 }
             });
         }
