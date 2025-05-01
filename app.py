@@ -2920,22 +2920,40 @@ def process_distribution(request_data):
                 
                 cohort_data = []
                 for cohort in cohorts:
-                    # Filter to include only samples that exist in our data
-                    valid_samples = [
-                        {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                        for sample_id in cohort["sample_ids"]
-                        if sample_id in score_dict
-                    ]
-                    
-                    cohort_scores = [sample["SCORE"] for sample in valid_samples]
-                    
-                    cohort_data.append({
-                        "color": cohort["color"],
-                        "values": cohort_scores,
-                        "samples": valid_samples,
-                        "name": cohort["name"]
-                    })
-                
+                    print(cohort.keys())
+                    if cohort["name"] != "ALL":
+                        # Filter to include only samples that exist in our data
+                        valid_samples = [
+                            {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                            for sample_id in cohort["sample_ids"]
+                            if sample_id in score_dict
+                        ]
+                        
+                        cohort_scores = [sample["SCORE"] for sample in valid_samples]
+                        
+                        cohort_data.append({
+                            "color": cohort["color"],
+                            "values": cohort_scores,
+                            "samples": valid_samples,
+                            "name": cohort["name"]
+                        })
+                    else:
+                        # Filter to include only samples that exist in our data
+                        valid_samples = [
+                            {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                            for sample_id in score_dict
+                            ]
+                        
+                        print(f"For ALL: {len(valid_samples)} samples.")
+                        cohort_scores = [sample["SCORE"] for sample in valid_samples]
+                        
+                        cohort_data.append({
+                            "color": cohort["color"],
+                            "values": cohort_scores,
+                            "samples": valid_samples,
+                            "name": cohort["name"]
+                        })
+
                 # Create Plotly figure based on chart_type
                 fig = go.Figure()
                 
@@ -3104,6 +3122,7 @@ def process_distribution(request_data):
                 pgs_comparison = request_data.get("pgs_comparison", {})
                 chart_type = request_data.get("chart_type", "")
                 plot_title = request_data.get("plot_title", "")
+                sample_ids = pgs_comparison.get("sample_ids", [])
                 
                 if not pgs_comparison or not score_type:
                     raise ValueError("Missing required fields for score comparison")
@@ -3124,13 +3143,19 @@ def process_distribution(request_data):
                     # Create a dictionary mapping SAMPLE_ID to SCORE
                     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
                     
-                    # Filter to include only samples that exist in our data
-                    valid_samples = [
-                        {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                        for sample_id in pgs_comparison.get("sample_ids", [])
-                        if sample_id in score_dict
-                    ]
-                    
+                    if sample_ids:
+                        # Filter to include only samples that exist in our data
+                        valid_samples = [
+                            {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                            for sample_id in pgs_comparison.get("sample_ids", [])
+                            if sample_id in score_dict
+                        ]
+                    else: 
+                        valid_samples = [
+                            {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                            for sample_id in score_dict
+                            ]
+                        
                     scores = [sample["SCORE"] for sample in valid_samples]
                     
                     pgs_data.append({
