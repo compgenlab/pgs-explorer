@@ -335,7 +335,6 @@ def get_pgs_list():
 @app.get("/api/score_types")
 def get_score_types():
     """Fetches all distinct score types available in the database."""
-    print("hi nadia")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -502,81 +501,16 @@ def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
-    # Get PGS IDs
-    if specific_pgs_ids:
-        placeholders = ','.join(['?'] * len(specific_pgs_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            AND PGS_ID IN ({placeholders})
-            ORDER BY PGS_ID
-            LIMIT ?
-        """, [score_type] + specific_pgs_ids + [max_pgs_ids])
-    else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-            LIMIT ?
-        """, (score_type, max_pgs_ids))
-    
-    pgs_ids = [row[0] for row in cursor.fetchall()]
-    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+
+    # Get PGS ID list
+    pgs_ids = fetch_pgs_ids(specific_pgs_ids, score_type)
     
     # Get metadata for PGS IDs
-    pgs_metadata = {}
-    if pgs_ids:
-        placeholder = ','.join(['?'] * len(pgs_ids))
-        cursor.execute(f"""
-            SELECT PGS_ID, PGS_Name, Reported_Trait, PGS_Publication_ID
-            FROM pgs_metadata
-            WHERE PGS_ID IN ({placeholder})
-        """, pgs_ids)
-        
-        for pgs_id, pgs_name, reported_trait, publication_id in cursor.fetchall():
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': pgs_name or 'N/A',
-                'Reported_Trait': reported_trait or 'N/A',
-                'Publication_ID': publication_id or 'N/A'
-            }
+    pgs_metadata = fetch_pgs_metadata(pgs_ids)
     
-    # Check for missing metadata
-    missing_metadata = set(pgs_ids) - set(pgs_metadata.keys())
-    if missing_metadata:
-        print(f"Warning: {len(missing_metadata)} PGS_IDs don't have metadata")
-        for pgs_id in missing_metadata:
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': 'Unknown',
-                'Reported_Trait': 'Unknown',
-                'Publication_ID': 'Unknown'
-            }
-    
-    # Modified sample ID fetching with population filtering
-    print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
+    # Get sample IDs, filtering by PGS ID list and score type
+    sample_ids = fetch_sample_ids(cohort, pgs_ids, score_type)
 
-
-    if cohort and cohort != "ALL":
-        # Query the ancestry table to get sample IDs for the specified population
-        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
-        cohort_result = cursor.fetchone()
-        sample_ids = json.loads(cohort_result[0])
-        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
-    else:
-        # No population filtering
-        cursor.execute(f"""
-            SELECT DISTINCT SAMPLE_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ? 
-            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-            ORDER BY SAMPLE_ID
-        """, [score_type] + pgs_ids)
-        sample_ids = [row[0] for row in cursor.fetchall()]    
-
-    print(f"Large dataset optimization: {len(sample_ids)} samples × {len(pgs_ids)} PGS IDs")
-    
     # Calculate overall statistics for outlier detection
     print("Calculating overall score distribution...")
     cursor.execute("""
@@ -1276,7 +1210,7 @@ def process_umap(request_data):
         score_type = request_data["score_type"]
         n_neighbors = request_data["n_neighbors"]
         min_dist = request_data["min_dist"]
-        pgs_ids = request_data["pgs_ids"]
+        pgs_ids = request_data.get("pgs_ids", None)
         cohort = request_data["cohort"]
         view_type = request_data["view_type"]
         
@@ -1366,64 +1300,16 @@ def generate_umap_html(score_type, n_neighbors=15, min_dist=0.1, specific_pgs_id
     cursor = conn.cursor()
     
     # Get PGS IDs 
-    if specific_pgs_ids:
-        placeholders = ','.join(['?'] * len(specific_pgs_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            AND PGS_ID IN ({placeholders})
-            ORDER BY PGS_ID
-        """, [score_type] + specific_pgs_ids)
-    else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-        """, (score_type,))
+    pgs_ids = fetch_pgs_ids(specific_pgs_ids, score_type)
 
     # Get metadata for PGS IDs
-    pgs_metadata = {}
-    if pgs_ids:
-        placeholder = ','.join(['?'] * len(pgs_ids))
-        cursor.execute(f"""
-            SELECT PGS_ID, PGS_Name, Reported_Trait, PGS_Publication_ID
-            FROM pgs_metadata
-            WHERE PGS_ID IN ({placeholder})
-        """, pgs_ids)
-        
-        for pgs_id, pgs_name, reported_trait, publication_id in cursor.fetchall():
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': pgs_name or 'N/A',
-                'Reported_Trait': reported_trait or 'N/A',
-                'Publication_ID': publication_id or 'N/A'
-            }
-    
-    # Check for missing metadata
-    missing_metadata = set(pgs_ids) - set(pgs_metadata.keys())
-    if missing_metadata:
-        print(f"Warning: {len(missing_metadata)} PGS_IDs don't have metadata")
-        for pgs_id in missing_metadata:
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': 'Unknown',
-                'Reported_Trait': 'Unknown',
-                'Publication_ID': 'Unknown'
-            }
+    pgs_metadata = fetch_pgs_metadata(pgs_ids)
     
     # Modified sample ID fetching with cohort filtering
     print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
     
-    if cohort and cohort != "ALL":
-        # Get sample IDs from the ancestry_groups table
-        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
-        cohort_result = cursor.fetchone()
-        sample_ids = json.loads(cohort_result[0])
-    else:
-        cursor.execute("SELECT DISTINCT SAMPLE_ID FROM scores")
-        sample_ids = [row[0] for row in cursor.fetchall()]
-        print(f"Using {len(sample_ids)} total samples")
-
+    # Get sample IDs, filtering by PGS ID list and score type
+    sample_ids = fetch_sample_ids(cohort, pgs_ids, score_type)
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
     
     if cohort and cohort != "ALL":
@@ -2458,7 +2344,7 @@ async def generate_pca(request: PCARequest, background_tasks: BackgroundTasks):
     print(f"Submitting job for task: {request.name}")
     return await process_image_request(
         request_data=request.dict(),
-        task_type="svd",
+        task_type="pca",
         task_name=getattr(request, "name", None),
         processing_function=process_pca,
         background_tasks=background_tasks
@@ -2735,7 +2621,7 @@ async def generate_tsne(request: TSNERequest, background_tasks: BackgroundTasks)
     print(f"Submitting job for task: {request.name}")
     return await process_image_request(
         request_data=request.dict(),
-        task_type="svd",
+        task_type="tsne",
         task_name=getattr(request, "name", None),
         processing_function=process_tsne,
         background_tasks=background_tasks
@@ -2954,7 +2840,7 @@ async def get_permanent_cohorts():
         # Query all populations and their sample IDs from ancestry_groups
         cursor.execute("SELECT population, sample_ids FROM ancestry_groups")
         rows = cursor.fetchall()
-        cohort_list = []
+        cohort_list = [{"name": "ALL", "sample_ids": []}]
         
         for population, sample_ids_json in rows:
             # Parse the JSON array of sample IDs
@@ -3085,7 +2971,7 @@ def process_distribution(request_data):
                                     x=x,
                                     y=y,
                                     mode='lines',
-                                    name=cohort["name"],
+                                    name=f"{cohort['name']} (n={len(cohort['values'])})",
                                     line=dict(color=cohort["color"], width=2),
                                     fill=None  # No fill, just the line
                                 ))
@@ -3138,7 +3024,7 @@ def process_distribution(request_data):
                         if cohort["values"]:
                             fig.add_trace(go.Histogram(
                                 x=cohort["values"],
-                                name=cohort["name"],
+                                name=f"{cohort['name']} (n={len(cohort['values'])})",
                                 marker_color=cohort["color"],
                                 opacity=0.7,
                                 xbins=dict(
@@ -3175,7 +3061,7 @@ def process_distribution(request_data):
                             
                             fig.add_trace(go.Box(
                                 y=values,
-                                name=cohort["name"],
+                                name=f"{cohort['name']} (n={len(cohort['values'])})",
                                 boxmean=True,  # Show mean as a dashed line
                                 marker_color=cohort["color"],
                                 line=dict(color='black'),
@@ -3485,7 +3371,10 @@ def process_subcohort_plot(request_data):
             score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
             
             # Get base cohort sample IDs from ancestry groups
-            cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (base_cohort,))
+            if base_cohort != "ALL":
+                cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (base_cohort,))
+            else: 
+                cursor.execute("SELECT sample_ids FROM ancestry_groups")
             cohort_result = cursor.fetchone()
 
             if not cohort_result:
@@ -4270,19 +4159,20 @@ def calculate_OR_by_decile_vs_cumulative(data, num_deciles=10):
 
 @app.post("/api/generate_interactive_plot")
 def interactive_filter_router(request: InteractiveRequest):
+    print(request.plot_type)
     if request.plot_type == "umap":
         output_url = add_interactive_filter_umap(html_file_path=request.plot_url)
     elif request.plot_type == "pca":
         output_url = add_interactive_filter_generic(html_file_path=request.plot_url)
     elif request.plot_type == "tsne":
-        output_url = add_interactive_filter_generic(html_file_path=request.plot_url, plot_type='tsne')
+        output_url = add_interactive_filter_tsne(html_file_path=request.plot_url)
     elif request.plot_type == "svd":
-        output_url = add_interactive_filter_generic(html_file_path=request.plot_url, plot_type='svd')
+        output_url = add_interactive_filter_generic(html_file_path=request.plot_url)
     else:
         raise HTTPException(status_code=501, detail=f"Interactive plot generation for {request.plot_type} not available at this time.")
     return PlotResponse(plot_url=output_url, table_data=[{}])
 
-def add_interactive_filter_generic(html_file_path):
+def add_interactive_filter_tsne(html_file_path, output_filepath=None):
     """
     Add interactive cohort controls to a Plotly scatterplot HTML with Bootstrap styling.
     """
@@ -5197,7 +5087,9 @@ def add_interactive_filter_generic(html_file_path):
     with open(output_path, 'w', encoding='utf-8') as f:
         f.write(str(soup))
     
-    print(f"Interactive cohort viewer HTML saved to {output_path}")
+    print(f"Interactive cohort viewer HTML saved to {output_path}") 
+    return output_path
+
 
 def add_interactive_filter_umap(html_file_path, output_file_path=None):
     """
@@ -6512,7 +6404,7 @@ def get_matrix(
 
             return matrix, final_pgs
         else:
-            return data_dict, list(available_pgs)
+            return data_dict, data_dict.keys()
             
     finally:
         # # Clean up temp table and close connection
@@ -6537,16 +6429,73 @@ def fetch_pgs_metadata(pgs_ids):
         cursor = conn.cursor()
         cursor.execute(query, pgs_ids)
         rows = cursor.fetchall()
-
-    # Convert to dictionary keyed by PGS_ID
-    return {
-        row[0]: {
+    
+    pgs_metadata = {}
+    for row in rows:
+        pgs_metadata[row[0]] = {
             "PGS_Name": row[1],
             "Reported_Trait": row[2],
             "Publication_ID": row[3]
         }
-        for row in rows
-    }
+
+    # Check for missing metadata
+    missing_metadata = set(pgs_ids) - set(pgs_metadata.keys())
+    if missing_metadata:
+        print(f"Warning: {len(missing_metadata)} PGS_IDs don't have metadata")
+        for pgs_id in missing_metadata:
+            pgs_metadata[pgs_id] = {
+                'PGS_Name': 'Unknown',
+                'Reported_Trait': 'Unknown',
+                'Publication_ID': 'Unknown'
+            }
+
+    # Convert to dictionary keyed by PGS_ID
+    return pgs_metadata
+
+def fetch_pgs_ids(specific_pgs_ids, score_type):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Get PGS IDs
+    if not specific_pgs_ids:
+        cursor.execute("""
+            SELECT DISTINCT PGS_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ?
+            ORDER BY PGS_ID
+        """, (score_type,))
+        pgs_ids = [row[0] for row in cursor.fetchall()]
+    else:
+        pgs_ids = specific_pgs_ids
+
+    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+    conn.close()
+    return pgs_ids
+
+def fetch_sample_ids(cohort, pgs_ids, score_type):    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
+
+    if cohort and cohort != "ALL":
+        # Query the ancestry table to get sample IDs for the specified population
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
+        sample_ids = json.loads(cohort_result[0])
+        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
+    else:
+        # No population filtering
+        cursor.execute(f"""
+            SELECT DISTINCT SAMPLE_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ? 
+            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
+            ORDER BY SAMPLE_ID
+        """, [score_type] + pgs_ids)
+        sample_ids = [row[0] for row in cursor.fetchall()]    
+    
+    conn.close()
+    return sample_ids
 
 # Define the background task processor separately
 def process_background_task(task_id, request_data, processing_function):
@@ -6745,87 +6694,3 @@ async def process_image_request(
 
 # # Initialize DB when application starts
 # initialize_db()
-
-# @app.post("/api/multi_cohort_distribution/{pgs}/{score_type}")
-# async def get_multi_cohort_distribution(pgs: str, score_type: str, cohorts: List[CohortRequest]):
-#     """Retrieve score distributions for multiple cohorts."""
-    
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.row_factory = sqlite3.Row
-#     cursor = conn.cursor()
-
-#     # Retrieve scores for the given PGS and score type
-#     cursor.execute(
-#         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-#         (pgs, score_type)
-#     )
-#     rows = cursor.fetchall()
-#     conn.close()
-
-#     if not rows:
-#         raise HTTPException(
-#             status_code=404,
-#             detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
-#         )
-
-#     # Create a dictionary mapping SAMPLE_ID to SCORE
-#     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-
-#     cohort_data = []
-#     for cohort in cohorts:
-#         cohort_scores = [
-#             score_dict[sample_id] for sample_id in cohort.sample_ids
-#             if sample_id in score_dict
-#         ]
-#         cohort_data.append({
-#             "color": cohort.color,
-#             "values": cohort_scores,
-#             "name": cohort.name
-#         })
-
-#     return {"cohorts": cohort_data}
-
-# @app.post("/api/multi_cohort_distribution_with_ids/{pgs}/{score_type}")
-# async def get_multi_cohort_distribution_with_ids(pgs: str, score_type: str, cohorts: List[CohortRequest]):
-#     """Retrieve score distributions for multiple cohorts with individual sample data."""
-    
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.row_factory = sqlite3.Row
-#     cursor = conn.cursor()
-
-#     # Retrieve scores for the given PGS and score type
-#     cursor.execute(
-#         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-#         (pgs, score_type)
-#     )
-#     rows = cursor.fetchall()
-#     conn.close()
-
-#     if not rows:
-#         raise HTTPException(
-#             status_code=404,
-#             detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
-#         )
-
-#     # Create a dictionary mapping SAMPLE_ID to SCORE
-#     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-
-#     cohort_data = []
-#     for cohort in cohorts:
-#         # Filter to include only samples that exist in our data
-#         valid_samples = [
-#             {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-#             for sample_id in cohort.sample_ids
-#             if sample_id in score_dict
-#         ]
-        
-#         cohort_scores = [sample["SCORE"] for sample in valid_samples]
-        
-#         cohort_data.append({
-#             "color": cohort.color,
-#             "values": cohort_scores,
-#             "samples": valid_samples,
-#             "name": cohort.name
-#         })
-
-#     return {"cohorts": cohort_data}
