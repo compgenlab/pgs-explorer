@@ -335,7 +335,6 @@ def get_pgs_list():
 @app.get("/api/score_types")
 def get_score_types():
     """Fetches all distinct score types available in the database."""
-    print("hi nadia")
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
@@ -502,81 +501,16 @@ def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    
-    # Get PGS IDs
-    if specific_pgs_ids:
-        placeholders = ','.join(['?'] * len(specific_pgs_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            AND PGS_ID IN ({placeholders})
-            ORDER BY PGS_ID
-            LIMIT ?
-        """, [score_type] + specific_pgs_ids + [max_pgs_ids])
-    else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-            LIMIT ?
-        """, (score_type, max_pgs_ids))
-    
-    pgs_ids = [row[0] for row in cursor.fetchall()]
-    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+
+    # Get PGS ID list
+    pgs_ids = fetch_pgs_ids(specific_pgs_ids, score_type)
     
     # Get metadata for PGS IDs
-    pgs_metadata = {}
-    if pgs_ids:
-        placeholder = ','.join(['?'] * len(pgs_ids))
-        cursor.execute(f"""
-            SELECT PGS_ID, PGS_Name, Reported_Trait, PGS_Publication_ID
-            FROM pgs_metadata
-            WHERE PGS_ID IN ({placeholder})
-        """, pgs_ids)
-        
-        for pgs_id, pgs_name, reported_trait, publication_id in cursor.fetchall():
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': pgs_name or 'N/A',
-                'Reported_Trait': reported_trait or 'N/A',
-                'Publication_ID': publication_id or 'N/A'
-            }
+    pgs_metadata = fetch_pgs_metadata(pgs_ids)
     
-    # Check for missing metadata
-    missing_metadata = set(pgs_ids) - set(pgs_metadata.keys())
-    if missing_metadata:
-        print(f"Warning: {len(missing_metadata)} PGS_IDs don't have metadata")
-        for pgs_id in missing_metadata:
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': 'Unknown',
-                'Reported_Trait': 'Unknown',
-                'Publication_ID': 'Unknown'
-            }
-    
-    # Modified sample ID fetching with population filtering
-    print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
+    # Get sample IDs, filtering by PGS ID list and score type
+    sample_ids = fetch_sample_ids(cohort, pgs_ids, score_type)
 
-
-    if cohort and cohort != "ALL":
-        # Query the ancestry table to get sample IDs for the specified population
-        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
-        cohort_result = cursor.fetchone()
-        sample_ids = json.loads(cohort_result[0])
-        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
-    else:
-        # No population filtering
-        cursor.execute(f"""
-            SELECT DISTINCT SAMPLE_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ? 
-            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-            ORDER BY SAMPLE_ID
-        """, [score_type] + pgs_ids)
-        sample_ids = [row[0] for row in cursor.fetchall()]    
-
-    print(f"Large dataset optimization: {len(sample_ids)} samples × {len(pgs_ids)} PGS IDs")
-    
     # Calculate overall statistics for outlier detection
     print("Calculating overall score distribution...")
     cursor.execute("""
@@ -619,7 +553,7 @@ def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=
     print("Creating matrix data structure...")
     start_time = time.time()
 
-    matrix = get_matrix(
+    matrix, _ = get_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
@@ -1276,7 +1210,7 @@ def process_umap(request_data):
         score_type = request_data["score_type"]
         n_neighbors = request_data["n_neighbors"]
         min_dist = request_data["min_dist"]
-        pgs_ids = request_data["pgs_ids"]
+        pgs_ids = request_data.get("pgs_ids", None)
         cohort = request_data["cohort"]
         view_type = request_data["view_type"]
         
@@ -1366,70 +1300,22 @@ def generate_umap_html(score_type, n_neighbors=15, min_dist=0.1, specific_pgs_id
     cursor = conn.cursor()
     
     # Get PGS IDs 
-    if specific_pgs_ids:
-        placeholders = ','.join(['?'] * len(specific_pgs_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            AND PGS_ID IN ({placeholders})
-            ORDER BY PGS_ID
-        """, [score_type] + specific_pgs_ids)
-    else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-        """, (score_type,))
+    pgs_ids = fetch_pgs_ids(specific_pgs_ids, score_type)
 
     # Get metadata for PGS IDs
-    pgs_metadata = {}
-    if pgs_ids:
-        placeholder = ','.join(['?'] * len(pgs_ids))
-        cursor.execute(f"""
-            SELECT PGS_ID, PGS_Name, Reported_Trait, PGS_Publication_ID
-            FROM pgs_metadata
-            WHERE PGS_ID IN ({placeholder})
-        """, pgs_ids)
-        
-        for pgs_id, pgs_name, reported_trait, publication_id in cursor.fetchall():
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': pgs_name or 'N/A',
-                'Reported_Trait': reported_trait or 'N/A',
-                'Publication_ID': publication_id or 'N/A'
-            }
-    
-    # Check for missing metadata
-    missing_metadata = set(pgs_ids) - set(pgs_metadata.keys())
-    if missing_metadata:
-        print(f"Warning: {len(missing_metadata)} PGS_IDs don't have metadata")
-        for pgs_id in missing_metadata:
-            pgs_metadata[pgs_id] = {
-                'PGS_Name': 'Unknown',
-                'Reported_Trait': 'Unknown',
-                'Publication_ID': 'Unknown'
-            }
+    pgs_metadata = fetch_pgs_metadata(pgs_ids)
     
     # Modified sample ID fetching with cohort filtering
     print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
     
-    if cohort and cohort != "ALL":
-        # Get sample IDs from the ancestry_groups table
-        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
-        cohort_result = cursor.fetchone()
-        sample_ids = json.loads(cohort_result[0])
-    else:
-        cursor.execute("SELECT DISTINCT SAMPLE_ID FROM scores")
-        sample_ids = [row[0] for row in cursor.fetchall()]
-        print(f"Using {len(sample_ids)} total samples")
-
+    # Get sample IDs, filtering by PGS ID list and score type
+    sample_ids = fetch_sample_ids(cohort, pgs_ids, score_type)
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
     
     if cohort and cohort != "ALL":
         print(f"Using {len(sample_ids)} samples from {cohort} cohort.")
     
-    data_dict = get_matrix(
+    data_dict, _ = get_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
@@ -1857,7 +1743,7 @@ def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None):
     start_time = time.time()
     print("Starting data processing...")
 
-    matrix = get_matrix(
+    matrix, _ = get_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
@@ -2452,39 +2338,525 @@ def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_v
     hash_obj = hashlib.md5(param_str.encode())
     return hash_obj.hexdigest()
 
+@app.post("/api/generate_pca")
+async def generate_pca(request: PCARequest, background_tasks: BackgroundTasks):
+    """Routes to PCA image generation."""
+    print(f"Submitting job for task: {request.name}")
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="pca",
+        task_name=getattr(request, "name", None),
+        processing_function=process_pca,
+        background_tasks=background_tasks
+    )
+
+def process_pca(request_data):
+    try:
+        # Create temp directory if it doesn't exist
+        os.makedirs("temp", exist_ok=True)
+        
+        # Extract parameters from request_data
+        score_type = request_data["score_type"]
+        pgs_ids = request_data["pgs_ids"]
+        cohort = request_data["cohort"]
+        perspective = request_data.get("perspective", "sample")  # Default to sample
+        x_axis = request_data.get("x_axis", "1") # Default to PC1
+        y_axis = request_data.get("y_axis", "2") # Default to PC2
+        include_variance = request_data.get("include_variance", True)
+
+        # Generate hash for caching
+        request_hash = generate_pca_hash(
+            score_type,
+            pgs_ids,
+            cohort,
+            perspective,
+            x_axis,
+            y_axis,
+            include_variance
+        )
+        
+        # Check if we already have a file with this hash
+        for filename in os.listdir("temp"):
+            if filename.endswith(".html") and request_hash in filename and "pca" in filename:
+                # Found a cached file, update its access time
+                cached_filepath = os.path.join("temp", filename)
+                os.utime(cached_filepath)
+                
+                print(f"Using cached PCA visualization: {filename}")
+                
+                # Return file path
+                return f"/temp/{filename}"
+        
+        # First, perform SVD analysis to get the matrices
+        U, S, Vt, pgs_ids, sample_ids, stats = perform_svd_analysis(
+            score_type=score_type,
+            specific_pgs_ids=pgs_ids,
+            cohort=cohort
+        )
+        
+        # Generate filename with hash
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
+        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
+        filename = f"pca_{cohort_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
+        filepath = os.path.join("temp", filename)
+        
+        # Route to the appropriate visualization function
+        if perspective == "score":
+            fig = generate_pca_score(U=U, S=S, Vt=Vt, 
+                pgs_ids=pgs_ids, 
+                sample_ids=sample_ids, 
+                stats=stats, 
+                x_axis=x_axis, 
+                y_axis=y_axis, 
+                include_variance=include_variance
+            )
+        else:  
+            fig = generate_pca_sample(U=U, S=S, Vt=Vt, 
+                pgs_ids=pgs_ids, 
+                sample_ids=sample_ids, 
+                stats=stats, 
+                x_axis=x_axis, 
+                y_axis=y_axis, 
+                include_variance=include_variance
+            )
+        
+        # Save the figure to HTML
+        fig.write_html(
+            filepath,
+            include_plotlyjs='cdn',
+            include_mathjax=False,
+            config={
+                'displayModeBar': True,
+                'responsive': True
+            }
+        )
+        
+        # Return file path
+        return f"/temp/{filename}"
+        
+    except Exception as e:
+        # Log the error
+        print(f"Error generating PCA visualization: {str(e)}")
+        raise e 
+
+def generate_pca_sample(U, S, Vt, pgs_ids, sample_ids, stats, pgs_metadata=None, x_axis="1", y_axis="2", include_variance=True):
+    """Generate a biplot to visualize samples and features in the same 2D space."""
+    
+    # Convert axis inputs to integers (0-based)
+    x_idx = int(x_axis) - 1
+    y_idx = int(y_axis) - 1
+
+    # Scale the singular vectors by the singular values
+    U_scaled = U[:, [x_idx, y_idx]] * S[[x_idx, y_idx]]
+
+    # Create figure
+    fig = go.Figure()
+
+    # Add samples as scatter points
+    fig.add_trace(
+        go.Scatter(
+            x=U_scaled[:, 0],
+            y=U_scaled[:, 1],
+            mode='markers',
+            marker=dict(
+                size=5,
+                color='green',
+                opacity=0.6
+            ),
+            name='Samples',
+            text=[f"Sample: {sample_id}" for sample_id in sample_ids],
+            hoverinfo='text'
+        )
+    )
+
+    # Get variance labels
+    if include_variance and "explained_variance_ratio" in stats:
+        x_var = stats["explained_variance_ratio"][x_idx] * 100
+        y_var = stats["explained_variance_ratio"][y_idx] * 100
+        x_title = f'Component {x_axis} ({x_var:.1f}%)'
+        y_title = f'Component {y_axis} ({y_var:.1f}%)'
+    else:
+        x_title = f'Component {x_axis}'
+        y_title = f'Component {y_axis}'
+
+    # Update layout
+    fig.update_layout(
+        title=f'PCA: {stats.get("score_type", "Unknown")} Scores (Sample-centered view)',
+        xaxis=dict(title=x_title, zeroline=True),
+        yaxis=dict(title=y_title, zeroline=True),
+        showlegend=False,
+        height=800,
+        width=1000,
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=12,
+            font_family="Arial"
+        )
+    )
+
+    # Add a dashed circle to indicate scale
+    theta = np.linspace(0, 2 * np.pi, 100)
+    radius = np.percentile(np.sqrt(np.sum(U_scaled**2, axis=1)), 75)
+    fig.add_trace(
+        go.Scatter(
+            x=radius * np.cos(theta),
+            y=radius * np.sin(theta),
+            mode='lines',
+            line=dict(color='gray', dash='dash', width=1),
+            name='Scale Reference',
+            hoverinfo='skip'
+        )
+    )
+
+    return fig
+
+def generate_pca_score(U, S, Vt, pgs_ids, sample_ids, stats, x_axis="1", y_axis="2", include_variance=True):
+    """Generate a biplot to visualize PGS scores and samples in the same 2D space."""
+    
+    # Convert axis inputs to 0-based indices
+    x_idx = int(x_axis) - 1
+    y_idx = int(y_axis) - 1
+
+    # Scale the right singular vectors (Vt.T) by the singular values
+    Vt_scaled = Vt[[x_idx, y_idx], :].T * S[[x_idx, y_idx]]
+
+    # Create figure
+    fig = go.Figure()
+
+    # Create hover text for PGS points
+    hover_text = []
+    pgs_metadata = fetch_pgs_metadata(pgs_ids)
+    for i, pgs_id in enumerate(pgs_ids):
+        # Get metadata for this PGS ID
+        if pgs_metadata and pgs_id in pgs_metadata:
+            meta = pgs_metadata[pgs_id]
+            hover_info = (
+                f"PGS ID: {pgs_id}<br>"
+                f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
+                f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
+                f"Publication: {meta.get('Publication_ID', 'N/A')}"
+            )
+        else:
+            hover_info = f"PGS ID: {pgs_id}"
+
+        hover_text.append(hover_info)
+
+    # Add PGS scores as scatter points
+    fig.add_trace(
+        go.Scatter(
+            x=Vt_scaled[:, 0],
+            y=Vt_scaled[:, 1],
+            mode='markers+text',
+            marker=dict(
+                size=5,
+                color='red',
+                opacity=0.6
+            ),
+            name='PGS Scores',
+            hovertext=hover_text,
+            hoverinfo='text'
+        )
+    )
+
+    # Get variance labels
+    if include_variance and "explained_variance_ratio" in stats:
+        x_var = stats["explained_variance_ratio"][x_idx] * 100
+        y_var = stats["explained_variance_ratio"][y_idx] * 100
+        x_title = f'Component {x_axis} ({x_var:.1f}%)'
+        y_title = f'Component {y_axis} ({y_var:.1f}%)'
+    else:
+        x_title = f'Component {x_axis}'
+        y_title = f'Component {y_axis}'
+
+    # Update layout
+    fig.update_layout(
+        title=f'PCA Plot: {stats.get("score_type", "Unknown")} Scores (Score-centered view)',
+        xaxis=dict(title=x_title, zeroline=True),
+        yaxis=dict(title=y_title, zeroline=True),
+        showlegend=False,
+        height=800,
+        width=1000,
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=12,
+            font_family="Arial"
+        )
+    )
+
+    # Add a dashed circle to indicate scale
+    theta = np.linspace(0, 2 * np.pi, 100)
+    radius = np.percentile(np.sqrt(np.sum(Vt_scaled**2, axis=1)), 75)
+    fig.add_trace(
+        go.Scatter(
+            x=radius * np.cos(theta),
+            y=radius * np.sin(theta),
+            mode='lines',
+            line=dict(color='gray', dash='dash', width=1),
+            name='Scale Reference',
+            hoverinfo='skip'
+        )
+    )
+
+    return fig
+
+def generate_pca_hash(score_type, pgs_ids, cohort, perspective, x_axis, y_axis, include_variance):
+    """Generate a hash for the SVD request parameters for caching"""
+    params = {
+        "score_type": score_type,
+        "pgs_ids": sorted(pgs_ids) if pgs_ids else "all",
+        "cohort": cohort if cohort else "ALL",
+        "perspective": perspective,
+        "x_axis": x_axis,
+        "y_axis": y_axis,
+        "include_variance": include_variance
+    }
+    param_str = json.dumps(params, sort_keys=True)
+    hash_obj = hashlib.md5(param_str.encode())
+    return hash_obj.hexdigest()
+
+@app.post("/api/generate_tsne")
+async def generate_tsne(request: TSNERequest, background_tasks: BackgroundTasks):
+    """Routes to t-SNE image generation."""
+    print(f"Submitting job for task: {request.name}")
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="tsne",
+        task_name=getattr(request, "name", None),
+        processing_function=process_tsne,
+        background_tasks=background_tasks
+    )
+
+def process_tsne(request_data):
+    try:
+        # Create temp directory if it doesn't exist
+        os.makedirs("temp", exist_ok=True)
+
+        # Extract parameters from request_data
+        score_type = request_data["score_type"]
+        pgs_ids = request_data.get("pgs_ids")
+        cohort = request_data.get("cohort")
+        perspective = request_data.get("perspective", "sample")
+        perplexity = request_data["perplexity"]
+        iterations = request_data["iterations"]
+        learning_rate = request_data["learning_rate"]
+
+        # Generate hash for caching
+        request_hash = generate_tsne_hash(
+            score_type,
+            pgs_ids,
+            cohort,
+            perspective,
+            perplexity,
+            iterations,
+            learning_rate
+        )
+
+        # Check for existing cached file
+        for filename in os.listdir("temp"):
+            if filename.endswith(".html") and request_hash in filename and "tsne" in filename:
+                cached_filepath = os.path.join("temp", filename)
+                os.utime(cached_filepath)
+                print(f"Using cached t-SNE visualization: {filename}")
+                return f"/temp/{filename}"
+
+        # Perform t-SNE analysis
+        tsne_result, pgs_ids, sample_ids = perform_tsne_analysis(
+            score_type=score_type,
+            specific_pgs_ids=pgs_ids,
+            cohort=cohort,
+            perspective=perspective,
+            perplexity=perplexity,
+            n_iter=iterations,
+            learning_rate=learning_rate
+        )
+
+        # Generate filename with hash
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
+        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
+        filename = f"tsne_{cohort_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
+        filepath = os.path.join("temp", filename)
+
+        # Generate the appropriate visualization
+        if perspective == "score":
+            fig = generate_tsne_score(tsne_result, pgs_ids=pgs_ids)
+        else:
+            fig = generate_tsne_sample(tsne_result, sample_ids=sample_ids)
+
+        # Save the figure to HTML
+        fig.write_html(
+            filepath,
+            include_plotlyjs='cdn',
+            include_mathjax=False,
+            config={
+                'displayModeBar': True,
+                'responsive': True
+            }
+        )
+
+        return f"/temp/{filename}"
+
+    except Exception as e:
+        print(f"Error generating t-SNE visualization: {str(e)}")
+        raise e
+
+def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, perplexity, n_iter, learning_rate):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Get PGS IDs
+    if specific_pgs_ids:
+        placeholders = ','.join(['?'] * len(specific_pgs_ids))
+        cursor.execute(f"""
+            SELECT DISTINCT PGS_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ?
+            AND PGS_ID IN ({placeholders})
+            ORDER BY PGS_ID
+        """, [score_type] + specific_pgs_ids)
+    else:
+        pgs_ids = None
+        print("all pgs")
+
+    pgs_ids = [row[0] for row in cursor.fetchall()]
+    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+
+    # --- Get sample IDs ---
+    if cohort and cohort != "ALL":
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
+        sample_ids = json.loads(cohort_result[0])
+        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
+    else:
+        sample_ids = None
+        print("all samples")
+
+    # --- Matrix build ---
+    matrix, pgs_ids = get_matrix(
+        sample_ids=sample_ids,
+        pgs_ids=pgs_ids,
+        score_type=score_type,
+        output_format="numpy",
+        handle_missing=True
+    )
+
+    # --- Run t-SNE ---
+    tsne = TSNE(
+        n_components=2,
+        perplexity=perplexity,
+        n_iter=n_iter,  # Use n_iter as passed from the calling function
+        learning_rate=learning_rate,
+        random_state=42
+    )
+    
+    # Transform matrix based on perspective
+    if perspective == "score" and matrix.shape[0] > matrix.shape[1]:
+        # Transpose matrix for score-centered analysis (if samples > scores)
+        matrix = matrix.T
+        tsne_result = tsne.fit_transform(matrix)
+        return tsne_result, pgs_ids, sample_ids
+    else:
+        # For sample-centered or already transposed matrices
+        tsne_result = tsne.fit_transform(matrix)
+        return tsne_result, pgs_ids, sample_ids
+
+def generate_tsne_sample(tsne_result, sample_ids):
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=tsne_result[:, 0],
+            y=tsne_result[:, 1],
+            mode="markers",
+            marker=dict(size=6, color="blue", opacity=0.7),
+            text=sample_ids,
+            hoverinfo="text",
+            name="Samples"
+        )
+    )
+    fig.update_layout(
+        title="t-SNE Projection (Samples as Points)",
+        xaxis_title="t-SNE 1",
+        yaxis_title="t-SNE 2",
+        showlegend=False
+    )
+    return fig
+
+def generate_tsne_score(tsne_result, pgs_ids):
+    pgs_metadata = fetch_pgs_metadata(pgs_ids)
+    hover_text = []
+    for pgs_id in pgs_ids:
+        meta = pgs_metadata.get(pgs_id, {})
+        if not meta:
+            print(f"Missing metadata for {pgs_id}")
+        hover_text.append(
+            f"PGS ID: {pgs_id}<br>"
+            f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
+            f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
+            f"Publication: {meta.get('Publication_ID', 'N/A')}"
+        )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=tsne_result[:, 0],
+            y=tsne_result[:, 1],
+            mode="markers",
+            marker=dict(size=6, color="red", opacity=0.7),
+            text=hover_text,
+            hoverinfo="text",
+            name="PGS Scores"
+        )
+    )
+    fig.update_layout(
+        title="t-SNE Projection (PGS Scores as Points)",
+        xaxis_title="t-SNE 1",
+        yaxis_title="t-SNE 2",
+        showlegend=False
+    )
+    return fig
+
+def generate_tsne_hash(score_type, pgs_ids, cohort, perspective, perplexity, iterations, learning_rate):
+    hash_input = json.dumps({
+        "score_type": score_type,
+        "pgs_ids": pgs_ids,
+        "cohort": cohort,
+        "perspective": perspective,
+        "perplexity": perplexity,
+        "iterations": iterations,
+        "learning_rate": learning_rate
+    }, sort_keys=True)
+    print(hash_input)
+    print(hashlib.md5(hash_input.encode()).hexdigest())
+    return hashlib.md5(hash_input.encode()).hexdigest()
+
 @app.get("/api/permanent_cohorts")
 async def get_permanent_cohorts():
-    """Get list of permanent cohorts from the cohorts directory."""
-    cohorts_dir = "/Users/nsabry/PGSVisualizer/cohorts"
-    
-    if not os.path.exists(cohorts_dir):
-        return {"cohorts": []}
-    
-    cohort_list = []
-    
-    # Look for text files in the cohorts directory
-    for filename in os.listdir(cohorts_dir):
-        if not filename.endswith(".txt"):
-            continue
-            
-        # Extract cohort name from filename
-        name = filename.replace(".txt", "")
-        filepath = os.path.join(cohorts_dir, filename)
+    """Get list of permanent cohorts from the ancestry groups."""
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
         
-        # Read sample IDs from file
-        try:
-            with open(filepath, "r") as f:
-                sample_ids = [line.strip() for line in f if line.strip()]
-                
+        # Query all populations and their sample IDs from ancestry_groups
+        cursor.execute("SELECT population, sample_ids FROM ancestry_groups")
+        rows = cursor.fetchall()
+        cohort_list = [{"name": "ALL", "sample_ids": []}]
+        
+        for population, sample_ids_json in rows:
+            # Parse the JSON array of sample IDs
+            sample_ids = json.loads(sample_ids_json)
+            print(f"For {population} loading {len(sample_ids)} samples.")
             if sample_ids:
                 cohort_list.append({
-                    "name": name,
+                    "name": population,
                     "sample_ids": sample_ids
                 })
-        except Exception as e:
-            print(f"Error reading cohort file {filename}: {e}")
+        
+        return {"cohorts": cohort_list}
     
-    return {"cohorts": cohort_list}
+    except Exception as e:
+        print(f"Error retrieving populations from database: {e}")
+        return {"cohorts": []}
 
 @app.post("/api/generate_distribution")
 async def generate_distribution(request: DistributionRequest, background_tasks: BackgroundTasks):
@@ -2599,7 +2971,7 @@ def process_distribution(request_data):
                                     x=x,
                                     y=y,
                                     mode='lines',
-                                    name=cohort["name"],
+                                    name=f"{cohort['name']} (n={len(cohort['values'])})",
                                     line=dict(color=cohort["color"], width=2),
                                     fill=None  # No fill, just the line
                                 ))
@@ -2652,7 +3024,7 @@ def process_distribution(request_data):
                         if cohort["values"]:
                             fig.add_trace(go.Histogram(
                                 x=cohort["values"],
-                                name=cohort["name"],
+                                name=f"{cohort['name']} (n={len(cohort['values'])})",
                                 marker_color=cohort["color"],
                                 opacity=0.7,
                                 xbins=dict(
@@ -2689,7 +3061,7 @@ def process_distribution(request_data):
                             
                             fig.add_trace(go.Box(
                                 y=values,
-                                name=cohort["name"],
+                                name=f"{cohort['name']} (n={len(cohort['values'])})",
                                 boxmean=True,  # Show mean as a dashed line
                                 marker_color=cohort["color"],
                                 line=dict(color='black'),
@@ -2999,7 +3371,10 @@ def process_subcohort_plot(request_data):
             score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
             
             # Get base cohort sample IDs from ancestry groups
-            cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (base_cohort,))
+            if base_cohort != "ALL":
+                cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (base_cohort,))
+            else: 
+                cursor.execute("SELECT sample_ids FROM ancestry_groups")
             cohort_result = cursor.fetchone()
 
             if not cohort_result:
@@ -3784,18 +4159,938 @@ def calculate_OR_by_decile_vs_cumulative(data, num_deciles=10):
 
 @app.post("/api/generate_interactive_plot")
 def interactive_filter_router(request: InteractiveRequest):
+    print(request.plot_type)
     if request.plot_type == "umap":
         output_url = add_interactive_filter_umap(html_file_path=request.plot_url)
     elif request.plot_type == "pca":
-        output_url = add_interactive_filter_generic(html_file_path=request.plot_url, plot_type='pca')
+        output_url = add_interactive_filter_generic(html_file_path=request.plot_url)
     elif request.plot_type == "tsne":
-        output_url = add_interactive_filter_generic(html_file_path=request.plot_url, plot_type='tsne')
+        output_url = add_interactive_filter_tsne(html_file_path=request.plot_url)
     elif request.plot_type == "svd":
-        output_url = add_interactive_filter_generic(html_file_path=request.plot_url, plot_type='svd')
+        output_url = add_interactive_filter_generic(html_file_path=request.plot_url)
     else:
         raise HTTPException(status_code=501, detail=f"Interactive plot generation for {request.plot_type} not available at this time.")
     return PlotResponse(plot_url=output_url, table_data=[{}])
+
+def add_interactive_filter_tsne(html_file_path, output_filepath=None):
+    """
+    Add interactive cohort controls to a Plotly scatterplot HTML with Bootstrap styling.
+    """
+    # Read the HTML file
+    with open(html_filepath, 'r', encoding='utf-8') as f:
+        html_content = f.read()
     
+    # Create a BeautifulSoup object
+    soup = BeautifulSoup(html_content, 'html.parser')
+    
+    # Find the div that contains the Plotly graph
+    plotly_div = soup.find('div', class_='plotly-graph-div')
+    
+    if not plotly_div:
+        raise ValueError("Could not find Plotly graph div in the HTML file")
+    
+    div_id = plotly_div.get('id')
+    
+    # Extract PGS IDs directly from the HTML content
+    pgs_matches = re.findall(r'PGS ID: (PGS\d+)', html_content)
+    if not pgs_matches:
+        raise ValueError("Could not find PGS IDs in the HTML content")
+    
+    print(f"Found {len(pgs_matches)} PGS ID mentions in the HTML")
+    
+    # Get unique PGS IDs while preserving order
+    unique_pgs_ids = []
+    for pgs_id in pgs_matches:
+        if pgs_id not in unique_pgs_ids:
+            unique_pgs_ids.append(pgs_id)
+    
+    print(f"Found {len(unique_pgs_ids)} unique PGS IDs")
+    
+    # Add Bootstrap CSS if not already present
+    bootstrap_css = soup.find('link', href=lambda x: x and 'bootstrap' in x)
+    if not bootstrap_css:
+        bootstrap_link = soup.new_tag('link')
+        bootstrap_link.attrs['rel'] = 'stylesheet'
+        bootstrap_link.attrs['href'] = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css'
+        bootstrap_link.attrs['integrity'] = 'sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM'
+        bootstrap_link.attrs['crossorigin'] = 'anonymous'
+        soup.head.append(bootstrap_link)
+    
+    # Add FontAwesome for icons
+    fontawesome_link = soup.new_tag('link')
+    fontawesome_link.attrs['rel'] = 'stylesheet'
+    fontawesome_link.attrs['href'] = 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css'
+    soup.head.append(fontawesome_link)
+    
+    # Add Bootstrap JS if not already present
+    bootstrap_js = soup.find('script', src=lambda x: x and 'bootstrap' in x)
+    if not bootstrap_js:
+        bootstrap_script = soup.new_tag('script')
+        bootstrap_script.attrs['src'] = 'https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js'
+        bootstrap_script.attrs['integrity'] = 'sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz'
+        bootstrap_script.attrs['crossorigin'] = 'anonymous'
+        soup.body.append(bootstrap_script)
+    
+    # Create a modal for the control panel
+    modal_div = soup.new_tag('div')
+    modal_div.attrs['class'] = 'modal fade'
+    modal_div.attrs['id'] = 'cohortControlModal'
+    modal_div.attrs['tabindex'] = '-1'
+    modal_div.attrs['aria-labelledby'] = 'cohortControlModalLabel'
+    modal_div.attrs['aria-hidden'] = 'true'
+    
+    modal_dialog = soup.new_tag('div')
+    modal_dialog.attrs['class'] = 'modal-dialog modal-lg'
+    
+    modal_content = soup.new_tag('div')
+    modal_content.attrs['class'] = 'modal-content'
+    
+    # Modal header
+    modal_header = soup.new_tag('div')
+    modal_header.attrs['class'] = 'modal-header bg-primary text-white'
+    
+    modal_title = soup.new_tag('h5')
+    modal_title.attrs['class'] = 'modal-title'
+    modal_title.attrs['id'] = 'cohortControlModalLabel'
+    modal_title.string = 'PGS Cohort Manager'
+    modal_header.append(modal_title)
+    
+    close_button = soup.new_tag('button')
+    close_button.attrs['type'] = 'button'
+    close_button.attrs['class'] = 'btn-close btn-close-white'
+    close_button.attrs['data-bs-dismiss'] = 'modal'
+    close_button.attrs['aria-label'] = 'Close'
+    modal_header.append(close_button)
+    
+    modal_content.append(modal_header)
+    
+    # Modal body
+    modal_body = soup.new_tag('div')
+    modal_body.attrs['class'] = 'modal-body'
+    
+    # Add tabs for organization
+    tabs_nav = soup.new_tag('ul')
+    tabs_nav.attrs['class'] = 'nav nav-tabs mb-3'
+    tabs_nav.attrs['id'] = 'cohortTabs'
+    tabs_nav.attrs['role'] = 'tablist'
+    
+    # Create tab items
+    create_tab = soup.new_tag('li')
+    create_tab.attrs['class'] = 'nav-item'
+    create_tab.attrs['role'] = 'presentation'
+    create_tab_button = soup.new_tag('button')
+    create_tab_button.attrs['class'] = 'nav-link active'
+    create_tab_button.attrs['id'] = 'create-tab'
+    create_tab_button.attrs['data-bs-toggle'] = 'tab'
+    create_tab_button.attrs['data-bs-target'] = '#create-tab-pane'
+    create_tab_button.attrs['type'] = 'button'
+    create_tab_button.attrs['role'] = 'tab'
+    create_tab_button.attrs['aria-controls'] = 'create-tab-pane'
+    create_tab_button.attrs['aria-selected'] = 'true'
+    create_tab_button.string = 'Create Cohort'
+    create_tab.append(create_tab_button)
+    tabs_nav.append(create_tab)
+    
+    manage_tab = soup.new_tag('li')
+    manage_tab.attrs['class'] = 'nav-item'
+    manage_tab.attrs['role'] = 'presentation'
+    manage_tab_button = soup.new_tag('button')
+    manage_tab_button.attrs['class'] = 'nav-link'
+    manage_tab_button.attrs['id'] = 'manage-tab'
+    manage_tab_button.attrs['data-bs-toggle'] = 'tab'
+    manage_tab_button.attrs['data-bs-target'] = '#manage-tab-pane'
+    manage_tab_button.attrs['type'] = 'button'
+    manage_tab_button.attrs['role'] = 'tab'
+    manage_tab_button.attrs['aria-controls'] = 'manage-tab-pane'
+    manage_tab_button.attrs['aria-selected'] = 'false'
+    manage_tab_button.string = 'Manage Cohorts'
+    manage_tab.append(manage_tab_button)
+    tabs_nav.append(manage_tab)
+    
+    settings_tab = soup.new_tag('li')
+    settings_tab.attrs['class'] = 'nav-item'
+    settings_tab.attrs['role'] = 'presentation'
+    settings_tab_button = soup.new_tag('button')
+    settings_tab_button.attrs['class'] = 'nav-link'
+    settings_tab_button.attrs['id'] = 'settings-tab'
+    settings_tab_button.attrs['data-bs-toggle'] = 'tab'
+    settings_tab_button.attrs['data-bs-target'] = '#settings-tab-pane'
+    settings_tab_button.attrs['type'] = 'button'
+    settings_tab_button.attrs['role'] = 'tab'
+    settings_tab_button.attrs['aria-controls'] = 'settings-tab-pane'
+    settings_tab_button.attrs['aria-selected'] = 'false'
+    settings_tab_button.string = 'Import/Export'
+    settings_tab.append(settings_tab_button)
+    tabs_nav.append(settings_tab)
+    
+    modal_body.append(tabs_nav)
+    
+    # Tab content
+    tab_content = soup.new_tag('div')
+    tab_content.attrs['class'] = 'tab-content'
+    tab_content.attrs['id'] = 'cohortTabContent'
+    
+    # Create Cohort Tab
+    create_pane = soup.new_tag('div')
+    create_pane.attrs['class'] = 'tab-pane fade show active'
+    create_pane.attrs['id'] = 'create-tab-pane'
+    create_pane.attrs['role'] = 'tabpanel'
+    create_pane.attrs['aria-labelledby'] = 'create-tab'
+    create_pane.attrs['tabindex'] = '0'
+    
+    # Cohort name and color
+    create_form = soup.new_tag('form')
+    create_form.attrs['id'] = 'cohort-form'
+    
+    # Cohort Name
+    name_row = soup.new_tag('div')
+    name_row.attrs['class'] = 'mb-3 row'
+    
+    name_label = soup.new_tag('label')
+    name_label.attrs['for'] = 'cohort-name'
+    name_label.attrs['class'] = 'col-sm-3 col-form-label'
+    name_label.string = 'Cohort Name:'
+    name_row.append(name_label)
+    
+    name_col = soup.new_tag('div')
+    name_col.attrs['class'] = 'col-sm-9'
+    
+    name_input = soup.new_tag('input')
+    name_input.attrs['type'] = 'text'
+    name_input.attrs['class'] = 'form-control'
+    name_input.attrs['id'] = 'cohort-name'
+    name_input.attrs['placeholder'] = 'Enter cohort name'
+    name_col.append(name_input)
+    name_row.append(name_col)
+    create_form.append(name_row)
+    
+    # Cohort Color
+    color_row = soup.new_tag('div')
+    color_row.attrs['class'] = 'mb-3 row'
+    
+    color_label = soup.new_tag('label')
+    color_label.attrs['for'] = 'cohort-color'
+    color_label.attrs['class'] = 'col-sm-3 col-form-label'
+    color_label.string = 'Cohort Color:'
+    color_row.append(color_label)
+    
+    color_col = soup.new_tag('div')
+    color_col.attrs['class'] = 'col-sm-9'
+    
+    # Create color presets
+    color_presets = soup.new_tag('div')
+    color_presets.attrs['class'] = 'mb-2 d-flex gap-2'
+    
+    preset_colors = ['#FF5733', '#33FF57', '#3357FF', '#FF33A8', '#33FFF5', '#FFC133', '#8A33FF', '#FF3333', '#33FFBE', '#FF33EB']
+    for color in preset_colors:
+        preset_btn = soup.new_tag('button')
+        preset_btn.attrs['type'] = 'button'
+        preset_btn.attrs['class'] = 'btn btn-sm color-preset'
+        preset_btn.attrs['style'] = f'background-color: {color}; width: 24px; height: 24px; border-radius: 50%;'
+        preset_btn.attrs['data-color'] = color
+        color_presets.append(preset_btn)
+    
+    color_col.append(color_presets)
+    
+    color_input = soup.new_tag('input')
+    color_input.attrs['type'] = 'color'
+    color_input.attrs['class'] = 'form-control form-control-color'
+    color_input.attrs['id'] = 'cohort-color'
+    color_input.attrs['value'] = '#FF5733'
+    color_input.attrs['title'] = 'Choose cohort color'
+    color_col.append(color_input)
+    color_row.append(color_col)
+    create_form.append(color_row)
+    
+    # File upload for PGS IDs
+    file_row = soup.new_tag('div')
+    file_row.attrs['class'] = 'mb-3'
+    
+    file_label = soup.new_tag('label')
+    file_label.attrs['for'] = 'pgs-file-upload'
+    file_label.attrs['class'] = 'form-label'
+    file_label.string = 'Upload PGS IDs (text file, one per line or comma-separated):'
+    file_row.append(file_label)
+    
+    file_input = soup.new_tag('input')
+    file_input.attrs['type'] = 'file'
+    file_input.attrs['class'] = 'form-control'
+    file_input.attrs['id'] = 'pgs-file-upload'
+    file_input.attrs['accept'] = '.txt,.csv'
+    file_row.append(file_input)
+    create_form.append(file_row)
+    
+    # Textarea for direct input
+    textarea_row = soup.new_tag('div')
+    textarea_row.attrs['class'] = 'mb-3'
+    
+    textarea_label = soup.new_tag('label')
+    textarea_label.attrs['for'] = 'pgs-textarea'
+    textarea_label.attrs['class'] = 'form-label'
+    textarea_label.string = 'Or paste PGS IDs (one per line or comma-separated):'
+    textarea_row.append(textarea_label)
+    
+    textarea = soup.new_tag('textarea')
+    textarea.attrs['class'] = 'form-control'
+    textarea.attrs['id'] = 'pgs-textarea'
+    textarea.attrs['rows'] = '4'
+    textarea.attrs['placeholder'] = 'Paste PGS IDs here...'
+    textarea_row.append(textarea)
+    create_form.append(textarea_row)
+    
+    # Selected PGS IDs info
+    selection_info = soup.new_tag('div')
+    selection_info.attrs['class'] = 'card mb-3'
+    
+    selection_header = soup.new_tag('div')
+    selection_header.attrs['class'] = 'card-header d-flex justify-content-between align-items-center'
+    
+    selection_title = soup.new_tag('span')
+    selection_title.string = 'Selected PGS IDs'
+    selection_header.append(selection_title)
+    
+    selection_count = soup.new_tag('span')
+    selection_count.attrs['id'] = 'selected-count'
+    selection_count.attrs['class'] = 'badge bg-primary'
+    selection_count.string = '0 IDs'
+    selection_header.append(selection_count)
+    
+    selection_info.append(selection_header)
+    
+    selection_body = soup.new_tag('div')
+    selection_body.attrs['class'] = 'card-body'
+    
+    selected_list = soup.new_tag('div')
+    selected_list.attrs['id'] = 'selected-pgs-ids'
+    selected_list.attrs['class'] = 'small'
+    selected_list.attrs['style'] = 'max-height: 120px; overflow-y: auto;'
+    selection_body.append(selected_list)
+    
+    selection_footer = soup.new_tag('div')
+    selection_footer.attrs['class'] = 'card-footer text-end'
+    
+    clear_btn = soup.new_tag('button')
+    clear_btn.attrs['type'] = 'button'
+    clear_btn.attrs['id'] = 'clear-selection-btn'
+    clear_btn.attrs['class'] = 'btn btn-sm btn-outline-secondary'
+    clear_btn.string = 'Clear Selection'
+    selection_footer.append(clear_btn)
+    
+    selection_info.append(selection_body)
+    selection_info.append(selection_footer)
+    create_form.append(selection_info)
+    
+    # Add cohort button
+    submit_row = soup.new_tag('div')
+    submit_row.attrs['class'] = 'text-end'
+    
+    add_btn = soup.new_tag('button')
+    add_btn.attrs['type'] = 'button'
+    add_btn.attrs['id'] = 'add-cohort-btn'
+    add_btn.attrs['class'] = 'btn btn-primary'
+    add_icon = soup.new_tag('i')
+    add_icon.attrs['class'] = 'fas fa-plus me-1'
+    add_btn.append(add_icon)
+    add_btn.append(' Add Cohort')
+    submit_row.append(add_btn)
+    create_form.append(submit_row)
+    
+    create_pane.append(create_form)
+    tab_content.append(create_pane)
+    
+    # Manage Cohorts Tab
+    manage_pane = soup.new_tag('div')
+    manage_pane.attrs['class'] = 'tab-pane fade'
+    manage_pane.attrs['id'] = 'manage-tab-pane'
+    manage_pane.attrs['role'] = 'tabpanel'
+    manage_pane.attrs['aria-labelledby'] = 'manage-tab'
+    manage_pane.attrs['tabindex'] = '0'
+    
+    cohort_list_card = soup.new_tag('div')
+    cohort_list_card.attrs['class'] = 'card'
+    
+    cohort_card_header = soup.new_tag('div')
+    cohort_card_header.attrs['class'] = 'card-header'
+    cohort_card_header.string = 'Defined Cohorts'
+    cohort_list_card.append(cohort_card_header)
+    
+    cohort_card_body = soup.new_tag('div')
+    cohort_card_body.attrs['class'] = 'card-body p-0'
+    
+    cohort_list = soup.new_tag('div')
+    cohort_list.attrs['id'] = 'cohort-list'
+    cohort_list.attrs['class'] = 'list-group list-group-flush'
+    cohort_card_body.append(cohort_list)
+    
+    cohort_list_card.append(cohort_card_body)
+    
+    cohort_empty = soup.new_tag('div')
+    cohort_empty.attrs['id'] = 'no-cohorts-message'
+    cohort_empty.attrs['class'] = 'alert alert-info m-3'
+    cohort_empty.string = 'No cohorts defined yet. Create a cohort in the "Create Cohort" tab.'
+    cohort_list_card.append(cohort_empty)
+    
+    manage_pane.append(cohort_list_card)
+    tab_content.append(manage_pane)
+    
+    # Settings Tab (Import/Export)
+    settings_pane = soup.new_tag('div')
+    settings_pane.attrs['class'] = 'tab-pane fade'
+    settings_pane.attrs['id'] = 'settings-tab-pane'
+    settings_pane.attrs['role'] = 'tabpanel'
+    settings_pane.attrs['aria-labelledby'] = 'settings-tab'
+    settings_pane.attrs['tabindex'] = '0'
+    
+    # Export section
+    export_card = soup.new_tag('div')
+    export_card.attrs['class'] = 'card mb-3'
+    
+    export_header = soup.new_tag('div')
+    export_header.attrs['class'] = 'card-header'
+    export_header.string = 'Export Cohorts'
+    export_card.append(export_header)
+    
+    export_body = soup.new_tag('div')
+    export_body.attrs['class'] = 'card-body'
+    
+    export_text = soup.new_tag('p')
+    export_text.string = 'Save your current cohort definitions to a JSON file.'
+    export_body.append(export_text)
+    
+    export_btn = soup.new_tag('button')
+    export_btn.attrs['type'] = 'button'
+    export_btn.attrs['id'] = 'export-cohorts-btn'
+    export_btn.attrs['class'] = 'btn btn-primary'
+    export_icon = soup.new_tag('i')
+    export_icon.attrs['class'] = 'fas fa-download me-1'
+    export_btn.append(export_icon)
+    export_btn.append(' Export Cohorts')
+    export_body.append(export_btn)
+    
+    export_card.append(export_body)
+    settings_pane.append(export_card)
+    
+    # Import section
+    import_card = soup.new_tag('div')
+    import_card.attrs['class'] = 'card'
+    
+    import_header = soup.new_tag('div')
+    import_header.attrs['class'] = 'card-header'
+    import_header.string = 'Import Cohorts'
+    import_card.append(import_header)
+    
+    import_body = soup.new_tag('div')
+    import_body.attrs['class'] = 'card-body'
+    
+    import_text = soup.new_tag('p')
+    import_text.string = 'Load previously exported cohort definitions from a JSON file.'
+    import_body.append(import_text)
+    
+    import_file_row = soup.new_tag('div')
+    import_file_row.attrs['class'] = 'mb-3'
+    
+    import_file_input = soup.new_tag('input')
+    import_file_input.attrs['type'] = 'file'
+    import_file_input.attrs['class'] = 'form-control'
+    import_file_input.attrs['id'] = 'import-file-input'
+    import_file_input.attrs['accept'] = '.json'
+    import_file_row.append(import_file_input)
+    
+    import_body.append(import_file_row)
+    
+    import_btn = soup.new_tag('button')
+    import_btn.attrs['type'] = 'button'
+    import_btn.attrs['id'] = 'import-cohorts-btn'
+    import_btn.attrs['class'] = 'btn btn-primary'
+    import_icon = soup.new_tag('i')
+    import_icon.attrs['class'] = 'fas fa-upload me-1'
+    import_btn.append(import_icon)
+    import_btn.append(' Import Cohorts')
+    import_body.append(import_btn)
+    
+    import_card.append(import_body)
+    settings_pane.append(import_card)
+    
+    tab_content.append(settings_pane)
+    
+    modal_body.append(tab_content)
+    
+    # Modal footer
+    modal_footer = soup.new_tag('div')
+    modal_footer.attrs['class'] = 'modal-footer'
+    
+    close_btn = soup.new_tag('button')
+    close_btn.attrs['type'] = 'button'
+    close_btn.attrs['class'] = 'btn btn-secondary'
+    close_btn.attrs['data-bs-dismiss'] = 'modal'
+    close_btn.string = 'Close'
+    modal_footer.append(close_btn)
+    
+    modal_content.append(modal_body)
+    modal_content.append(modal_footer)
+    
+    modal_dialog.append(modal_content)
+    modal_div.append(modal_dialog)
+    
+    # Add the modal to the body
+    soup.body.append(modal_div)
+    
+    # Add a button to open the modal
+    button_container = soup.new_tag('div')
+    button_container.attrs['style'] = 'position: fixed; top: 20px; right: 20px; z-index: 1000;'
+    
+    open_button = soup.new_tag('button')
+    open_button.attrs['type'] = 'button'
+    open_button.attrs['class'] = 'btn btn-primary'
+    open_button.attrs['data-bs-toggle'] = 'modal'
+    open_button.attrs['data-bs-target'] = '#cohortControlModal'
+    open_button.attrs['style'] = 'box-shadow: 0 2px 5px rgba(0,0,0,0.2);'
+    
+    button_icon = soup.new_tag('i')
+    button_icon.attrs['class'] = 'fas fa-layer-group me-1'
+    open_button.append(button_icon)
+    open_button.append(' Manage Cohorts')
+    
+    button_container.append(open_button)
+    soup.body.append(button_container)
+    
+    # Add the JavaScript to make it interactive
+    script = soup.new_tag('script')
+    script.string = """
+    document.addEventListener('DOMContentLoaded', function() {
+        // Setup variables
+        const plotlyDiv = document.getElementById('%s');
+        const selectedPgsList = document.getElementById('selected-pgs-ids');
+        const selectedCount = document.getElementById('selected-count');
+        const pgsFileUpload = document.getElementById('pgs-file-upload');
+        const pgsTextarea = document.getElementById('pgs-textarea');
+        const addCohortBtn = document.getElementById('add-cohort-btn');
+        const clearSelectionBtn = document.getElementById('clear-selection-btn');
+        const cohortList = document.getElementById('cohort-list');
+        const noCohortMessage = document.getElementById('no-cohorts-message');
+        const exportCohortsBtn = document.getElementById('export-cohorts-btn');
+        const importCohortsBtn = document.getElementById('import-cohorts-btn');
+        const importFileInput = document.getElementById('import-file-input');
+        const colorPresets = document.querySelectorAll('.color-preset');
+        
+        // PGS IDs from the plot
+        const allPgsIds = %s;
+        let selectedPgsIds = [];
+        let cohorts = {};
+        
+        // Setup color preset buttons
+        colorPresets.forEach(btn => {
+            btn.addEventListener('click', function() {
+                document.getElementById('cohort-color').value = this.dataset.color;
+            });
+        });
+        
+        // Handle file upload
+        pgsFileUpload.addEventListener('change', function(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const content = e.target.result;
+                processInputText(content);
+            };
+            reader.readAsText(file);
+        });
+        
+        // Handle text area input
+        pgsTextarea.addEventListener('input', function() {
+            processInputText(pgsTextarea.value);
+        });
+        
+        // Process input text (from file or textarea)
+        function processInputText(text) {
+            // Clear current selection
+            selectedPgsIds = [];
+            
+            // Parse the text (supports comma-separated or newline-separated)
+            const lines = text.split(/[\\n,]+/);
+            
+            lines.forEach(line => {
+                const trimmed = line.trim();
+                if (trimmed && allPgsIds.includes(trimmed)) {
+                    selectedPgsIds.push(trimmed);
+                }
+            });
+            
+            // Remove duplicates
+            selectedPgsIds = [...new Set(selectedPgsIds)];
+            
+            // Update selected list
+            updateSelectedPgsList();
+        }
+        
+        // Update the selected PGS IDs list
+        function updateSelectedPgsList() {
+            selectedPgsList.innerHTML = '';
+            
+            if (selectedPgsIds.length === 0) {
+                const emptyMessage = document.createElement('div');
+                emptyMessage.textContent = 'No PGS IDs selected';
+                emptyMessage.className = 'text-muted fst-italic';
+                selectedPgsList.appendChild(emptyMessage);
+            } else {
+                // Show a sample of selected IDs (first 10)
+                const displayIds = selectedPgsIds.slice(0, 10);
+                displayIds.forEach(id => {
+                    const div = document.createElement('div');
+                    div.textContent = id;
+                    selectedPgsList.appendChild(div);
+                });
+                
+                // Show "and N more" if needed
+                if (selectedPgsIds.length > 10) {
+                    const more = document.createElement('div');
+                    more.textContent = `...and ${selectedPgsIds.length - 10} more`;
+                    more.className = 'text-muted fst-italic';
+                    selectedPgsList.appendChild(more);
+                }
+            }
+            
+            // Update count
+            selectedCount.textContent = `${selectedPgsIds.length} IDs`;
+            
+            // Clear textarea
+            pgsTextarea.value = '';
+            
+            // Clear file input
+            pgsFileUpload.value = '';
+        }
+        
+        // Handle clear selection button
+        clearSelectionBtn.addEventListener('click', function() {
+            selectedPgsIds = [];
+            updateSelectedPgsList();
+        });
+        
+        // Handle add cohort button
+        addCohortBtn.addEventListener('click', function() {
+            const cohortName = document.getElementById('cohort-name').value.trim();
+            const cohortColor = document.getElementById('cohort-color').value;
+            
+            if (!cohortName) {
+                showToast('Please enter a cohort name', 'warning');
+                return;
+            }
+            
+            if (selectedPgsIds.length === 0) {
+                showToast('Please select at least one PGS ID', 'warning');
+                return;
+            }
+            
+            // Add the cohort
+            cohorts[cohortName] = {
+                color: cohortColor,
+                ids: [...selectedPgsIds]
+            };
+            
+            // Update cohort list
+            updateCohortList();
+            
+            // Update plot
+            updatePlotColors();
+            
+            // Clear the form
+            document.getElementById('cohort-name').value = '';
+            selectedPgsIds = [];
+            updateSelectedPgsList();
+            
+            // Show success message
+            showToast(`Cohort '${cohortName}' with ${selectedPgsIds.length} IDs added successfully`, 'success');
+            
+            // Switch to the manage tab
+            const manageTab = new bootstrap.Tab(document.getElementById('manage-tab'));
+            manageTab.show();
+        });
+        
+// Create toast container if it doesn't exist
+        if (!document.getElementById('toast-container')) {
+            const toastContainer = document.createElement('div');
+            toastContainer.className = 'toast-container position-fixed bottom-0 end-0 p-3';
+            toastContainer.id = 'toast-container';
+            document.body.appendChild(toastContainer);
+        }
+        
+        // Function to show toast notifications
+        function showToast(message, type = 'info') {
+            const toastContainer = document.getElementById('toast-container');
+            
+            // Create toast element
+            const toastEl = document.createElement('div');
+            toastEl.className = `toast align-items-center border-0 bg-${type}`;
+            toastEl.setAttribute('role', 'alert');
+            toastEl.setAttribute('aria-live', 'assertive');
+            toastEl.setAttribute('aria-atomic', 'true');
+            
+            const toastBody = document.createElement('div');
+            toastBody.className = 'd-flex';
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.className = 'toast-body text-white';
+            messageDiv.textContent = message;
+            
+            const closeButton = document.createElement('button');
+            closeButton.type = 'button';
+            closeButton.className = 'btn-close btn-close-white me-2 m-auto';
+            closeButton.setAttribute('data-bs-dismiss', 'toast');
+            closeButton.setAttribute('aria-label', 'Close');
+            
+            toastBody.appendChild(messageDiv);
+            toastBody.appendChild(closeButton);
+            toastEl.appendChild(toastBody);
+            toastContainer.appendChild(toastEl);
+            
+            // Initialize and show the toast
+            const toast = new bootstrap.Toast(toastEl, { delay: 3000 });
+            toast.show();
+            
+            // Remove toast from DOM after it's hidden
+            toastEl.addEventListener('hidden.bs.toast', function() {
+                toastEl.remove();
+            });
+        }
+        
+        // Update the cohort list display
+        function updateCohortList() {
+            cohortList.innerHTML = '';
+            
+            const cohortKeys = Object.keys(cohorts);
+            
+            if (cohortKeys.length === 0) {
+                noCohortMessage.style.display = 'block';
+            } else {
+                noCohortMessage.style.display = 'none';
+                
+                cohortKeys.forEach(name => {
+                    const cohort = cohorts[name];
+                    
+                    const listItem = document.createElement('div');
+                    listItem.className = 'list-group-item list-group-item-action d-flex justify-content-between align-items-center';
+                    
+                    const leftSection = document.createElement('div');
+                    leftSection.className = 'd-flex align-items-center';
+                    
+                    const colorSwatch = document.createElement('span');
+                    colorSwatch.style.display = 'inline-block';
+                    colorSwatch.style.width = '16px';
+                    colorSwatch.style.height = '16px';
+                    colorSwatch.style.backgroundColor = cohort.color;
+                    colorSwatch.style.marginRight = '10px';
+                    colorSwatch.style.borderRadius = '3px';
+                    leftSection.appendChild(colorSwatch);
+                    
+                    const nameLabel = document.createElement('span');
+                    nameLabel.textContent = name;
+                    leftSection.appendChild(nameLabel);
+                    
+                    const badgeCount = document.createElement('span');
+                    badgeCount.className = 'badge bg-secondary rounded-pill ms-2';
+                    badgeCount.textContent = cohort.ids.length;
+                    leftSection.appendChild(badgeCount);
+                    
+                    listItem.appendChild(leftSection);
+                    
+                    const btnGroup = document.createElement('div');
+                    btnGroup.className = 'btn-group btn-group-sm';
+                    
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'btn btn-outline-danger';
+                    const removeIcon = document.createElement('i');
+                    removeIcon.className = 'fas fa-trash-alt';
+                    removeBtn.appendChild(removeIcon);
+                    removeBtn.setAttribute('data-bs-toggle', 'tooltip');
+                    removeBtn.setAttribute('title', 'Remove cohort');
+                    removeBtn.addEventListener('click', function() {
+                        delete cohorts[name];
+                        updateCohortList();
+                        updatePlotColors();
+                        showToast(`Cohort '${name}' removed`, 'danger');
+                    });
+                    
+                    btnGroup.appendChild(removeBtn);
+                    listItem.appendChild(btnGroup);
+                    
+                    cohortList.appendChild(listItem);
+                });
+                
+                // Initialize tooltips
+                const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+                tooltipTriggerList.map(function (tooltipTriggerEl) {
+                    return new bootstrap.Tooltip(tooltipTriggerEl);
+                });
+            }
+        }
+        
+        // Export cohorts to JSON file
+        exportCohortsBtn.addEventListener('click', function() {
+            if (Object.keys(cohorts).length === 0) {
+                showToast('No cohorts defined to export', 'warning');
+                return;
+            }
+            
+            const dataStr = JSON.stringify(cohorts, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+            
+            const exportFileDefaultName = 'pgs_cohorts.json';
+            
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', exportFileDefaultName);
+            linkElement.click();
+            
+            showToast('Cohorts exported successfully', 'success');
+        });
+        
+        // Import cohorts from JSON file
+        importCohortsBtn.addEventListener('click', function() {
+            if (!importFileInput.files || importFileInput.files.length === 0) {
+                showToast('Please select a file to import', 'warning');
+                return;
+            }
+            
+            const file = importFileInput.files[0];
+            
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const importedCohorts = JSON.parse(e.target.result);
+                    
+                    // Validate imported data
+                    let isValid = true;
+                    for (const name in importedCohorts) {
+                        if (!importedCohorts[name].color || !Array.isArray(importedCohorts[name].ids)) {
+                            isValid = false;
+                            break;
+                        }
+                    }
+                    
+                    if (isValid) {
+                        // Merge with existing cohorts (overwrite if same name)
+                        const importCount = Object.keys(importedCohorts).length;
+                        Object.assign(cohorts, importedCohorts);
+                        updateCohortList();
+                        updatePlotColors();
+                        showToast(`${importCount} cohort(s) imported successfully`, 'success');
+                        
+                        // Switch to the manage tab
+                        const manageTab = new bootstrap.Tab(document.getElementById('manage-tab'));
+                        manageTab.show();
+                    } else {
+                        showToast('Invalid cohort data format', 'danger');
+                    }
+                } catch (error) {
+                    showToast('Could not parse the imported file: ' + error.message, 'danger');
+                }
+                
+                // Clear file input
+                importFileInput.value = '';
+            };
+            reader.readAsText(file);
+        });
+        
+        // Wait for Plotly to be fully loaded
+        let checkPlotly = setInterval(function() {
+            if (plotlyDiv && plotlyDiv.data && plotlyDiv.data[0]) {
+                clearInterval(checkPlotly);
+                console.log('Plotly loaded');
+            }
+        }, 100);
+        
+        // Update the plot colors based on cohorts
+        function updatePlotColors() {
+            if (!plotlyDiv || !plotlyDiv.data || !plotlyDiv.data[0]) {
+                console.log('Plotly not yet loaded');
+                return;
+            }
+            
+            const data = plotlyDiv.data[0];
+            
+            // Create a mapping of PGS ID to color
+            const pgsIdToColor = {};
+            Object.keys(cohorts).forEach(name => {
+                const cohort = cohorts[name];
+                cohort.ids.forEach(id => {
+                    pgsIdToColor[id] = cohort.color;
+                });
+            });
+            
+            // Create colors array for all points (default to red)
+            const colors = [];
+            let colorAssigned = false;
+            
+            // Assign colors based on PGS IDs in the text
+            for (let i = 0; i < data.text.length; i++) {
+                const text = data.text[i];
+                const match = text.match(/PGS ID: (PGS\\d+)/);
+                
+                if (match && match[1] && pgsIdToColor[match[1]]) {
+                    colors.push(pgsIdToColor[match[1]]);
+                    colorAssigned = true;
+                } else {
+                    colors.push('red');
+                }
+            }
+            
+            // Update the marker colors
+            const update = {
+                'marker.color': [colors]
+            };
+            
+            Plotly.restyle(plotlyDiv, update, [0]);
+            
+            // Remove any existing legend traces except the original data
+            if (plotlyDiv.data.length > 1) {
+                const indicesToRemove = Array.from(
+                    {length: plotlyDiv.data.length - 1}, 
+                    (_, i) => i + 1
+                );
+                Plotly.deleteTraces(plotlyDiv, indicesToRemove);
+            }
+            
+            // Create legend entries for cohorts
+            Object.keys(cohorts).forEach(name => {
+                Plotly.addTraces(plotlyDiv, {
+                    x: [null],
+                    y: [null],
+                    type: 'scatter',
+                    mode: 'markers',
+                    name: name,
+                    marker: {color: cohorts[name].color, size: 6},
+                    showlegend: true
+                });
+            });
+            
+            // Hide the original trace from legend
+            const legendUpdate = {
+                showlegend: false
+            };
+            Plotly.restyle(plotlyDiv, legendUpdate, [0]);
+        }
+        
+        // Initialize UI
+        updateSelectedPgsList();
+        updateCohortList();
+    });
+    """ % (div_id, json.dumps(unique_pgs_ids))
+    
+    # Add the script to the HTML
+    soup.body.append(script)
+    
+    # Save the modified HTML
+    output_path = output_filepath or html_filepath
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write(str(soup))
+    
+    print(f"Interactive cohort viewer HTML saved to {output_path}") 
+    return output_path
+
+
 def add_interactive_filter_umap(html_file_path, output_file_path=None):
     """
     Add interactive filtering capability to a saved Plotly HTML file,
@@ -4254,637 +5549,637 @@ def add_interactive_filter_pca(html_file_path, output_file_path=None):
     """
     return add_interactive_filter_generic(html_file_path, output_file_path, 'pca')
 
-def add_interactive_filter_generic(html_file_path, output_file_path=None, plot_type='generic'):
-    """
-    Generalized function to add interactive filtering to various plot types
-    """
-    import os
-    from bs4 import BeautifulSoup
+# def add_interactive_filter_generic(html_file_path, output_file_path=None, plot_type='generic'):
+#     """
+#     Generalized function to add interactive filtering to various plot types
+#     """
+#     import os
+#     from bs4 import BeautifulSoup
     
-    # Create output path if not provided
-    if output_file_path is None:
-        file_name, file_ext = os.path.splitext(html_file_path)
-        output_file_path = f"{file_name}_interactive{file_ext}"
-        output_file_path = output_file_path[1:]
+#     # Create output path if not provided
+#     if output_file_path is None:
+#         file_name, file_ext = os.path.splitext(html_file_path)
+#         output_file_path = f"{file_name}_interactive{file_ext}"
+#         output_file_path = output_file_path[1:]
     
-    # Read the original HTML file
-    with open(html_file_path[1:], 'r', encoding='utf-8') as file:
-        html_content = file.read()
+#     # Read the original HTML file
+#     with open(html_file_path[1:], 'r', encoding='utf-8') as file:
+#         html_content = file.read()
     
-    # Parse HTML
-    soup = BeautifulSoup(html_content, 'html.parser')
+#     # Parse HTML
+#     soup = BeautifulSoup(html_content, 'html.parser')
     
-    # Add CSS for the filter UI
-    style_tag = soup.new_tag('style')
-    style_tag.string = """
-    .filter-controls {
-        padding: 15px;
-        margin: 10px 0;
-        border: 1px solid #ddd;
-        border-radius: 5px;
-        background-color: #f9f9f9;
-        font-family: Arial, sans-serif;
-    }
-    .filter-row {
-        display: flex;
-        gap: 10px;
-        margin-bottom: 10px;
-        align-items: center;
-    }
-    .filter-input {
-        flex-grow: 1;
-        padding: 8px;
-        border: 1px solid #ccc;
-        border-radius: 4px;
-    }
-    .filter-button {
-        padding: 8px 15px;
-        background-color: #4CAF50;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-    .filter-button:hover {
-        background-color: #45a049;
-    }
-    .reset-button {
-        padding: 8px 15px;
-        background-color: #f44336;
-        color: white;
-        border: none;
-        border-radius: 4px;
-        cursor: pointer;
-    }
-    .reset-button:hover {
-        background-color: #d32f2f;
-    }
-    #filter-status {
-        margin-top: 10px;
-        padding: 5px;
-        color: #666;
-    }
-    #debug-panel {
-        margin-top: 15px;
-        padding: 10px;
-        border: 1px dashed #ccc;
-        background-color: #f5f5f5;
-        font-family: monospace;
-        font-size: 12px;
-        max-height: 200px;
-        overflow-y: auto;
-        white-space: pre-wrap;
-    }
-    .debug-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    .debug-toggle {
-        cursor: pointer;
-        color: blue;
-        text-decoration: underline;
-    }
-    """
-    soup.head.append(style_tag)
+#     # Add CSS for the filter UI
+#     style_tag = soup.new_tag('style')
+#     style_tag.string = """
+#     .filter-controls {
+#         padding: 15px;
+#         margin: 10px 0;
+#         border: 1px solid #ddd;
+#         border-radius: 5px;
+#         background-color: #f9f9f9;
+#         font-family: Arial, sans-serif;
+#     }
+#     .filter-row {
+#         display: flex;
+#         gap: 10px;
+#         margin-bottom: 10px;
+#         align-items: center;
+#     }
+#     .filter-input {
+#         flex-grow: 1;
+#         padding: 8px;
+#         border: 1px solid #ccc;
+#         border-radius: 4px;
+#     }
+#     .filter-button {
+#         padding: 8px 15px;
+#         background-color: #4CAF50;
+#         color: white;
+#         border: none;
+#         border-radius: 4px;
+#         cursor: pointer;
+#     }
+#     .filter-button:hover {
+#         background-color: #45a049;
+#     }
+#     .reset-button {
+#         padding: 8px 15px;
+#         background-color: #f44336;
+#         color: white;
+#         border: none;
+#         border-radius: 4px;
+#         cursor: pointer;
+#     }
+#     .reset-button:hover {
+#         background-color: #d32f2f;
+#     }
+#     #filter-status {
+#         margin-top: 10px;
+#         padding: 5px;
+#         color: #666;
+#     }
+#     #debug-panel {
+#         margin-top: 15px;
+#         padding: 10px;
+#         border: 1px dashed #ccc;
+#         background-color: #f5f5f5;
+#         font-family: monospace;
+#         font-size: 12px;
+#         max-height: 200px;
+#         overflow-y: auto;
+#         white-space: pre-wrap;
+#     }
+#     .debug-header {
+#         display: flex;
+#         justify-content: space-between;
+#         align-items: center;
+#     }
+#     .debug-toggle {
+#         cursor: pointer;
+#         color: blue;
+#         text-decoration: underline;
+#     }
+#     """
+#     soup.head.append(style_tag)
     
-    # Create filter control elements
-    filter_div = soup.new_tag('div')
-    filter_div['class'] = 'filter-controls'
-    filter_div.append(soup.new_tag('h3'))
+#     # Create filter control elements
+#     filter_div = soup.new_tag('div')
+#     filter_div['class'] = 'filter-controls'
+#     filter_div.append(soup.new_tag('h3'))
     
-    # Customize header based on plot type
-    if plot_type == 'pca':
-        filter_div.h3.string = 'Filter PCA Points by ID'
-    elif plot_type == 'umap':
-        filter_div.h3.string = 'Filter UMAP Points by ID'
-    else:
-        filter_div.h3.string = 'Filter Points by ID'
+#     # Customize header based on plot type
+#     if plot_type == 'pca':
+#         filter_div.h3.string = 'Filter PCA Points by ID'
+#     elif plot_type == 'umap':
+#         filter_div.h3.string = 'Filter UMAP Points by ID'
+#     else:
+#         filter_div.h3.string = 'Filter Points by ID'
     
-    # File upload row
-    file_row = soup.new_tag('div')
-    file_row['class'] = 'filter-row'
+#     # File upload row
+#     file_row = soup.new_tag('div')
+#     file_row['class'] = 'filter-row'
     
-    file_label = soup.new_tag('label')
-    file_label['for'] = 'id-file-input'
-    file_label.string = 'Upload ID file:'
-    file_row.append(file_label)
+#     file_label = soup.new_tag('label')
+#     file_label['for'] = 'id-file-input'
+#     file_label.string = 'Upload ID file:'
+#     file_row.append(file_label)
     
-    file_input = soup.new_tag('input')
-    file_input['type'] = 'file'
-    file_input['id'] = 'id-file-input'
-    file_input['class'] = 'filter-input'
-    file_input['accept'] = '.txt,.csv'
-    file_row.append(file_input)
+#     file_input = soup.new_tag('input')
+#     file_input['type'] = 'file'
+#     file_input['id'] = 'id-file-input'
+#     file_input['class'] = 'filter-input'
+#     file_input['accept'] = '.txt,.csv'
+#     file_row.append(file_input)
     
-    apply_button = soup.new_tag('button')
-    apply_button['id'] = 'apply-filter'
-    apply_button['class'] = 'filter-button'
-    apply_button.string = 'Apply Filter'
-    file_row.append(apply_button)
+#     apply_button = soup.new_tag('button')
+#     apply_button['id'] = 'apply-filter'
+#     apply_button['class'] = 'filter-button'
+#     apply_button.string = 'Apply Filter'
+#     file_row.append(apply_button)
     
-    reset_button = soup.new_tag('button')
-    reset_button['id'] = 'reset-filter'
-    reset_button['class'] = 'reset-button'
-    reset_button.string = 'Reset'
-    file_row.append(reset_button)
+#     reset_button = soup.new_tag('button')
+#     reset_button['id'] = 'reset-filter'
+#     reset_button['class'] = 'reset-button'
+#     reset_button.string = 'Reset'
+#     file_row.append(reset_button)
     
-    filter_div.append(file_row)
+#     filter_div.append(file_row)
     
-    # Manual input row
-    manual_row = soup.new_tag('div')
-    manual_row['class'] = 'filter-row'
+#     # Manual input row
+#     manual_row = soup.new_tag('div')
+#     manual_row['class'] = 'filter-row'
     
-    manual_label = soup.new_tag('label')
-    manual_label['for'] = 'manual-ids'
-    manual_label.string = 'Or enter IDs manually:'
-    manual_row.append(manual_label)
+#     manual_label = soup.new_tag('label')
+#     manual_label['for'] = 'manual-ids'
+#     manual_label.string = 'Or enter IDs manually:'
+#     manual_row.append(manual_label)
     
-    manual_input = soup.new_tag('input')
-    manual_input['type'] = 'text'
-    manual_input['id'] = 'manual-ids'
-    manual_input['class'] = 'filter-input'
-    manual_input['placeholder'] = 'Comma-separated IDs'
-    manual_row.append(manual_input)
+#     manual_input = soup.new_tag('input')
+#     manual_input['type'] = 'text'
+#     manual_input['id'] = 'manual-ids'
+#     manual_input['class'] = 'filter-input'
+#     manual_input['placeholder'] = 'Comma-separated IDs'
+#     manual_row.append(manual_input)
     
-    manual_button = soup.new_tag('button')
-    manual_button['id'] = 'apply-manual-filter'
-    manual_button['class'] = 'filter-button'
-    manual_button.string = 'Apply'
-    manual_row.append(manual_button)
+#     manual_button = soup.new_tag('button')
+#     manual_button['id'] = 'apply-manual-filter'
+#     manual_button['class'] = 'filter-button'
+#     manual_button.string = 'Apply'
+#     manual_row.append(manual_button)
     
-    filter_div.append(manual_row)
+#     filter_div.append(manual_row)
     
-    # Status display
-    status_div = soup.new_tag('div')
-    status_div['id'] = 'filter-status'
-    filter_div.append(status_div)
+#     # Status display
+#     status_div = soup.new_tag('div')
+#     status_div['id'] = 'filter-status'
+#     filter_div.append(status_div)
     
-    # Debug panel
-    debug_header = soup.new_tag('div')
-    debug_header['class'] = 'debug-header'
+#     # Debug panel
+#     debug_header = soup.new_tag('div')
+#     debug_header['class'] = 'debug-header'
     
-    debug_title = soup.new_tag('span')
-    debug_title.string = 'Debug Information'
-    debug_header.append(debug_title)
+#     debug_title = soup.new_tag('span')
+#     debug_title.string = 'Debug Information'
+#     debug_header.append(debug_title)
     
-    debug_toggle = soup.new_tag('span')
-    debug_toggle['class'] = 'debug-toggle'
-    debug_toggle['id'] = 'toggle-debug'
-    debug_toggle.string = 'Show/Hide'
-    debug_header.append(debug_toggle)
+#     debug_toggle = soup.new_tag('span')
+#     debug_toggle['class'] = 'debug-toggle'
+#     debug_toggle['id'] = 'toggle-debug'
+#     debug_toggle.string = 'Show/Hide'
+#     debug_header.append(debug_toggle)
     
-    filter_div.append(debug_header)
+#     filter_div.append(debug_header)
     
-    debug_div = soup.new_tag('div')
-    debug_div['id'] = 'debug-panel'
-    debug_div['style'] = 'display: none;'  # Initially hidden
-    filter_div.append(debug_div)
+#     debug_div = soup.new_tag('div')
+#     debug_div['id'] = 'debug-panel'
+#     debug_div['style'] = 'display: none;'  # Initially hidden
+#     filter_div.append(debug_div)
     
-    # Find the plotly div and insert our filter controls before it
-    plotly_div = soup.select_one('div.plotly-graph-div')
-    if plotly_div:
-        plotly_div.insert_before(filter_div)
+#     # Find the plotly div and insert our filter controls before it
+#     plotly_div = soup.select_one('div.plotly-graph-div')
+#     if plotly_div:
+#         plotly_div.insert_before(filter_div)
     
-    # Add the JavaScript for filtering functionality
-    script_tag = soup.new_tag('script')
-    script_tag.string = f"""
-// JavaScript for interactive filtering with hover text ID extraction - Fixed for Plotly 3.0
-document.addEventListener('DOMContentLoaded', function() {{
-    console.log('PCA Filter script loaded (Plotly 3.0 compatible)');
+#     # Add the JavaScript for filtering functionality
+#     script_tag = soup.new_tag('script')
+#     script_tag.string = f"""
+# // JavaScript for interactive filtering with hover text ID extraction - Fixed for Plotly 3.0
+# document.addEventListener('DOMContentLoaded', function() {{
+#     console.log('PCA Filter script loaded (Plotly 3.0 compatible)');
     
-    // DEBUG: Setup debug panel
-    const debugPanel = document.getElementById('debug-panel');
-    const toggleDebug = document.getElementById('toggle-debug');
-    toggleDebug.addEventListener('click', function() {{
-        if (debugPanel.style.display === 'none') {{
-            debugPanel.style.display = 'block';
-        }} else {{
-            debugPanel.style.display = 'none';
-        }}
-    }});
+#     // DEBUG: Setup debug panel
+#     const debugPanel = document.getElementById('debug-panel');
+#     const toggleDebug = document.getElementById('toggle-debug');
+#     toggleDebug.addEventListener('click', function() {{
+#         if (debugPanel.style.display === 'none') {{
+#             debugPanel.style.display = 'block';
+#         }} else {{
+#             debugPanel.style.display = 'none';
+#         }}
+#     }});
     
-    function logDebug(message, data = null) {{
-        // Log to console
-        if (data) {{
-            console.log(message, data);
-        }} else {{
-            console.log(message);
-        }}
+#     function logDebug(message, data = null) {{
+#         // Log to console
+#         if (data) {{
+#             console.log(message, data);
+#         }} else {{
+#             console.log(message);
+#         }}
         
-        // Log to debug panel
-        const timestamp = new Date().toLocaleTimeString();
-        let formattedMessage = `[${{timestamp}}] ${{message}}`;
+#         // Log to debug panel
+#         const timestamp = new Date().toLocaleTimeString();
+#         let formattedMessage = `[${{timestamp}}] ${{message}}`;
         
-        if (data) {{
-            // Convert data to string representation
-            let dataStr;
-            try {{
-                if (Array.isArray(data)) {{
-                    if (data.length > 20) {{
-                        dataStr = JSON.stringify(data.slice(0, 20)) + `... (${{data.length - 20}} more items)`;
-                    }} else {{
-                        dataStr = JSON.stringify(data);
-                    }}
-                }} else if (typeof data === 'object' && data !== null) {{
-                    dataStr = JSON.stringify(data);
-                }} else {{
-                    dataStr = String(data);
-                }}
-            }} catch (e) {{
-                dataStr = "[Object could not be stringified]";
-            }}
+#         if (data) {{
+#             // Convert data to string representation
+#             let dataStr;
+#             try {{
+#                 if (Array.isArray(data)) {{
+#                     if (data.length > 20) {{
+#                         dataStr = JSON.stringify(data.slice(0, 20)) + `... (${{data.length - 20}} more items)`;
+#                     }} else {{
+#                         dataStr = JSON.stringify(data);
+#                     }}
+#                 }} else if (typeof data === 'object' && data !== null) {{
+#                     dataStr = JSON.stringify(data);
+#                 }} else {{
+#                     dataStr = String(data);
+#                 }}
+#             }} catch (e) {{
+#                 dataStr = "[Object could not be stringified]";
+#             }}
             
-            formattedMessage += `\\n${{dataStr}}`;
-        }}
+#             formattedMessage += `\\n${{dataStr}}`;
+#         }}
         
-        // Add to debug panel, prepending to show newest first
-        const debugLine = document.createElement('div');
-        debugLine.textContent = formattedMessage;
-        debugPanel.prepend(debugLine);
+#         // Add to debug panel, prepending to show newest first
+#         const debugLine = document.createElement('div');
+#         debugLine.textContent = formattedMessage;
+#         debugPanel.prepend(debugLine);
         
-        // Limit debug panel size
-        if (debugPanel.children.length > 100) {{
-            debugPanel.removeChild(debugPanel.lastChild);
-        }}
-    }}
+#         // Limit debug panel size
+#         if (debugPanel.children.length > 100) {{
+#             debugPanel.removeChild(debugPanel.lastChild);
+#         }}
+#     }}
     
-    // Store original data for reset functionality
-    let originalData = null;
-    let plotDiv = document.querySelector('.plotly-graph-div');
+#     // Store original data for reset functionality
+#     let originalData = null;
+#     let plotDiv = document.querySelector('.plotly-graph-div');
     
-    if (!plotDiv) {{
-        logDebug('ERROR: Could not find Plotly graph element');
-        return;
-    }}
+#     if (!plotDiv) {{
+#         logDebug('ERROR: Could not find Plotly graph element');
+#         return;
+#     }}
     
-    logDebug('Found plot div:', plotDiv.id);
+#     logDebug('Found plot div:', plotDiv.id);
     
-    // Wait for Plotly to be fully initialized
-    const checkPlotlyInterval = setInterval(() => {{
-        if (window.Plotly && window.Plotly.newPlot) {{
-            clearInterval(checkPlotlyInterval);
-            logDebug('Plotly initialized');
+#     // Wait for Plotly to be fully initialized
+#     const checkPlotlyInterval = setInterval(() => {{
+#         if (window.Plotly && window.Plotly.newPlot) {{
+#             clearInterval(checkPlotlyInterval);
+#             logDebug('Plotly initialized');
             
-            // Store the original data by capturing the Plotly.newPlot call
-            const originalNewPlot = window.Plotly.newPlot;
-            window.Plotly.newPlot = function() {{
-                // Save the original arguments
-                const args = Array.from(arguments);
-                originalData = JSON.parse(JSON.stringify(args[1])); // Deep clone the data
-                logDebug(`Captured plot data with ${{originalData.length}} traces`);
+#             // Store the original data by capturing the Plotly.newPlot call
+#             const originalNewPlot = window.Plotly.newPlot;
+#             window.Plotly.newPlot = function() {{
+#                 // Save the original arguments
+#                 const args = Array.from(arguments);
+#                 originalData = JSON.parse(JSON.stringify(args[1])); // Deep clone the data
+#                 logDebug(`Captured plot data with ${{originalData.length}} traces`);
                 
-                // Call the original function
-                return originalNewPlot.apply(this, args);
-            }};
+#                 // Call the original function
+#                 return originalNewPlot.apply(this, args);
+#             }};
             
-            // Force re-rendering to capture the data
-            setTimeout(() => {{
-                if (!originalData) {{
-                    // Try to get data directly from the DOM
-                    try {{
-                        const scriptContent = document.querySelector('script:not([src])').textContent;
-                        const dataMatch = scriptContent.match(/Plotly\.newPlot\([^,]+,\s*(\[[^\]]+\])/);
-                        if (dataMatch && dataMatch[1]) {{
-                            originalData = JSON.parse(dataMatch[1]);
-                            logDebug(`Extracted plot data from script: ${{originalData.length}} traces`);
-                        }}
-                    }} catch (e) {{
-                        logDebug('ERROR: Failed to extract data from script', e.message);
-                    }}
-                }}
+#             // Force re-rendering to capture the data
+#             setTimeout(() => {{
+#                 if (!originalData) {{
+#                     // Try to get data directly from the DOM
+#                     try {{
+#                         const scriptContent = document.querySelector('script:not([src])').textContent;
+#                         const dataMatch = scriptContent.match(/Plotly\.newPlot\([^,]+,\s*(\[[^\]]+\])/);
+#                         if (dataMatch && dataMatch[1]) {{
+#                             originalData = JSON.parse(dataMatch[1]);
+#                             logDebug(`Extracted plot data from script: ${{originalData.length}} traces`);
+#                         }}
+#                     }} catch (e) {{
+#                         logDebug('ERROR: Failed to extract data from script', e.message);
+#                     }}
+#                 }}
                 
-                // Setup event listeners
-                document.getElementById('apply-filter').addEventListener('click', function() {{
-                    const fileInput = document.getElementById('id-file-input');
-                    if (fileInput.files.length > 0) {{
-                        processFile(fileInput.files[0]);
-                    }} else {{
-                        updateStatus('Please select a file to upload', 'error');
-                    }}
-                }});
+#                 // Setup event listeners
+#                 document.getElementById('apply-filter').addEventListener('click', function() {{
+#                     const fileInput = document.getElementById('id-file-input');
+#                     if (fileInput.files.length > 0) {{
+#                         processFile(fileInput.files[0]);
+#                     }} else {{
+#                         updateStatus('Please select a file to upload', 'error');
+#                     }}
+#                 }});
                 
-                document.getElementById('apply-manual-filter').addEventListener('click', function() {{
-                    const manualInput = document.getElementById('manual-ids').value.trim();
-                    if (manualInput) {{
-                        const ids = manualInput.split(',').map(id => id.trim()).filter(id => id);
-                        logDebug('Applying manual filter with IDs:', ids);
-                        applyFilter(ids);
-                    }} else {{
-                        updateStatus('Please enter IDs to filter', 'error');
-                    }}
-                }});
+#                 document.getElementById('apply-manual-filter').addEventListener('click', function() {{
+#                     const manualInput = document.getElementById('manual-ids').value.trim();
+#                     if (manualInput) {{
+#                         const ids = manualInput.split(',').map(id => id.trim()).filter(id => id);
+#                         logDebug('Applying manual filter with IDs:', ids);
+#                         applyFilter(ids);
+#                     }} else {{
+#                         updateStatus('Please enter IDs to filter', 'error');
+#                     }}
+#                 }});
                 
-                document.getElementById('reset-filter').addEventListener('click', resetFilter);
+#                 document.getElementById('reset-filter').addEventListener('click', resetFilter);
                 
-                // Analyze the plot structure
-                analyzeHoverTextFormat();
+#                 // Analyze the plot structure
+#                 analyzeHoverTextFormat();
                 
-                updateStatus('Filter controls ready. Upload a file with IDs or enter IDs manually.', 'info');
-            }}, 500);
-        }}
-    }}, 200);
+#                 updateStatus('Filter controls ready. Upload a file with IDs or enter IDs manually.', 'info');
+#             }}, 500);
+#         }}
+#     }}, 200);
     
-    // Analyze hover text format
-    function analyzeHoverTextFormat() {{
-        logDebug('Analyzing plot structure...');
+#     // Analyze hover text format
+#     function analyzeHoverTextFormat() {{
+#         logDebug('Analyzing plot structure...');
         
-        if (!originalData || originalData.length === 0) {{
-            logDebug('ERROR: Plot data not available for analysis');
-            return;
-        }}
+#         if (!originalData || originalData.length === 0) {{
+#             logDebug('ERROR: Plot data not available for analysis');
+#             return;
+#         }}
         
-        // Log information about each trace
-        originalData.forEach((trace, i) => {{
-            logDebug(`Trace ${{i}} information:`);
+#         // Log information about each trace
+#         originalData.forEach((trace, i) => {{
+#             logDebug(`Trace ${{i}} information:`);
             
-            // Log trace type and mode
-            logDebug(`  Type: ${{trace.type || 'unknown'}}, Mode: ${{trace.mode || 'unknown'}}, Name: ${{trace.name || 'unnamed'}}`);
+#             // Log trace type and mode
+#             logDebug(`  Type: ${{trace.type || 'unknown'}}, Mode: ${{trace.mode || 'unknown'}}, Name: ${{trace.name || 'unnamed'}}`);
             
-            // Check for hover text
-            if (trace.hoverinfo) {{
-                logDebug(`  Hoverinfo: ${{trace.hoverinfo}}`);
-            }}
+#             // Check for hover text
+#             if (trace.hoverinfo) {{
+#                 logDebug(`  Hoverinfo: ${{trace.hoverinfo}}`);
+#             }}
             
-            // Check for hover text content
-            if (trace.hovertext) {{
-                logDebug(`  Has hovertext property: ${{Array.isArray(trace.hovertext) ? trace.hovertext.length + ' items' : 'single value'}}`);
+#             // Check for hover text content
+#             if (trace.hovertext) {{
+#                 logDebug(`  Has hovertext property: ${{Array.isArray(trace.hovertext) ? trace.hovertext.length + ' items' : 'single value'}}`);
                 
-                // Show sample text
-                if (Array.isArray(trace.hovertext) && trace.hovertext.length > 0) {{
-                    const sampleText = trace.hovertext[0].substring(0, 100) + (trace.hovertext[0].length > 100 ? '...' : '');
-                    logDebug(`  Sample hovertext: "${{sampleText}}"`);
+#                 // Show sample text
+#                 if (Array.isArray(trace.hovertext) && trace.hovertext.length > 0) {{
+#                     const sampleText = trace.hovertext[0].substring(0, 100) + (trace.hovertext[0].length > 100 ? '...' : '');
+#                     logDebug(`  Sample hovertext: "${{sampleText}}"`);
                     
-                    // Test ID extraction
-                    const extractedId = extractIdFromHoverText(trace.hovertext[0]);
-                    if (extractedId) {{
-                        logDebug(`  Extracted ID: "${{extractedId}}"`);
-                    }} else {{
-                        logDebug(`  Failed to extract ID from hover text`);
-                    }}
-                }}
-            }}
+#                     // Test ID extraction
+#                     const extractedId = extractIdFromHoverText(trace.hovertext[0]);
+#                     if (extractedId) {{
+#                         logDebug(`  Extracted ID: "${{extractedId}}"`);
+#                     }} else {{
+#                         logDebug(`  Failed to extract ID from hover text`);
+#                     }}
+#                 }}
+#             }}
             
-            // Check for X and Y data structure
-            if (trace.x) {{
-                if (typeof trace.x === 'object' && trace.x.dtype) {{
-                    logDebug(`  X data format: binary (${{trace.x.dtype}})`);
-                }} else if (Array.isArray(trace.x)) {{
-                    logDebug(`  X data format: array (${{trace.x.length}} points)`);
-                }}
-            }}
+#             // Check for X and Y data structure
+#             if (trace.x) {{
+#                 if (typeof trace.x === 'object' && trace.x.dtype) {{
+#                     logDebug(`  X data format: binary (${{trace.x.dtype}})`);
+#                 }} else if (Array.isArray(trace.x)) {{
+#                     logDebug(`  X data format: array (${{trace.x.length}} points)`);
+#                 }}
+#             }}
             
-            if (trace.y) {{
-                if (typeof trace.y === 'object' && trace.y.dtype) {{
-                    logDebug(`  Y data format: binary (${{trace.y.dtype}})`);
-                }} else if (Array.isArray(trace.y)) {{
-                    logDebug(`  Y data format: array (${{trace.y.length}} points)`);
-                }}
-            }}
-        }});
-    }}
+#             if (trace.y) {{
+#                 if (typeof trace.y === 'object' && trace.y.dtype) {{
+#                     logDebug(`  Y data format: binary (${{trace.y.dtype}})`);
+#                 }} else if (Array.isArray(trace.y)) {{
+#                     logDebug(`  Y data format: array (${{trace.y.length}} points)`);
+#                 }}
+#             }}
+#         }});
+#     }}
     
-    function extractIdFromHoverText(hoverText) {{
-        // If empty or invalid, return null
-        if (!hoverText || typeof hoverText !== 'string') {{
-            return null;
-        }}
+#     function extractIdFromHoverText(hoverText) {{
+#         // If empty or invalid, return null
+#         if (!hoverText || typeof hoverText !== 'string') {{
+#             return null;
+#         }}
         
-        // For PCA plots, the most specific pattern first
-        {f'if ("{plot_type}" === "pca") {{' if plot_type else 'if (false) {'}
-            // PGS ID pattern specific to this plot
-            const pgsMatch = hoverText.match(/PGS ID: ([^<\\r\\n]+)/i);
-            if (pgsMatch && pgsMatch[1]) {{
-                return pgsMatch[1].trim();
-            }}
+#         // For PCA plots, the most specific pattern first
+#         {f'if ("{plot_type}" === "pca") {{' if plot_type else 'if (false) {'}
+#             // PGS ID pattern specific to this plot
+#             const pgsMatch = hoverText.match(/PGS ID: ([^<\\r\\n]+)/i);
+#             if (pgsMatch && pgsMatch[1]) {{
+#                 return pgsMatch[1].trim();
+#             }}
             
-            // Try to extract Sample ID pattern
-            const sampleMatch = hoverText.match(/Sample(?:[ :]|\\s*ID\\s*:)\\s*([^<,\\r\\n]+)/i);
-            if (sampleMatch && sampleMatch[1]) {{
-                return sampleMatch[1].trim();
-            }}
+#             // Try to extract Sample ID pattern
+#             const sampleMatch = hoverText.match(/Sample(?:[ :]|\\s*ID\\s*:)\\s*([^<,\\r\\n]+)/i);
+#             if (sampleMatch && sampleMatch[1]) {{
+#                 return sampleMatch[1].trim();
+#             }}
             
-            // Look for PC component labels with ID in parentheses
-            const pcaLabelMatch = hoverText.match(/PC\\d+\\s*\\(([^)]+)\\)/i);
-            if (pcaLabelMatch && pcaLabelMatch[1]) {{
-                return pcaLabelMatch[1].trim();
-            }}
-        }}
+#             // Look for PC component labels with ID in parentheses
+#             const pcaLabelMatch = hoverText.match(/PC\\d+\\s*\\(([^)]+)\\)/i);
+#             if (pcaLabelMatch && pcaLabelMatch[1]) {{
+#                 return pcaLabelMatch[1].trim();
+#             }}
+#         }}
         
-        // More generic patterns
+#         // More generic patterns
         
-        // Try to extract any "ID: value" pattern
-        const idLabelMatch = hoverText.match(/\\b(\\w+)\\s*ID\\s*:?\\s*([^<,\\r\\n]+)/i);
-        if (idLabelMatch && idLabelMatch[2]) {{
-            return idLabelMatch[2].trim();
-        }}
+#         // Try to extract any "ID: value" pattern
+#         const idLabelMatch = hoverText.match(/\\b(\\w+)\\s*ID\\s*:?\\s*([^<,\\r\\n]+)/i);
+#         if (idLabelMatch && idLabelMatch[2]) {{
+#             return idLabelMatch[2].trim();
+#         }}
         
-        // Look for standalone ID-like patterns (e.g. PGS000123)
-        const standaloneIdMatch = hoverText.match(/\\b([A-Z]{2,3}\\d{5,}|[A-Z]{3}_\\d+)\\b/);
-        if (standaloneIdMatch && standaloneIdMatch[1]) {{
-            return standaloneIdMatch[1];
-        }}
+#         // Look for standalone ID-like patterns (e.g. PGS000123)
+#         const standaloneIdMatch = hoverText.match(/\\b([A-Z]{2,3}\\d{5,}|[A-Z]{3}_\\d+)\\b/);
+#         if (standaloneIdMatch && standaloneIdMatch[1]) {{
+#             return standaloneIdMatch[1];
+#         }}
         
-        // Last resort: if the hover text is simple (no special formatting)
-        // and looks like an ID itself, use the whole text
-        if (!/[<>:]/.test(hoverText) && hoverText.length < 30) {{
-            return hoverText.trim();
-        }}
+#         // Last resort: if the hover text is simple (no special formatting)
+#         // and looks like an ID itself, use the whole text
+#         if (!/[<>:]/.test(hoverText) && hoverText.length < 30) {{
+#             return hoverText.trim();
+#         }}
         
-        // If no pattern matches, return null
-        return null;
-    }}
+#         // If no pattern matches, return null
+#         return null;
+#     }}
     
-    function processFile(file) {{
-        logDebug('Processing file:', file.name);
-        updateStatus('Reading file...', 'info');
+#     function processFile(file) {{
+#         logDebug('Processing file:', file.name);
+#         updateStatus('Reading file...', 'info');
         
-        const reader = new FileReader();
-        reader.onload = function(e) {{
-            logDebug('File loaded successfully');
-            const content = e.target.result;
-            let ids = [];
+#         const reader = new FileReader();
+#         reader.onload = function(e) {{
+#             logDebug('File loaded successfully');
+#             const content = e.target.result;
+#             let ids = [];
             
-            // Simple parsing based on file extension
-            if (file.name.endsWith('.csv')) {{
-                // Assume CSV has one ID per line or is comma-separated
-                ids = content.split(/[\\r\\n,]+/).filter(id => id.trim() !== '');
-            }} else {{
-                // Assume plain text with one ID per line
-                ids = content.split(/[\\r\\n]+/).filter(id => id.trim() !== '');
-            }}
+#             // Simple parsing based on file extension
+#             if (file.name.endsWith('.csv')) {{
+#                 // Assume CSV has one ID per line or is comma-separated
+#                 ids = content.split(/[\\r\\n,]+/).filter(id => id.trim() !== '');
+#             }} else {{
+#                 // Assume plain text with one ID per line
+#                 ids = content.split(/[\\r\\n]+/).filter(id => id.trim() !== '');
+#             }}
             
-            logDebug(`Extracted ${{ids.length}} IDs from file`);
-            if (ids.length > 0) {{
-                logDebug('Sample IDs from file:', ids.slice(0, 5));
-                applyFilter(ids);
-            }} else {{
-                updateStatus('No valid IDs found in file', 'error');
-            }}
-        }};
+#             logDebug(`Extracted ${{ids.length}} IDs from file`);
+#             if (ids.length > 0) {{
+#                 logDebug('Sample IDs from file:', ids.slice(0, 5));
+#                 applyFilter(ids);
+#             }} else {{
+#                 updateStatus('No valid IDs found in file', 'error');
+#             }}
+#         }};
         
-        reader.onerror = function() {{
-            logDebug('ERROR reading file');
-            updateStatus('Error reading file', 'error');
-        }};
+#         reader.onerror = function() {{
+#             logDebug('ERROR reading file');
+#             updateStatus('Error reading file', 'error');
+#         }};
         
-        reader.readAsText(file);
-    }}
+#         reader.readAsText(file);
+#     }}
     
-    function applyFilter(idsToHighlight) {{
-        if (!originalData || originalData.length === 0) {{
-            logDebug('ERROR: Original plot data not available');
-            updateStatus('Error: Plot data not accessible', 'error');
-            return;
-        }}
+#     function applyFilter(idsToHighlight) {{
+#         if (!originalData || originalData.length === 0) {{
+#             logDebug('ERROR: Original plot data not available');
+#             updateStatus('Error: Plot data not accessible', 'error');
+#             return;
+#         }}
         
-        logDebug(`Applying filter with ${{idsToHighlight.length}} IDs`);
-        if (idsToHighlight.length > 0) {{
-            logDebug('First few IDs being filtered:', idsToHighlight.slice(0, 5));
-        }}
+#         logDebug(`Applying filter with ${{idsToHighlight.length}} IDs`);
+#         if (idsToHighlight.length > 0) {{
+#             logDebug('First few IDs being filtered:', idsToHighlight.slice(0, 5));
+#         }}
         
-        // Create a set for faster lookups
-        const idSet = new Set(idsToHighlight.map(id => id.trim()));
+#         // Create a set for faster lookups
+#         const idSet = new Set(idsToHighlight.map(id => id.trim()));
         
-        // Create modified traces
-        let newData = [];
-        let totalPoints = 0;
-        let totalMatches = 0;
-        let matchedIds = new Set(); // Track which IDs we actually matched
+#         // Create modified traces
+#         let newData = [];
+#         let totalPoints = 0;
+#         let totalMatches = 0;
+#         let matchedIds = new Set(); // Track which IDs we actually matched
         
-        originalData.forEach((trace, i) => {{
-            // Skip the reference line trace if it exists
-            if (trace.hoverinfo === 'skip' || trace.name === 'Scale Reference') {{
-                newData.push(JSON.parse(JSON.stringify(trace)));
-                return;
-            }}
+#         originalData.forEach((trace, i) => {{
+#             // Skip the reference line trace if it exists
+#             if (trace.hoverinfo === 'skip' || trace.name === 'Scale Reference') {{
+#                 newData.push(JSON.parse(JSON.stringify(trace)));
+#                 return;
+#             }}
             
-            // Create a new trace based on the original
-            let newTrace = JSON.parse(JSON.stringify(trace));
+#             // Create a new trace based on the original
+#             let newTrace = JSON.parse(JSON.stringify(trace));
             
-            // Check if this trace has hover text
-            if (newTrace.hovertext) {{
-                logDebug(`Processing trace ${{i}} with ${{Array.isArray(newTrace.hovertext) ? newTrace.hovertext.length : 1}} hover texts`);
+#             // Check if this trace has hover text
+#             if (newTrace.hovertext) {{
+#                 logDebug(`Processing trace ${{i}} with ${{Array.isArray(newTrace.hovertext) ? newTrace.hovertext.length : 1}} hover texts`);
                 
-                const hoverTexts = Array.isArray(newTrace.hovertext) ? newTrace.hovertext : [newTrace.hovertext];
-                totalPoints += hoverTexts.length;
+#                 const hoverTexts = Array.isArray(newTrace.hovertext) ? newTrace.hovertext : [newTrace.hovertext];
+#                 totalPoints += hoverTexts.length;
                 
-                // Create new marker properties
-                if (!newTrace.marker) {{
-                    newTrace.marker = {{
-                        size: 5,
-                        color: 'red',
-                        opacity: 0.6
-                    }};
-                }}
+#                 // Create new marker properties
+#                 if (!newTrace.marker) {{
+#                     newTrace.marker = {{
+#                         size: 5,
+#                         color: 'red',
+#                         opacity: 0.6
+#                     }};
+#                 }}
                 
-                let newMarker = JSON.parse(JSON.stringify(newTrace.marker));
+#                 let newMarker = JSON.parse(JSON.stringify(newTrace.marker));
                 
-                // Create arrays for marker properties
-                let colors = [];
-                let opacities = [];
-                let matchCount = 0;
+#                 // Create arrays for marker properties
+#                 let colors = [];
+#                 let opacities = [];
+#                 let matchCount = 0;
                 
-                // Process each hover text
-                hoverTexts.forEach((hoverText, j) => {{
-                    const extractedId = extractIdFromHoverText(hoverText);
+#                 // Process each hover text
+#                 hoverTexts.forEach((hoverText, j) => {{
+#                     const extractedId = extractIdFromHoverText(hoverText);
                     
-                    if (extractedId && idSet.has(extractedId)) {{
-                        // Match found - keep original color and opacity
-                        matchCount++;
-                        matchedIds.add(extractedId);
+#                     if (extractedId && idSet.has(extractedId)) {{
+#                         // Match found - keep original color and opacity
+#                         matchCount++;
+#                         matchedIds.add(extractedId);
                         
-                        // Determine original color and opacity
-                        let originalColor = Array.isArray(newMarker.color) ? 
-                            (newMarker.color[j] || 'red') : newMarker.color || 'red';
-                        let originalOpacity = Array.isArray(newMarker.opacity) ?
-                            (newMarker.opacity[j] || 1.0) : newMarker.opacity || 0.6;
+#                         // Determine original color and opacity
+#                         let originalColor = Array.isArray(newMarker.color) ? 
+#                             (newMarker.color[j] || 'red') : newMarker.color || 'red';
+#                         let originalOpacity = Array.isArray(newMarker.opacity) ?
+#                             (newMarker.opacity[j] || 1.0) : newMarker.opacity || 0.6;
                         
-                        colors.push(originalColor);
-                        opacities.push(originalOpacity);
-                    }} else {{
-                        // No match - gray and low opacity
-                        colors.push('#cccccc');
-                        opacities.push(0.2);
-                    }}
-                }});
+#                         colors.push(originalColor);
+#                         opacities.push(originalOpacity);
+#                     }} else {{
+#                         // No match - gray and low opacity
+#                         colors.push('#cccccc');
+#                         opacities.push(0.2);
+#                     }}
+#                 }});
                 
-                logDebug(`Trace ${{i}}: Matched ${{matchCount}} out of ${{hoverTexts.length}} points`);
-                totalMatches += matchCount;
+#                 logDebug(`Trace ${{i}}: Matched ${{matchCount}} out of ${{hoverTexts.length}} points`);
+#                 totalMatches += matchCount;
                 
-                // Update marker properties
-                newMarker.color = colors;
-                newMarker.opacity = opacities;
-                newTrace.marker = newMarker;
-            }} else {{
-                logDebug(`Skipping trace ${{i}} (no hover text for ID extraction)`);
-            }}
+#                 // Update marker properties
+#                 newMarker.color = colors;
+#                 newMarker.opacity = opacities;
+#                 newTrace.marker = newMarker;
+#             }} else {{
+#                 logDebug(`Skipping trace ${{i}} (no hover text for ID extraction)`);
+#             }}
             
-            newData.push(newTrace);
-        }});
+#             newData.push(newTrace);
+#         }});
         
-        // Update the plot with new traces
-        try {{
-            logDebug(`Updating plot with modified data (${{newData.length}} traces)`);
-            Plotly.react(plotDiv, newData, plotDiv.layout);
+#         // Update the plot with new traces
+#         try {{
+#             logDebug(`Updating plot with modified data (${{newData.length}} traces)`);
+#             Plotly.react(plotDiv, newData, plotDiv.layout);
             
-            const matchPercentage = totalPoints > 0 ? Math.round((totalMatches / totalPoints) * 100) : 0;
-            logDebug(`Total matches: ${{totalMatches}} points out of ${{totalPoints}} total points (${{matchPercentage}}%)`);
-            logDebug(`Matched ${{matchedIds.size}} unique IDs out of ${{idSet.size}} requested`);
+#             const matchPercentage = totalPoints > 0 ? Math.round((totalMatches / totalPoints) * 100) : 0;
+#             logDebug(`Total matches: ${{totalMatches}} points out of ${{totalPoints}} total points (${{matchPercentage}}%)`);
+#             logDebug(`Matched ${{matchedIds.size}} unique IDs out of ${{idSet.size}} requested`);
             
-            // Show which IDs weren't found
-            if (matchedIds.size < idSet.size) {{
-                const missingIds = Array.from(idSet).filter(id => !matchedIds.has(id));
-                logDebug(`IDs not found in hover text:`, missingIds.slice(0, 10));
-                if (missingIds.length > 10) {{
-                    logDebug(`(and ${{missingIds.length - 10}} more missing IDs)`);
-                }}
-            }}
+#             // Show which IDs weren't found
+#             if (matchedIds.size < idSet.size) {{
+#                 const missingIds = Array.from(idSet).filter(id => !matchedIds.has(id));
+#                 logDebug(`IDs not found in hover text:`, missingIds.slice(0, 10));
+#                 if (missingIds.length > 10) {{
+#                     logDebug(`(and ${{missingIds.length - 10}} more missing IDs)`);
+#                 }}
+#             }}
             
-            updateStatus(`Filter applied: ${{totalMatches}} points highlighted out of ${{totalPoints}} total points (${{matchPercentage}}%). Matched ${{matchedIds.size}} unique IDs out of ${{idSet.size}} requested.`, 'success');
-        }} catch (error) {{
-            logDebug('ERROR updating plot:', error.message);
-            updateStatus('Error updating plot. Check debug panel for details.', 'error');
-        }}
-    }}
+#             updateStatus(`Filter applied: ${{totalMatches}} points highlighted out of ${{totalPoints}} total points (${{matchPercentage}}%). Matched ${{matchedIds.size}} unique IDs out of ${{idSet.size}} requested.`, 'success');
+#         }} catch (error) {{
+#             logDebug('ERROR updating plot:', error.message);
+#             updateStatus('Error updating plot. Check debug panel for details.', 'error');
+#         }}
+#     }}
     
-    function resetFilter() {{
-        logDebug('Resetting filter');
+#     function resetFilter() {{
+#         logDebug('Resetting filter');
         
-        if (originalData) {{
-            // Restore original data
-            try {{
-                Plotly.react(plotDiv, originalData, plotDiv.layout);
-                updateStatus('Filter reset - showing all points with original colors', 'info');
-            }} catch (error) {{
-                logDebug('ERROR resetting plot:', error.message);
-                updateStatus('Error resetting plot. Check debug panel for details.', 'error');
-            }}
-        }} else {{
-            updateStatus('Error: Original data not available', 'error');
-        }}
-    }}
+#         if (originalData) {{
+#             // Restore original data
+#             try {{
+#                 Plotly.react(plotDiv, originalData, plotDiv.layout);
+#                 updateStatus('Filter reset - showing all points with original colors', 'info');
+#             }} catch (error) {{
+#                 logDebug('ERROR resetting plot:', error.message);
+#                 updateStatus('Error resetting plot. Check debug panel for details.', 'error');
+#             }}
+#         }} else {{
+#             updateStatus('Error: Original data not available', 'error');
+#         }}
+#     }}
     
-    function updateStatus(message, type) {{
-        const statusElement = document.getElementById('filter-status');
-        if (statusElement) {{
-            statusElement.textContent = message;
-            statusElement.style.color = type === 'error' ? '#f44336' : 
-                                      type === 'success' ? '#4CAF50' : '#666';
-        }}
-        logDebug(`Status: ${{message}} (${{type}})`);
-    }}
-}});
-    """
-    soup.body.append(script_tag)
+#     function updateStatus(message, type) {{
+#         const statusElement = document.getElementById('filter-status');
+#         if (statusElement) {{
+#             statusElement.textContent = message;
+#             statusElement.style.color = type === 'error' ? '#f44336' : 
+#                                       type === 'success' ? '#4CAF50' : '#666';
+#         }}
+#         logDebug(`Status: ${{message}} (${{type}})`);
+#     }}
+# }});
+#     """
+#     soup.body.append(script_tag)
     
-    # Write the modified HTML to the output file
-    with open(output_file_path, 'w', encoding='utf-8') as file:
-        file.write(str(soup))
+#     # Write the modified HTML to the output file
+#     with open(output_file_path, 'w', encoding='utf-8') as file:
+#         file.write(str(soup))
     
-    print(f"Interactive filter added successfully for {plot_type} plot!")
-    print(f"Modified file saved to: {output_file_path}")
-    return output_file_path
+#     print(f"Interactive filter added successfully for {plot_type} plot!")
+#     print(f"Modified file saved to: {output_file_path}")
+#     return output_file_path
     
 # TASK MANAGERS 
 @app.get("/api/task_status/{task_id}")
@@ -5004,33 +6299,48 @@ def get_matrix(
     cursor = conn.cursor()
     
     try:
-        # Create the temp table with proper placeholders
-        sample_placeholders = ','.join(['?'] * len(sample_ids))
-        pgs_placeholders = ','.join(['?'] * len(pgs_ids))
-        
-        query = f"""
-            CREATE TEMP TABLE temp_filtered_scores AS
-            SELECT SAMPLE_ID, PGS_ID, SCORE
-            FROM scores
-            WHERE SCORE_TYPE = ?
-            AND SAMPLE_ID IN ({sample_placeholders})
-            AND PGS_ID IN ({pgs_placeholders})
-        """
-
-        # Parameters list: first the score_type, then all sample_ids, then all pgs_ids
-        params = [score_type] + sample_ids + pgs_ids
-        cursor.execute(query, params)
-
-        # Create an index on the temp table for faster retrieval
-        cursor.execute("CREATE INDEX idx_temp_filtered ON temp_filtered_scores(SAMPLE_ID, PGS_ID)")
-
-        # Fetch all results at once
-        cursor.execute("SELECT SAMPLE_ID, PGS_ID, SCORE FROM temp_filtered_scores")
+        if sample_ids and pgs_ids:
+            # Create the temp table with proper placeholders
+            sample_placeholders = ','.join(['?'] * len(sample_ids))
+            pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+                AND SAMPLE_ID IN ({sample_placeholders})
+                AND PGS_ID IN ({pgs_placeholders})
+            """
+            params = [score_type] + sample_ids + pgs_ids
+        elif sample_ids:
+            sample_placeholders = ','.join(['?'] * len(sample_ids))
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+                AND SAMPLE_ID IN ({sample_placeholders})
+            """
+            params = [score_type] + sample_ids
+        elif pgs_ids:
+            sample_placeholders = ','.join(['?'] * len(sample_ids))
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+                AND PGS_ID IN ({pgs_placeholders})
+            """
+            params = [score_type] + pgs_ids
+        else:
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+            """
+            params = [score_type]
 
         data_dict = {}
         scores_list = []
-
-        for sample_id, pgs_id, score in cursor:
+        print("Filling table")
+        for i, (sample_id, pgs_id, score) in enumerate(cursor.execute(query, params)):
             # Apply thresholds if provided
             if upper_threshold is not None and score > upper_threshold:
                 score = upper_threshold
@@ -5042,15 +6352,36 @@ def get_matrix(
             data_dict[sample_id][pgs_id] = score
             scores_list.append(score)
 
+            if i % 1000000 == 0:
+                print(f"Processed {i} rows.")
         # Return dictionary or convert to numpy matrix
         if output_format == "numpy":
-            # Create mapping dictionaries for faster lookups
-            sample_to_index = {sample_id: i for i, sample_id in enumerate(sample_ids)}
-            pgs_to_index = {pgs_id: j for j, pgs_id in enumerate(pgs_ids)}
-
-            # Pre-allocate the matrix
-            matrix = np.full((len(sample_ids), len(pgs_ids)), np.nan)
-
+            # Get all unique sample IDs and PGS IDs from the dictionary
+            available_samples = list(data_dict.keys())
+            
+            # Get all unique PGS IDs by combining all dictionaries
+            available_pgs = set()
+            for sample_scores in data_dict.values():
+                available_pgs.update(sample_scores.keys())
+            available_pgs = list(available_pgs)
+            
+            # If specific sample_ids or pgs_ids were requested, filter to those that exist in the data
+            if sample_ids:
+                final_samples = [s for s in sample_ids if s in available_samples]
+            else:
+                final_samples = available_samples
+            
+            if pgs_ids:
+                final_pgs = [p for p in pgs_ids if p in available_pgs]
+            else:
+                final_pgs = available_pgs
+            
+            # Create the index mappings
+            sample_to_index = {sample_id: i for i, sample_id in enumerate(final_samples)}
+            pgs_to_index = {pgs_id: j for j, pgs_id in enumerate(final_pgs)}
+                
+            matrix = np.full((len(final_samples), len(final_pgs)), np.nan)
+    
             # Fill the matrix
             for sample_id, pgs_scores in data_dict.items():
                 i = sample_to_index.get(sample_id)
@@ -5071,40 +6402,100 @@ def get_matrix(
                         if mask.any():  # Only fill if there are NaNs
                             matrix[mask, j] = col_mean
 
-            return matrix
+            return matrix, final_pgs
         else:
-            return data_dict
+            return data_dict, data_dict.keys()
             
     finally:
-        # Clean up temp table and close connection
-        try:
-            cursor.execute("DROP TABLE IF EXISTS temp_filtered_scores")
-        except:
-            pass
+        # # Clean up temp table and close connection
         conn.close()
 
 def fetch_pgs_metadata(pgs_ids):
     """Fetch metadata for given PGS IDs from the SQLite database."""
-    placeholders = ','.join('?' for _ in pgs_ids)
-    query = f"""
-        SELECT PGS_ID, PGS_Name, Reported_Trait, PGS_Publication_ID
-        FROM pgs_metadata
-        WHERE PGS_ID IN ({placeholders})
-    """
+    if pgs_ids:
+        placeholders = ','.join('?' for _ in pgs_ids)
+        query = f"""
+            SELECT PGS_ID, PGS_Name, Reported_Trait, PGS_Publication_ID
+            FROM pgs_metadata
+            WHERE PGS_ID IN ({placeholders})
+        """
+    else:
+        placeholders = ','.join('?' for _ in pgs_ids)
+        query = f"""
+            SELECT PGS_ID, PGS_Name, Reported_Trait, PGS_Publication_ID
+            FROM pgs_metadata
+        """
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute(query, pgs_ids)
         rows = cursor.fetchall()
-
-    # Convert to dictionary keyed by PGS_ID
-    return {
-        row[0]: {
+    
+    pgs_metadata = {}
+    for row in rows:
+        pgs_metadata[row[0]] = {
             "PGS_Name": row[1],
             "Reported_Trait": row[2],
             "Publication_ID": row[3]
         }
-        for row in rows
-    }
+
+    # Check for missing metadata
+    missing_metadata = set(pgs_ids) - set(pgs_metadata.keys())
+    if missing_metadata:
+        print(f"Warning: {len(missing_metadata)} PGS_IDs don't have metadata")
+        for pgs_id in missing_metadata:
+            pgs_metadata[pgs_id] = {
+                'PGS_Name': 'Unknown',
+                'Reported_Trait': 'Unknown',
+                'Publication_ID': 'Unknown'
+            }
+
+    # Convert to dictionary keyed by PGS_ID
+    return pgs_metadata
+
+def fetch_pgs_ids(specific_pgs_ids, score_type):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    
+    # Get PGS IDs
+    if not specific_pgs_ids:
+        cursor.execute("""
+            SELECT DISTINCT PGS_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ?
+            ORDER BY PGS_ID
+        """, (score_type,))
+        pgs_ids = [row[0] for row in cursor.fetchall()]
+    else:
+        pgs_ids = specific_pgs_ids
+
+    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+    conn.close()
+    return pgs_ids
+
+def fetch_sample_ids(cohort, pgs_ids, score_type):    
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
+
+    if cohort and cohort != "ALL":
+        # Query the ancestry table to get sample IDs for the specified population
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
+        sample_ids = json.loads(cohort_result[0])
+        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
+    else:
+        # No population filtering
+        cursor.execute(f"""
+            SELECT DISTINCT SAMPLE_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ? 
+            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
+            ORDER BY SAMPLE_ID
+        """, [score_type] + pgs_ids)
+        sample_ids = [row[0] for row in cursor.fetchall()]    
+    
+    conn.close()
+    return sample_ids
 
 # Define the background task processor separately
 def process_background_task(task_id, request_data, processing_function):
@@ -5303,87 +6694,3 @@ async def process_image_request(
 
 # # Initialize DB when application starts
 # initialize_db()
-
-# @app.post("/api/multi_cohort_distribution/{pgs}/{score_type}")
-# async def get_multi_cohort_distribution(pgs: str, score_type: str, cohorts: List[CohortRequest]):
-#     """Retrieve score distributions for multiple cohorts."""
-    
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.row_factory = sqlite3.Row
-#     cursor = conn.cursor()
-
-#     # Retrieve scores for the given PGS and score type
-#     cursor.execute(
-#         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-#         (pgs, score_type)
-#     )
-#     rows = cursor.fetchall()
-#     conn.close()
-
-#     if not rows:
-#         raise HTTPException(
-#             status_code=404,
-#             detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
-#         )
-
-#     # Create a dictionary mapping SAMPLE_ID to SCORE
-#     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-
-#     cohort_data = []
-#     for cohort in cohorts:
-#         cohort_scores = [
-#             score_dict[sample_id] for sample_id in cohort.sample_ids
-#             if sample_id in score_dict
-#         ]
-#         cohort_data.append({
-#             "color": cohort.color,
-#             "values": cohort_scores,
-#             "name": cohort.name
-#         })
-
-#     return {"cohorts": cohort_data}
-
-# @app.post("/api/multi_cohort_distribution_with_ids/{pgs}/{score_type}")
-# async def get_multi_cohort_distribution_with_ids(pgs: str, score_type: str, cohorts: List[CohortRequest]):
-#     """Retrieve score distributions for multiple cohorts with individual sample data."""
-    
-#     conn = sqlite3.connect(DB_PATH)
-#     conn.row_factory = sqlite3.Row
-#     cursor = conn.cursor()
-
-#     # Retrieve scores for the given PGS and score type
-#     cursor.execute(
-#         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-#         (pgs, score_type)
-#     )
-#     rows = cursor.fetchall()
-#     conn.close()
-
-#     if not rows:
-#         raise HTTPException(
-#             status_code=404,
-#             detail=f"No data found for PGS '{pgs}' and Score Type '{score_type}'"
-#         )
-
-#     # Create a dictionary mapping SAMPLE_ID to SCORE
-#     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
-
-#     cohort_data = []
-#     for cohort in cohorts:
-#         # Filter to include only samples that exist in our data
-#         valid_samples = [
-#             {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-#             for sample_id in cohort.sample_ids
-#             if sample_id in score_dict
-#         ]
-        
-#         cohort_scores = [sample["SCORE"] for sample in valid_samples]
-        
-#         cohort_data.append({
-#             "color": cohort.color,
-#             "values": cohort_scores,
-#             "samples": valid_samples,
-#             "name": cohort.name
-#         })
-
-#     return {"cohorts": cohort_data}

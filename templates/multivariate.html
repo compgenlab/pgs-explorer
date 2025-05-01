@@ -1168,7 +1168,7 @@
                             
                             // Show success message
                             showAlert(`${taskType.charAt(0).toUpperCase() + taskType.slice(1)} generated successfully!`, 'success');
-                            
+
                             // Hide the loading spinner
                             $('#loadingSpinner').hide();
                             
@@ -1179,7 +1179,7 @@
                             // Enable download buttons
                             $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.result_path);
                             $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.result_path);
-                            $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.result_path).attr('plot-type', taskType);
+                            $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.result_path).attr('plot-type', response.task_type);
                             
                             // Auto-dismiss the status toast after 5 seconds
                             setTimeout(() => {
@@ -1306,13 +1306,14 @@
                         $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'heatmap');
-                        
+                        // showAlert($(this).attr('plot-type'))
+                        // showAlert($(this).attr('plot-type'))
                         // Show cohort info in the alert
                         const cohortInfo = selectedCohort !== "ALL" ? 
                             `Filtered to ${selectedCohort} cohort` : 
                             'Showing all samples';
                         
-                        showAlert(`Heatmap generated successfully. ${cohortInfo}`, 'success');
+                        // showAlert(`Heatmap generated successfully. ${cohortInfo}`, 'success');
                     } else {
                         // Unexpected response format
                         $('#loadingSpinner').hide();
@@ -1424,13 +1425,13 @@
                         $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'umap');
-                        
+                        // showAlert($(this).attr('plot-type'))
                         // Show cohort info in the alert
                         const cohortInfo = selectedCohort !== "ALL" ? 
                             `Filtered to ${selectedCohort} cohort` : 
                             'Showing all samples';
                         
-                        showAlert(`UMAP plot generated successfully. ${cohortInfo}`, 'success');
+                        // showAlert(`UMAP plot generated successfully. ${cohortInfo}`, 'success');
                     } else {
                         // Unexpected response format
                         $('#loadingSpinner').hide();
@@ -1550,9 +1551,9 @@
                         $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'svd');
-                        
+                        showAlert($(this).attr('plot-type'))
                         // Show success message
-                        showAlert('SVD visualization generated successfully.', 'success');
+                        // showAlert('SVD visualization generated successfully.', 'success');
                     } else {
                         // Unexpected response format
                         $('#loadingSpinner').hide();
@@ -1669,9 +1670,9 @@
                         $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'pca');
-                        console.log('this is def pca!')
+                        // showAlert($(this).attr('plot-type'))
                         // Show success message
-                        showAlert('PCA visualization generated successfully.', 'success');
+                        // showAlert('PCA visualization generated successfully.', 'success');
                     } else {
                         // Unexpected response format
                         $('#loadingSpinner').hide();
@@ -1775,8 +1776,8 @@
                         $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
                         $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'tsne');
-
-                        showAlert('t-SNE visualization generated successfully.', 'success');
+                        // showAlert($(this).attr('plot-type'))
+                        // showAlert('t-SNE visualization generated successfully.', 'success');
                     } else {
                         showAlert('Error: Invalid response from server', 'danger');
                     }
