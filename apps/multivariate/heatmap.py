@@ -8,7 +8,7 @@ from datetime import datetime
 import plotly.graph_objects as go
 from scipy.cluster.hierarchy import linkage, dendrogram
 from apps.core.database import DB_PATH
-from apps.core.utils import fetch_pgs_ids, fetch_pgs_metadata, fetch_sample_ids
+from apps.database.service import fetch_pgs_ids, fetch_pgs_metadata, sample_ids_by_cohort
 from apps.multivariate.service import get_matrix
 
 def process_heatmap(request_data):
@@ -120,8 +120,8 @@ def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=
     # Get metadata for PGS IDs
     pgs_metadata = fetch_pgs_metadata(pgs_ids)
     
-    # Get sample IDs, filtering by PGS ID list and score type
-    sample_ids = fetch_sample_ids(cohort, pgs_ids, score_type)
+    # Get sample IDs
+    sample_ids = sample_ids_by_cohort(cohort)
 
     # Calculate overall statistics for outlier detection
     print("Calculating overall score distribution...")

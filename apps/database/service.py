@@ -60,6 +60,7 @@ def sample_ids_by_cohort(cohort=None):
     
     return sample_ids
 
+
 def fetch_pgs_metadata(pgs_ids):
     """Fetch metadata for given PGS IDs from the SQLite database."""
     if pgs_ids:
@@ -145,20 +146,109 @@ def valid_pgs_ids(pgs_ids):
     """
     return
 
-def get_score_by_cohorts(pgs_id, score_type, cohorts):
+def get_pgs_scores_for_comparison(score_type, pgs_ids, sample_ids=None):
+    """
+    Get scores for multiple PGS IDs and optionally filter by sample IDs.
+    
+    Parameters:
+    -----------
+    score_type : str
+        Type of score to retrieve
+    pgs_ids : list
+        List of PGS IDs to retrieve scores for
+    sample_ids : list, optional
+        List of sample IDs to filter by
+    
+    Returns:
+    --------
+    list
+        List of dictionaries containing PGS data with values, samples, etc.
+    """
     conn = get_connection()
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    result = []
+    
+    # For each PGS ID, retrieve the scores
+    for i, pgs_id in enumerate(pgs_ids):
+        # Build query
+        if sample_ids:
+            sample_placeholders = ','.join(['?'] * len(sample_ids))
+            query = f"""
+                SELECT SAMPLE_ID, SCORE
+                FROM scores
+                WHERE PGS_ID = ?
+                AND SCORE_TYPE = ?
+                AND SAMPLE_ID IN ({sample_placeholders})
+            """
+            params = [pgs_id, score_type] + sample_ids
+        else:
+            query = """
+                SELECT SAMPLE_ID, SCORE
+                FROM scores
+                WHERE PGS_ID = ?
+                AND SCORE_TYPE = ?
+            """
+            params = [pgs_id, score_type]
+        
+        # Execute query
+        cursor.execute(query, params)
+        rows = cursor.fetchall()
+        
+        if not rows:
+            continue  # Skip if no data found for this PGS
+        
+        # Create sample data
+        valid_samples = [{"SAMPLE_ID": row["SAMPLE_ID"], "SCORE": row["SCORE"]} for row in rows]
+        scores = [sample["SCORE"] for sample in valid_samples]
+        
+        result.append({
+            "values": scores,
+            "samples": valid_samples,
+            "name": pgs_id  # This will be replaced with the display name in the visualization service
+        })
+    
+    conn.close()
+    return result
+
+def get_score_by_cohorts(pgs_id, score_type, cohorts):
+    """
+    Get scores for a PGS ID, grouped by cohorts.
+    
+    Parameters:
+    -----------
+    pgs_id : str
+        PGS ID to retrieve scores for
+    score_type : str
+        Type of score to retrieve
+    cohorts : list
+        List of cohort dictionaries with name, color, and sample_ids
+    
+    Returns:
+    --------
+    list
+        List of dictionaries containing cohort data with values, samples, etc.
+    """
+    conn = get_connection()
+    conn.row_factory = sqlite3.Row
     cursor = conn.cursor()
 
+    # Get all scores for this PGS ID and score type
     cursor.execute(
         "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
         (pgs_id, score_type)
     )
-
+    rows = cursor.fetchall()
+    
+    # Create a dictionary mapping SAMPLE_ID to SCORE
     score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
     
     cohort_data = []
     for cohort in cohorts:
-        print(cohort.keys())
+        if "name" not in cohort:
+            continue
+            
         if cohort["name"] != "ALL":
             # Filter to include only samples that exist in our data
             valid_samples = [
@@ -166,34 +256,25 @@ def get_score_by_cohorts(pgs_id, score_type, cohorts):
                 for sample_id in cohort["sample_ids"]
                 if sample_id in score_dict
             ]
-            
-            cohort_scores = [sample["SCORE"] for sample in valid_samples]
-            
-            cohort_data.append({
-                "color": cohort["color"],
-                "values": cohort_scores,
-                "samples": valid_samples,
-                "name": cohort["name"]
-            })
         else:
-            # Filter to include only samples that exist in our data
+            # For 'ALL' cohort, include all samples
             valid_samples = [
-                {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                for sample_id in score_dict
-                ]
+                {"SAMPLE_ID": sample_id, "SCORE": score}
+                for sample_id, score in score_dict.items()
+            ]
             
-            print(f"For ALL: {len(valid_samples)} samples.")
-            cohort_scores = [sample["SCORE"] for sample in valid_samples]
-            
-            cohort_data.append({
-                "color": cohort["color"],
-                "values": cohort_scores,
-                "samples": valid_samples,
-                "name": cohort["name"]
-            })
+        cohort_scores = [sample["SCORE"] for sample in valid_samples]
+        
+        cohort_data.append({
+            "color": cohort.get("color", "#000000"),
+            "values": cohort_scores,
+            "samples": valid_samples,
+            "name": cohort["name"]
+        })
 
+    conn.close()
     return cohort_data
-
+    
 def get_score_matrix(
     sample_ids, 
     pgs_ids, 

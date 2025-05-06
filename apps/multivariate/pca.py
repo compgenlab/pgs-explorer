@@ -4,7 +4,7 @@ import hashlib
 import numpy as np
 import plotly.graph_objects as go
 from datetime import datetime
-from apps.core.utils import fetch_pgs_metadata
+from apps.database.service import fetch_pgs_metadata
 
 def process_pca(request_data):
     try:

@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
-from apps.core.app_config import templates
+from apps.core.config import templates
 from apps.distribution.models import DistributionRequest
 from apps.distribution.service import process_distribution
 from apps.tasks.service import process_image_request

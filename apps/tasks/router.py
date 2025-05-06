@@ -2,7 +2,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse
 from typing import Optional
 import sqlite3
-from apps.core.app_config import templates
+from apps.core.config import templates
 from apps.core.database import TASK_DB_PATH
 
 router = APIRouter(tags=["tasks"])

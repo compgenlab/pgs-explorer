@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Request, BackgroundTasks
 from fastapi.responses import HTMLResponse
-from apps.core.app_config import templates
+from apps.core.config import templates
 from apps.subcohorts.models import SubcohortPlotRequest
 from apps.subcohorts.service import process_subcohort_plot
 from apps.tasks.service import process_image_request

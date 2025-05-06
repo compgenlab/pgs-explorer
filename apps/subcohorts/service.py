@@ -2,6 +2,7 @@ import os
 import json
 import uuid
 import sqlite3
+from typing import List
 import numpy as np
 from scipy import stats
 import plotly.graph_objects as go
@@ -506,7 +507,6 @@ def process_subcohort_plot(request_data):
         print(f"Error generating subcohort plot: {str(e)}")
         raise e
 
-
 # OR calculation functions
 def calculate_OR_by_bin_cumulative(data, bin_size):
     """Calculate odds ratio by histogram bin (cumulative)."""
@@ -830,3 +830,27 @@ def calculate_OR_by_decile_vs_cumulative(data, num_deciles=10):
         "confidenceIntervals": confidence_intervals, 
         "decileBreakpoints": [float(bp) for bp in decile_breakpoints]
     }
+
+def calculate_percentile(value: float, array: List[float]) -> float:
+    """
+    Calculate the percentile of a value in an array.
+    
+    Parameters:
+    -----------
+    value : float
+        Value to calculate percentile for
+    array : list
+        List of values to compare against
+    
+    Returns:
+    --------
+    float
+        Percentile value (0-100)
+    """
+    sorted_array = sorted(array)
+    position = next((i for i, x in enumerate(sorted_array) if x >= value), len(sorted_array))
+    
+    if position == len(sorted_array):
+        return 100.0  # Value is greater than all elements
+    
+    return (position / len(sorted_array) * 100)

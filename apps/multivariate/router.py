@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, BackgroundTasks, HTTPException
 from fastapi.responses import HTMLResponse
 
-from apps.core.app_config import templates
+from apps.core.config import templates
 from .models import HeatmapRequest, UMAPRequest, SVDRequest, PCARequest, TSNERequest, InteractiveRequest
 from .heatmap import process_heatmap
 from .umap import process_umap

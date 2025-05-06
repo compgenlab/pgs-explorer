@@ -7,7 +7,7 @@ from datetime import datetime
 import plotly.graph_objects as go
 import umap
 from apps.core.database import DB_PATH
-from apps.core.utils import fetch_pgs_ids, fetch_pgs_metadata, fetch_sample_ids
+from apps.database.service import fetch_pgs_ids, fetch_pgs_metadata, sample_ids_by_cohort
 from apps.multivariate.service import get_matrix
 
 def process_umap(request_data):
@@ -117,8 +117,8 @@ def generate_umap_html(score_type, n_neighbors=15, min_dist=0.1, specific_pgs_id
     # Modified sample ID fetching with cohort filtering
     print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
     
-    # Get sample IDs, filtering by PGS ID list and score type
-    sample_ids = fetch_sample_ids(cohort, pgs_ids, score_type)
+    # Get sample IDs
+    sample_ids = sample_ids_by_cohort(cohort)
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
     
     if cohort and cohort != "ALL":
