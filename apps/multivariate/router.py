@@ -3,12 +3,12 @@ from fastapi.responses import HTMLResponse
 
 from apps.core.app_config import templates
 from .models import HeatmapRequest, UMAPRequest, SVDRequest, PCARequest, TSNERequest, InteractiveRequest
-from .heatmap.service import process_heatmap
-from .umap.service import process_umap
-from .svd.service import process_svd
-from .pca.service import process_pca
-from .tsne.service import process_tsne
-from .interactive.service import add_interactive_filter_umap, add_interactive_filter_tsne
+from .heatmap import process_heatmap
+from .umap import process_umap
+from .svd import process_svd
+from .pca import process_pca
+from .tsne import process_tsne
+from .interactive import add_interactive_filter_umap, add_interactive_filter_tsne
 
 from apps.tasks.service import process_image_request
 from apps.core.models import PlotResponse
@@ -81,7 +81,8 @@ async def generate_tsne(request: TSNERequest, background_tasks: BackgroundTasks)
 
 @router.post("/api/generate_interactive_plot")
 def interactive_filter_router(request: InteractiveRequest):
-    print(request.plot_type)
+    """Routes to interactive image generation."""
+    print(f"Submitting job to apply interactive filters for plot type: {request.plot_type}.")
     if request.plot_type == "umap":
         output_url = add_interactive_filter_umap(html_file_path=request.plot_url)
     elif request.plot_type == "pca":

@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 
-from apps.core.app_config import create_app, templates
+from apps.core.config import create_app, templates
 from apps.core.startup import register_startup_events
 
 from apps.distribution.router import router as distribution_router
