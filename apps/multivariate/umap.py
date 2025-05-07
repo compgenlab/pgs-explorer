@@ -6,8 +6,8 @@ import numpy as np
 from datetime import datetime
 import plotly.graph_objects as go
 import umap
-from apps.core.database import DB_PATH
-from apps.database.service import fetch_pgs_ids, fetch_pgs_metadata, sample_ids_by_cohort
+# from apps.core.database import DB_PATH
+# from apps.database.service import fetch_pgs_ids, fetch_pgs_metadata, sample_ids_by_cohort
 from apps.multivariate.service import get_matrix
 
 def process_umap(request_data):

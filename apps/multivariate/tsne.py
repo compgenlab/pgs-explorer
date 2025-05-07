@@ -6,8 +6,8 @@ import numpy as np
 from datetime import datetime
 import plotly.graph_objects as go
 from sklearn.manifold import TSNE
-from apps.core.database import DB_PATH
-from apps.database.service import fetch_pgs_metadata
+# from apps.core.database import DB_PATH
+# from apps.database.service import fetch_pgs_metadata
 from apps.multivariate.service import get_matrix
 
 def process_tsne(request_data):

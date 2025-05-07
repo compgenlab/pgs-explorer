@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-from apps.core.database import DB_PATH
+# from apps.core.database import DB_PATH
 from apps.multivariate.service import get_matrix
 
 def process_svd(request_data):

@@ -6,9 +6,13 @@ from typing import List, Dict, Any
 from scipy import stats
 import plotly.graph_objects as go
 from apps.core.utils import generate_request_hash
-from apps.database.service import get_pgs_scores_for_comparison, get_score_by_cohorts
 
-def process_distribution(request_data):
+# Import repositories
+from database import get_score_repository, get_ancestry_repository
+score_repository = get_score_repository()
+ancestry_repository = get_ancestry_repository()
+
+def process_distribution(request_data: Dict[str, Any]) -> str:
     """
     Generate distribution plots on the backend, cache them, and return the plot path.
     The function calculates a hash of the request to check if it's already been processed.
@@ -79,7 +83,7 @@ def generate_score_visualization(request_data: Dict[str, Any], html_path: str, j
     colors = pgs_comparison.get("colors", [])
     display_names = pgs_comparison.get("names", [])
     
-    # Get PGS data from database
+    # Get PGS data
     pgs_data = get_pgs_scores_for_comparison(score_type, pgs_ids, sample_ids)
     
     # Add display names and colors to the data
@@ -108,70 +112,100 @@ def generate_score_visualization(request_data: Dict[str, Any], html_path: str, j
     
     return f"/{html_path}"
 
-def get_pgs_score_data(score_type: str, pgs_comparison: Dict[str, Any]) -> List[Dict[str, Any]]:
+def get_pgs_scores_for_comparison(score_type: str, pgs_ids: List[str], sample_ids: List[str] = None) -> List[Dict[str, Any]]:
     """
-    Get score data for each PGS ID.
+    Get scores for multiple PGS IDs using the repository.
     
     Parameters:
     -----------
     score_type : str
         Type of score to retrieve
-    pgs_comparison : dict
-        Dictionary containing PGS IDs, sample IDs, colors, etc.
+    pgs_ids : list
+        List of PGS IDs to retrieve scores for
+    sample_ids : list, optional
+        List of sample IDs to filter by
     
     Returns:
     --------
     list
         List of dictionaries containing PGS data
     """
-    # Connect to database
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
+    result = []
     
-    sample_ids = pgs_comparison.get("sample_ids", [])
-    pgs_data = []
-    
-    # For each PGS ID, retrieve the scores for the sample IDs
-    for i, pgs_id in enumerate(pgs_comparison.get("pgs_ids", [])):
-        # Retrieve scores for this PGS and the score type
-        cursor.execute(
-            "SELECT SAMPLE_ID, SCORE FROM scores WHERE PGS_ID = ? AND SCORE_TYPE = ?",
-            (pgs_id, score_type)
-        )
-        rows = cursor.fetchall()
+    # For each PGS ID, retrieve the scores
+    for i, pgs_id in enumerate(pgs_ids):
+        # Get scores from repository
+        scores_dict = score_repository.get_scores_for_pgs(pgs_id, score_type, sample_ids)
         
-        if not rows:
+        if not scores_dict:
             continue  # Skip if no data found for this PGS
         
-        # Create a dictionary mapping SAMPLE_ID to SCORE
-        score_dict = {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
+        # Convert to samples format
+        valid_samples = [{"SAMPLE_ID": sample_id, "SCORE": score} for sample_id, score in scores_dict.items()]
+        scores = [sample["SCORE"] for sample in valid_samples]
         
-        if sample_ids:
+        result.append({
+            "values": scores,
+            "samples": valid_samples,
+            "name": pgs_id  # Will be replaced with display name later
+        })
+    
+    return result
+
+def get_score_by_cohorts(pgs_id: str, score_type: str, cohorts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Get scores for a PGS ID, grouped by cohorts using repositories.
+    
+    Parameters:
+    -----------
+    pgs_id : str
+        PGS ID to retrieve scores for
+    score_type : str
+        Type of score to retrieve
+    cohorts : list
+        List of cohort dictionaries with name, color, and sample_ids
+    
+    Returns:
+    --------
+    list
+        List of dictionaries containing cohort data
+    """
+    # Get all scores for this PGS ID
+    score_dict = score_repository.get_scores_for_pgs(pgs_id, score_type)
+    
+    cohort_data = []
+    for cohort in cohorts:
+        if "name" not in cohort:
+            continue
+            
+        if cohort["name"] != "ALL":
+            # If sample_ids not provided, get them from ancestry repository
+            if "sample_ids" not in cohort:
+                cohort["sample_ids"] = ancestry_repository.get_sample_ids_by_cohort(cohort["name"])
+                
             # Filter to include only samples that exist in our data
             valid_samples = [
                 {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                for sample_id in sample_ids
+                for sample_id in cohort["sample_ids"]
                 if sample_id in score_dict
             ]
-        else: 
+        else:
+            # For 'ALL' cohort, include all samples
             valid_samples = [
                 {"SAMPLE_ID": sample_id, "SCORE": score}
                 for sample_id, score in score_dict.items()
             ]
             
-        scores = [sample["SCORE"] for sample in valid_samples]
+        cohort_scores = [sample["SCORE"] for sample in valid_samples]
         
-        pgs_data.append({
-            "color": pgs_comparison.get("colors", [])[i] if i < len(pgs_comparison.get("colors", [])) else "#000000",
-            "values": scores,
+        cohort_data.append({
+            "color": cohort.get("color", "#000000"),
+            "values": cohort_scores,
             "samples": valid_samples,
-            "name": pgs_comparison.get("names", [])[i] if i < len(pgs_comparison.get("names", [])) else pgs_id
+            "name": cohort["name"]
         })
-    
-    conn.close()
-    return pgs_data
 
+    return cohort_data
 def generate_pgs_density_plot(pgs_data: List[Dict[str, Any]], plot_title: str) -> go.Figure:
     """
     Generate density plot for PGS data.
