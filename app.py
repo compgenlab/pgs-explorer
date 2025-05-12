@@ -46,7 +46,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 app.mount("/temp", StaticFiles(directory="temp"), name="temp")
 
 # SQLite Database Setup
-DB_PATH = "/data/dev/db/pgs_data.db"
+DB_PATH = "/data/dev/db/pgs_data_with_morphology.db"
 TASK_DB_PATH = "/data/dev/db/tasks.db"
 
 def init_task_db():
@@ -326,7 +326,7 @@ def get_pgs_list():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT PGS_ID FROM pgs_metadata ORDER BY PGS_ID")
+    cursor.execute("SELECT DISTINCT pgs_id FROM scores ORDER BY PGS_ID")
     pgs_list = [row[0] for row in cursor.fetchall()]
     
     conn.close()
@@ -387,6 +387,221 @@ def get_pgs_data(pgs_id: str):
     conn.close()
 
     return {"scores": scores_list}
+
+@app.post("/api/generate_tsne")
+async def generate_tsne(request: TSNERequest, background_tasks: BackgroundTasks):
+    """Routes to t-SNE image generation."""
+    print(f"Submitting job for task: {request.name}")
+    return await process_image_request(
+        request_data=request.dict(),
+        task_type="tsne",
+        task_name=getattr(request, "name", None),
+        processing_function=process_tsne,
+        background_tasks=background_tasks
+    )
+
+def process_tsne(request_data):
+    try:
+        # Create temp directory if it doesn't exist
+        os.makedirs("temp", exist_ok=True)
+
+        # Extract parameters from request_data
+        score_type = request_data["score_type"]
+        pgs_ids = request_data.get("pgs_ids")
+        cohort = request_data.get("cohort")
+        perspective = request_data.get("perspective", "sample")
+        perplexity = request_data["perplexity"]
+        iterations = request_data["iterations"]
+        learning_rate = request_data["learning_rate"]
+
+        # Generate hash for caching
+        request_hash = generate_tsne_hash(
+            score_type,
+            pgs_ids,
+            cohort,
+            perspective,
+            perplexity,
+            iterations,
+            learning_rate
+        )
+
+        # Check for existing cached file
+        for filename in os.listdir("temp"):
+            if filename.endswith(".html") and request_hash in filename and "tsne" in filename:
+                cached_filepath = os.path.join("temp", filename)
+                os.utime(cached_filepath)
+                print(f"Using cached t-SNE visualization: {filename}")
+                return f"/temp/{filename}"
+
+        # Perform t-SNE analysis
+        tsne_result, pgs_ids, sample_ids = perform_tsne_analysis(
+            score_type=score_type,
+            specific_pgs_ids=pgs_ids,
+            cohort=cohort,
+            perspective=perspective,
+            perplexity=perplexity,
+            n_iter=iterations,
+            learning_rate=learning_rate
+        )
+
+        # Generate filename with hash
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
+        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
+        filename = f"tsne_{cohort_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
+        filepath = os.path.join("temp", filename)
+
+        # Generate the appropriate visualization
+        if perspective == "score":
+            fig = generate_tsne_score(tsne_result, pgs_ids=pgs_ids)
+        else:
+            fig = generate_tsne_sample(tsne_result, sample_ids=sample_ids)
+
+        # Save the figure to HTML
+        fig.write_html(
+            filepath,
+            include_plotlyjs='cdn',
+            include_mathjax=False,
+            config={
+                'displayModeBar': True,
+                'responsive': True
+            }
+        )
+
+        return f"/temp/{filename}"
+
+    except Exception as e:
+        print(f"Error generating t-SNE visualization: {str(e)}")
+        raise e
+
+def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, perplexity, n_iter, learning_rate):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+
+    # Get PGS IDs
+    if specific_pgs_ids:
+        placeholders = ','.join(['?'] * len(specific_pgs_ids))
+        cursor.execute(f"""
+            SELECT DISTINCT PGS_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ?
+            AND PGS_ID IN ({placeholders})
+            ORDER BY PGS_ID
+        """, [score_type] + specific_pgs_ids)
+    else:
+        pgs_ids = None
+        print("all pgs")
+
+    pgs_ids = [row[0] for row in cursor.fetchall()]
+    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+
+    # --- Get sample IDs ---
+    if cohort and cohort != "ALL":
+        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
+        cohort_result = cursor.fetchone()
+        sample_ids = json.loads(cohort_result[0])
+        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
+    else:
+        sample_ids = None
+        print("all samples")
+
+    # --- Matrix build ---
+    matrix, pgs_ids = get_matrix(
+        sample_ids=sample_ids,
+        pgs_ids=pgs_ids,
+        score_type=score_type,
+        output_format="numpy",
+        handle_missing=True
+    )
+
+    # --- Run t-SNE ---
+    tsne = TSNE(
+        n_components=2,
+        perplexity=perplexity,
+        n_iter=n_iter,  # Use n_iter as passed from the calling function
+        learning_rate=learning_rate,
+        random_state=42
+    )
+    
+    # Transform matrix based on perspective
+    if perspective == "score" and matrix.shape[0] > matrix.shape[1]:
+        # Transpose matrix for score-centered analysis (if samples > scores)
+        matrix = matrix.T
+        tsne_result = tsne.fit_transform(matrix)
+        return tsne_result, pgs_ids, sample_ids
+    else:
+        # For sample-centered or already transposed matrices
+        tsne_result = tsne.fit_transform(matrix)
+        return tsne_result, pgs_ids, sample_ids
+
+def generate_tsne_sample(tsne_result, sample_ids):
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=tsne_result[:, 0],
+            y=tsne_result[:, 1],
+            mode="markers",
+            marker=dict(size=6, color="blue", opacity=0.7),
+            text=sample_ids,
+            hoverinfo="text",
+            name="Samples"
+        )
+    )
+    fig.update_layout(
+        title="t-SNE Projection (Samples as Points)",
+        xaxis_title="t-SNE 1",
+        yaxis_title="t-SNE 2",
+        showlegend=False
+    )
+    return fig
+
+def generate_tsne_score(tsne_result, pgs_ids):
+    pgs_metadata = fetch_pgs_metadata(pgs_ids)
+    hover_text = []
+    for pgs_id in pgs_ids:
+        meta = pgs_metadata.get(pgs_id, {})
+        if not meta:
+            print(f"Missing metadata for {pgs_id}")
+        hover_text.append(
+            f"PGS ID: {pgs_id}<br>"
+            f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
+            f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
+            f"Publication: {meta.get('Publication_ID', 'N/A')}"
+        )
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatter(
+            x=tsne_result[:, 0],
+            y=tsne_result[:, 1],
+            mode="markers",
+            marker=dict(size=6, color="red", opacity=0.7),
+            text=hover_text,
+            hoverinfo="text",
+            name="PGS Scores"
+        )
+    )
+    fig.update_layout(
+        title="t-SNE Projection (PGS Scores as Points)",
+        xaxis_title="t-SNE 1",
+        yaxis_title="t-SNE 2",
+        showlegend=False
+    )
+    return fig
+
+def generate_tsne_hash(score_type, pgs_ids, cohort, perspective, perplexity, iterations, learning_rate):
+    hash_input = json.dumps({
+        "score_type": score_type,
+        "pgs_ids": pgs_ids,
+        "cohort": cohort,
+        "perspective": perspective,
+        "perplexity": perplexity,
+        "iterations": iterations,
+        "learning_rate": learning_rate
+    }, sort_keys=True)
+    print(hash_input)
+    print(hashlib.md5(hash_input.encode()).hexdigest())
+    return hashlib.md5(hash_input.encode()).hexdigest()
 
 @app.post("/api/generate_heatmap")
 async def generate_heatmap(request: HeatmapRequest, background_tasks: BackgroundTasks):
@@ -5004,33 +5219,48 @@ def get_matrix(
     cursor = conn.cursor()
     
     try:
-        # Create the temp table with proper placeholders
-        sample_placeholders = ','.join(['?'] * len(sample_ids))
-        pgs_placeholders = ','.join(['?'] * len(pgs_ids))
-        
-        query = f"""
-            CREATE TEMP TABLE temp_filtered_scores AS
-            SELECT SAMPLE_ID, PGS_ID, SCORE
-            FROM scores
-            WHERE SCORE_TYPE = ?
-            AND SAMPLE_ID IN ({sample_placeholders})
-            AND PGS_ID IN ({pgs_placeholders})
-        """
-
-        # Parameters list: first the score_type, then all sample_ids, then all pgs_ids
-        params = [score_type] + sample_ids + pgs_ids
-        cursor.execute(query, params)
-
-        # Create an index on the temp table for faster retrieval
-        cursor.execute("CREATE INDEX idx_temp_filtered ON temp_filtered_scores(SAMPLE_ID, PGS_ID)")
-
-        # Fetch all results at once
-        cursor.execute("SELECT SAMPLE_ID, PGS_ID, SCORE FROM temp_filtered_scores")
+        if sample_ids and pgs_ids:
+            # Create the temp table with proper placeholders
+            sample_placeholders = ','.join(['?'] * len(sample_ids))
+            pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+                AND SAMPLE_ID IN ({sample_placeholders})
+                AND PGS_ID IN ({pgs_placeholders})
+            """
+            params = [score_type] + sample_ids + pgs_ids
+        elif sample_ids:
+            sample_placeholders = ','.join(['?'] * len(sample_ids))
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+                AND SAMPLE_ID IN ({sample_placeholders})
+            """
+            params = [score_type] + sample_ids
+        elif pgs_ids:
+            sample_placeholders = ','.join(['?'] * len(sample_ids))
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+                AND PGS_ID IN ({pgs_placeholders})
+            """
+            params = [score_type] + pgs_ids
+        else:
+            query = f"""
+                SELECT SAMPLE_ID, PGS_ID, SCORE
+                FROM scores
+                WHERE SCORE_TYPE = ?
+            """
+            params = [score_type]
 
         data_dict = {}
         scores_list = []
-
-        for sample_id, pgs_id, score in cursor:
+        print("Filling table")
+        for i, (sample_id, pgs_id, score) in enumerate(cursor.execute(query, params)):
             # Apply thresholds if provided
             if upper_threshold is not None and score > upper_threshold:
                 score = upper_threshold
@@ -5042,15 +5272,36 @@ def get_matrix(
             data_dict[sample_id][pgs_id] = score
             scores_list.append(score)
 
+            if i % 1000000 == 0:
+                print(f"Processed {i} rows.")
         # Return dictionary or convert to numpy matrix
         if output_format == "numpy":
-            # Create mapping dictionaries for faster lookups
-            sample_to_index = {sample_id: i for i, sample_id in enumerate(sample_ids)}
-            pgs_to_index = {pgs_id: j for j, pgs_id in enumerate(pgs_ids)}
-
-            # Pre-allocate the matrix
-            matrix = np.full((len(sample_ids), len(pgs_ids)), np.nan)
-
+            # Get all unique sample IDs and PGS IDs from the dictionary
+            available_samples = list(data_dict.keys())
+            
+            # Get all unique PGS IDs by combining all dictionaries
+            available_pgs = set()
+            for sample_scores in data_dict.values():
+                available_pgs.update(sample_scores.keys())
+            available_pgs = list(available_pgs)
+            
+            # If specific sample_ids or pgs_ids were requested, filter to those that exist in the data
+            if sample_ids:
+                final_samples = [s for s in sample_ids if s in available_samples]
+            else:
+                final_samples = available_samples
+            
+            if pgs_ids:
+                final_pgs = [p for p in pgs_ids if p in available_pgs]
+            else:
+                final_pgs = available_pgs
+            
+            # Create the index mappings
+            sample_to_index = {sample_id: i for i, sample_id in enumerate(final_samples)}
+            pgs_to_index = {pgs_id: j for j, pgs_id in enumerate(final_pgs)}
+                
+            matrix = np.full((len(final_samples), len(final_pgs)), np.nan)
+    
             # Fill the matrix
             for sample_id, pgs_scores in data_dict.items():
                 i = sample_to_index.get(sample_id)
@@ -5071,18 +5322,14 @@ def get_matrix(
                         if mask.any():  # Only fill if there are NaNs
                             matrix[mask, j] = col_mean
 
-            return matrix
+            return matrix, final_pgs
         else:
-            return data_dict
+            return data_dict, data_dict.keys()
             
     finally:
-        # Clean up temp table and close connection
-        try:
-            cursor.execute("DROP TABLE IF EXISTS temp_filtered_scores")
-        except:
-            pass
+        # # Clean up temp table and close connection
         conn.close()
-
+        
 def fetch_pgs_metadata(pgs_ids):
     """Fetch metadata for given PGS IDs from the SQLite database."""
     placeholders = ','.join('?' for _ in pgs_ids)
