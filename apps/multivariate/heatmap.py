@@ -8,8 +8,13 @@ from datetime import datetime
 import plotly.graph_objects as go
 from scipy.cluster.hierarchy import linkage, dendrogram
 from apps.core.database import DB_PATH
-# from apps.database.service import fetch_pgs_ids, fetch_pgs_metadata, sample_ids_by_cohort
-from apps.multivariate.service import get_matrix
+from apps.core.utils import generate_request_hash
+
+# Import repositories
+from database import get_score_repository, get_ancestry_repository, get_metadata_repository
+score_repository = get_score_repository()
+ancestry_repository = get_ancestry_repository()
+metadata_repository = get_metadata_repository()
 
 def process_heatmap(request_data):
     try:
@@ -24,41 +29,14 @@ def process_heatmap(request_data):
         cohort = request_data["cohort"]
         subcohorts = request_data["subcohorts"]
         max_pgs_ids = request_data.get("max_pgs_ids")
-        
-        # Generate hash based on request parameters
-        request_hash = generate_heatmap_hash(
-            score_type,
-            std_dev_threshold,
-            dendrogram_view,
-            pgs_ids,
-            cohort,
-            subcohorts 
-        )
 
-        # Check if we already have a file with this hash
-        for filename in os.listdir("temp"):
-            if filename.endswith(".html") and request_hash in filename and "heatmap" in filename:
-                # Found a cached file, update its access time
-                cached_filepath = os.path.join("temp", filename)
-                os.utime(cached_filepath)
-                
-                print(f"Using cached heatmap: {filename}")
-                
-                # Return file path with empty statistics
-                return f"/temp/{filename}"
+        existing, html_path, json_path = generate_request_hash(request_data)
+        if existing:
+            return f"/{html_path}"
 
-        # Check and clean up temp directory if needed
-        # cleanup_temp_files(max_size_in_gb=10)  
-
-        # Generate filename with hash for future cache hits
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
-        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
-        filename = f"heatmap_{cohort_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
-        filepath = os.path.join("temp", filename)
-        
         # Generate the heatmap
-        print(f"Large dataset detected. Using static heatmap generator.")
+        print(f"Starting heatmap generation.")
+
         fig, stats = generate_static_heatmap_for_large_dataset(
             score_type=score_type,
             max_pgs_ids=max_pgs_ids,
@@ -81,7 +59,7 @@ def process_heatmap(request_data):
         )
 
         # Return the file path
-        return f"/temp/{filename}"
+        return f"/{filename}"
         
     except Exception as e:
         # Log the error
@@ -108,17 +86,15 @@ def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=
     - stats: Tuple containing statistics about the data
     """
     # TODO dendrograms - we may have to change formt altogether? 
-    print(f"=== Generating Static Heatmap for Large Dataset ===")
-    print(f"Score Type: {score_type}")
     
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
 
     # Get PGS ID list
-    pgs_ids = fetch_pgs_ids(specific_pgs_ids, score_type)
+    pgs_ids = score_repository.fetch_pgs_ids(specific_pgs_ids=specific_pgs_ids, score_type=score_type)
     
     # Get metadata for PGS IDs
-    pgs_metadata = fetch_pgs_metadata(pgs_ids)
+    pgs_metadata = metadata_repository.fetch_pgs_metadata(pgs_ids=pgs_ids)
     
     # Get sample IDs
     sample_ids = sample_ids_by_cohort(cohort)
@@ -701,102 +677,3 @@ def cluster_with_subcohorts(matrix, ordered_sample_ids, ordered_pgs_ids, pgs_met
     
     return fig, (0, 0, None, None, 0)
 
-def cleanup_temp_files(max_size_in_gb=10):
-    """
-    Cleans up temporary heatmap files when the directory exceeds the specified size limit.
-    
-    Args:
-        max_size_in_gb: Maximum allowed size of the temp directory in GB
-    """
-    temp_dir = "temp"
-    max_size_in_bytes = max_size_in_gb * 1024 * 1024 * 1024
-    
-    # Check if the directory exists
-    if not os.path.exists(temp_dir):
-        return
-    
-    # Get all HTML files in the temp directory with their stats
-    files = []
-    total_size = 0
-    
-    for filename in os.listdir(temp_dir):
-        if filename.endswith(".html"):
-            filepath = os.path.join(temp_dir, filename)
-            file_stats = os.stat(filepath)
-            file_size = file_stats.st_size
-            access_time = file_stats.st_atime  # Last access time
-            
-            files.append({
-                "path": filepath,
-                "size": file_size,
-                "last_accessed": access_time
-            })
-            
-            total_size += file_size
-    
-    print(f"Current temp directory size: {total_size / (1024 * 1024):.2f} MB")
-    
-    # If we're under the limit, do nothing
-    if total_size <= max_size_in_bytes:
-        return
-    
-    print(f"Temp directory size ({total_size / (1024 * 1024 * 1024):.2f} GB) exceeds limit of {max_size_in_gb} GB")
-    
-    # Sort files by last access time (oldest first)
-    files.sort(key=lambda x: x["last_accessed"])
-    
-    # Remove files until we're under the limit
-    deleted_count = 0
-    freed_space = 0
-    
-    while total_size > max_size_in_bytes and files:
-        file_to_remove = files.pop(0)  # Get the oldest file
-        
-        try:
-            os.remove(file_to_remove["path"])
-            freed_space += file_to_remove["size"]
-            total_size -= file_to_remove["size"]
-            deleted_count += 1
-            print(f"Deleted: {os.path.basename(file_to_remove['path'])}")
-        except Exception as e:
-            print(f"Error deleting {file_to_remove['path']}: {e}")
-    
-    print(f"Cleanup complete: Deleted {deleted_count} files, freed {freed_space / (1024 * 1024):.2f} MB")
-
-def generate_heatmap_hash(score_type, std_dev_threshold, dendrogram_view, pgs_ids, cohort=None, subcohort=None):
-    """
-    Generate a consistent hash based on heatmap request parameters.
-    
-    Args:
-        score_type: The type of score to display
-        std_dev_threshold: Threshold for outlier detection
-        dendrogram_view: Whether compact view is enabled
-        pgs_ids: List of PGS IDs to include
-        cohort: Selected sample cohort
-    
-    Returns:
-        str: A hash string representing the request parameters
-    """
-    
-    all_subcohort_sample_ids = []
-    if subcohort:
-        for c in subcohort:
-            all_subcohort_sample_ids.extend(c.sampleIds)
-        all_subcohort_sample_ids = sorted(all_subcohort_sample_ids)
-
-    # Create a dictionary of parameters
-    params = {
-        "score_type": score_type,
-        "std_dev_threshold": std_dev_threshold,
-        "dendrogram_view": dendrogram_view,
-        "pgs_ids": sorted(pgs_ids) if pgs_ids else [],  
-        "cohort": cohort,
-        "subcohort": all_subcohort_sample_ids
-    }
-    
-    # Convert to JSON string
-    param_str = json.dumps(params, sort_keys=True)
-    
-    # Generate hash
-    hash_obj = hashlib.md5(param_str.encode())
-    return hash_obj.hexdigest()

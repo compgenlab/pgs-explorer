@@ -1,8 +1,43 @@
 from ..base_repository import BaseRepository
+from .ancestry_repository import AncestryRepository
 import json
 import numpy as np
+# for testing
+import time 
+from ..connection import DatabaseConnection
 
 class ScoreRepository(BaseRepository):
+    def get_all_pgs_ids(self):
+        query = """
+            SELECT pgs_id 
+            FROM pgs_id_lookup
+            ORDER BY pgs_id
+        """
+        params = []        
+        rows = self.execute_query(query, params)
+        return [row[0] for row in rows]
+    
+    def get_all_score_types(self):
+        query = """
+            SELECT score_type
+            FROM score_type_lookup
+            ORDER BY score_type
+        """
+        params = []        
+        rows = self.execute_query(query, params)
+        return [row[0] for row in rows]
+
+    def get_all_sample_ids(self):
+        query = """
+            SELECT sample_id
+            FROM sample_id_lookup
+            ORDER BY sample_id
+        """
+        params = []        
+        rows = self.execute_query(query, params)
+        return [row[0] for row in rows]
+
+    # TODO get rid of 
     def fetch_pgs_ids(self, specific_pgs_ids=None, score_type=None):
         """
         Fetch PGS IDs based on criteria
@@ -48,6 +83,7 @@ class ScoreRepository(BaseRepository):
         rows = self.execute_query(query, params)
         return [row[0] for row in rows]
     
+    # TODO get rid of 
     def get_scores_for_pgs(self, pgs_ids, score_type, sample_ids=None):
         """
         Get scores for one or more PGS IDs.
@@ -232,155 +268,70 @@ class ScoreRepository(BaseRepository):
         else:
             return data_dict, list(data_dict.keys())
     
+    def get_score_by_cohorts(self, pgs_id, score_type, cohorts):
+        """
+        Get scores for a PGS ID, grouped by cohorts.
+        
+        Parameters:
+        -----------
+        pgs_id : str
+            PGS ID to retrieve scores for
+        score_type : str
+            Type of score to retrieve
+        cohorts : list
+            List of cohort dictionaries with name, color, and sample_ids
 
-# Test functions
-def test_score_repository():
-    """Run tests for ScoreRepository methods"""
-    from database import db_connection
-    
-    # Create a test repository
-    test_repo = ScoreRepository(db_connection)
-    
-    # Test fetch_pgs_ids
-    test_fetch_pgs_ids(test_repo)
-    
-    # Test get_scores_for_pgs
-    test_get_scores_for_pgs(test_repo)
-    
-    # Test get_score_matrix
-    test_get_score_matrix(test_repo)
-    
-    print("All tests passed!")
+        Returns:
+        --------
+        list
+            List of dictionaries containing cohort data
+        """
+        ancestry_repository = AncestryRepository()
+        
+        # Get all scores for this PGS ID
+        score_dict = self.get_scores_for_pgs(pgs_id, score_type)
+        
+        cohort_data = []
+        for cohort in cohorts:
+            if "name" not in cohort:
+                continue
+                
+            if cohort["name"] != "ALL":
+                # If sample_ids not provided, get them from ancestry repository
+                if "sample_ids" not in cohort:
+                    cohort["sample_ids"] = ancestry_repository.get_sample_ids_by_cohort(cohort["name"])
+                    
+                # Filter to include only samples that exist in our data
+                valid_samples = [
+                    {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                    for sample_id in cohort["sample_ids"]
+                    if sample_id in score_dict
+                ]
+            else:
+                # For 'ALL' cohort, include all samples
+                valid_samples = [
+                    {"SAMPLE_ID": sample_id, "SCORE": score}
+                    for sample_id, score in score_dict.items()
+                ]
+                
+            cohort_scores = [sample["SCORE"] for sample in valid_samples]
+            
+            cohort_data.append({
+                "color": cohort.get("color", "#000000"),
+                "values": cohort_scores,
+                "samples": valid_samples,
+                "name": cohort["name"]
+            })
 
-def test_fetch_pgs_ids(repo):
-    """Test the fetch_pgs_ids method"""
-    print("Testing fetch_pgs_ids...")
-    
-    # Test with no parameters (should return all PGS IDs)
-    all_pgs_ids = repo.fetch_pgs_ids()
-    assert isinstance(all_pgs_ids, list), "Expected a list of PGS IDs"
-    assert len(all_pgs_ids) > 0, "Expected at least one PGS ID"
-    print(f"  Found {len(all_pgs_ids)} total PGS IDs")
-    
-    # Test with score_type parameter
-    score_type = "SUM"  # Adjust based on your data
-    pgs_ids_by_score_type = repo.fetch_pgs_ids(score_type=score_type)
-    assert isinstance(pgs_ids_by_score_type, list), "Expected a list of PGS IDs"
-    print(f"  Found {len(pgs_ids_by_score_type)} PGS IDs with score type '{score_type}'")
-    
-    # Test with specific PGS IDs and score type
-    if pgs_ids_by_score_type:
-        specific_pgs_ids = pgs_ids_by_score_type[:2]  # Take first two PGS IDs
-        filtered_pgs_ids = repo.fetch_pgs_ids(specific_pgs_ids=specific_pgs_ids, score_type=score_type)
-        assert isinstance(filtered_pgs_ids, list), "Expected a list of PGS IDs"
-        assert len(filtered_pgs_ids) <= len(specific_pgs_ids), "Expected fewer or equal number of PGS IDs"
-        assert all(pgs_id in specific_pgs_ids for pgs_id in filtered_pgs_ids), "Expected all returned PGS IDs to be in the specific list"
-        print(f"  Successfully filtered to {len(filtered_pgs_ids)} specific PGS IDs")
+        return cohort_data
 
-def test_get_scores_for_pgs(repo):
-    """Test the get_scores_for_pgs method"""
-    print("Testing get_scores_for_pgs...")
-    
-    # First get some PGS IDs to test with
-    score_type = "SUM"  # Adjust based on your data
-    pgs_ids = repo.fetch_pgs_ids(score_type=score_type)
-    
-    if not pgs_ids:
-        print("  No PGS IDs available to test with")
-        return
-    
-    # Test with a single PGS ID
-    pgs_id = pgs_ids[0]
-    scores = repo.get_scores_for_pgs(pgs_id, score_type)
-    assert isinstance(scores, dict), "Expected a dictionary mapping sample IDs to scores"
-    assert len(scores) > 0, "Expected at least one score"
-    print(f"  Found {len(scores)} scores for PGS ID '{pgs_id}'")
-    
-    # Test with multiple PGS IDs
-    if len(pgs_ids) >= 2:
-        multiple_pgs_ids = pgs_ids[:2]
-        scores = repo.get_scores_for_pgs(multiple_pgs_ids, score_type)
-        assert isinstance(scores, dict), "Expected a dictionary mapping sample IDs to scores"
-        print(f"  Found {len(scores)} scores for multiple PGS IDs")
-    
-    # Test with sample_ids filter
-    if scores:
-        sample_ids = list(scores.keys())[:5]  # Take first 5 sample IDs
-        filtered_scores = repo.get_scores_for_pgs(pgs_id, score_type, sample_ids)
-        assert isinstance(filtered_scores, dict), "Expected a dictionary mapping sample IDs to scores"
-        assert len(filtered_scores) <= len(sample_ids), "Expected fewer or equal number of scores"
-        assert all(sample_id in sample_ids for sample_id in filtered_scores), "Expected all returned sample IDs to be in the filter list"
-        print(f"  Successfully filtered to {len(filtered_scores)} specific sample IDs")
 
-def test_get_score_matrix(repo):
-    """Test the get_score_matrix method"""
-    print("Testing get_score_matrix...")
-    
-    # First get some PGS IDs and sample IDs to test with
-    score_type = "SUM"  # Adjust based on your data
-    pgs_ids = repo.fetch_pgs_ids(score_type=score_type)
-    
-    if not pgs_ids:
-        print("  No PGS IDs available to test with")
-        return
-    
-    # Get some sample IDs
-    scores = repo.get_scores_for_pgs(pgs_ids[0], score_type)
-    sample_ids = list(scores.keys())
-    
-    if not sample_ids:
-        print("  No sample IDs available to test with")
-        return
-    
-    # Test dict output
-    matrix_dict, available_samples = repo.get_score_matrix(
-        sample_ids[:10],  # Take first 10 sample IDs
-        pgs_ids[:3],      # Take first 3 PGS IDs
-        score_type,
-        output_format="dict"
-    )
-    assert isinstance(matrix_dict, dict), "Expected a dictionary for matrix"
-    assert isinstance(available_samples, list), "Expected a list for available samples"
-    print(f"  Successfully created matrix dictionary with {len(matrix_dict)} samples")
-    
-    # Test numpy output
-    matrix_numpy, available_pgs = repo.get_score_matrix(
-        sample_ids[:10],  # Take first 10 sample IDs
-        pgs_ids[:3],      # Take first 3 PGS IDs
-        score_type,
-        output_format="numpy"
-    )
-    assert isinstance(matrix_numpy, np.ndarray), "Expected a numpy array for matrix"
-    assert isinstance(available_pgs, list), "Expected a list for available PGS IDs"
-    print(f"  Successfully created numpy matrix with shape {matrix_numpy.shape}")
-    
-    # Test with missing value handling
-    matrix_numpy_filled, _ = repo.get_score_matrix(
-        sample_ids[:10],  # Take first 10 sample IDs
-        pgs_ids[:3],      # Take first 3 PGS IDs
-        score_type,
-        output_format="numpy",
-        handle_missing=True
-    )
-    assert isinstance(matrix_numpy_filled, np.ndarray), "Expected a numpy array for matrix"
-    assert not np.isnan(matrix_numpy_filled).any(), "Expected no NaN values with handle_missing=True"
-    print("  Successfully created numpy matrix with missing values handled")
-    
-    # Test with thresholds
-    min_val, max_val = np.nanmin(matrix_numpy), np.nanmax(matrix_numpy)
-    threshold_val = (max_val + min_val) / 2
-    
-    matrix_numpy_threshold, _ = repo.get_score_matrix(
-        sample_ids[:10],  # Take first 10 sample IDs
-        pgs_ids[:3],      # Take first 3 PGS IDs
-        score_type,
-        output_format="numpy",
-        upper_threshold=threshold_val
-    )
-    assert isinstance(matrix_numpy_threshold, np.ndarray), "Expected a numpy array for matrix"
-    assert np.nanmax(matrix_numpy_threshold) <= threshold_val, "Expected all values to be below upper threshold"
-    print("  Successfully created numpy matrix with upper threshold applied")
-
-# Add a function to run the tests if the file is executed directly
-if __name__ == "__main__":
-    test_score_repository()
+DB_PATH = '/data/dev/db/pgs_data.db' 
+db_connection = DatabaseConnection(DB_PATH)
+test_run = ScoreRepository(db_connection)
+start_time = time.time()
+print(f"Found {len(test_run.get_all_pgs_ids())} unique PGS IDs in {time.time()-start_time} seconds.")
+start_time = time.time()
+print(f"Found {len(test_run.get_all_score_types())} unique score types in {time.time()-start_time} seconds.")
+start_time = time.time()
+print(f"Found {len(test_run.get_all_sample_ids())} unique sample IDs in {time.time()-start_time} seconds.")

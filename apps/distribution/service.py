@@ -152,60 +152,6 @@ def get_pgs_scores_for_comparison(score_type: str, pgs_ids: List[str], sample_id
     
     return result
 
-def get_score_by_cohorts(pgs_id: str, score_type: str, cohorts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """
-    Get scores for a PGS ID, grouped by cohorts using repositories.
-    
-    Parameters:
-    -----------
-    pgs_id : str
-        PGS ID to retrieve scores for
-    score_type : str
-        Type of score to retrieve
-    cohorts : list
-        List of cohort dictionaries with name, color, and sample_ids
-    
-    Returns:
-    --------
-    list
-        List of dictionaries containing cohort data
-    """
-    # Get all scores for this PGS ID
-    score_dict = score_repository.get_scores_for_pgs(pgs_id, score_type)
-    
-    cohort_data = []
-    for cohort in cohorts:
-        if "name" not in cohort:
-            continue
-            
-        if cohort["name"] != "ALL":
-            # If sample_ids not provided, get them from ancestry repository
-            if "sample_ids" not in cohort:
-                cohort["sample_ids"] = ancestry_repository.get_sample_ids_by_cohort(cohort["name"])
-                
-            # Filter to include only samples that exist in our data
-            valid_samples = [
-                {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                for sample_id in cohort["sample_ids"]
-                if sample_id in score_dict
-            ]
-        else:
-            # For 'ALL' cohort, include all samples
-            valid_samples = [
-                {"SAMPLE_ID": sample_id, "SCORE": score}
-                for sample_id, score in score_dict.items()
-            ]
-            
-        cohort_scores = [sample["SCORE"] for sample in valid_samples]
-        
-        cohort_data.append({
-            "color": cohort.get("color", "#000000"),
-            "values": cohort_scores,
-            "samples": valid_samples,
-            "name": cohort["name"]
-        })
-
-    return cohort_data
 def generate_pgs_density_plot(pgs_data: List[Dict[str, Any]], plot_title: str) -> go.Figure:
     """
     Generate density plot for PGS data.
@@ -443,7 +389,7 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
         raise ValueError("Missing required fields for cohort analysis")
     
     # Get cohort data from database
-    cohort_data = get_score_by_cohorts(pgs_id, score_type, cohorts)
+    cohort_data = score_repository.get_score_by_cohorts(pgs_id=pgs_id, score_type=score_type, cohorts=cohorts)
     
     # Create visualization based on chart type
     fig = None
