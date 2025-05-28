@@ -3,245 +3,312 @@ import json
 import time
 import hashlib
 import numpy as np
-import sqlite3
 from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-# from apps.core.database import DB_PATH
-from apps.multivariate.service import get_matrix
+from database import db
 
 def process_svd(request_data):
+    """Main entry point for SVD visualization generation."""
     try:
         # Create temp directory if it doesn't exist
         os.makedirs("temp", exist_ok=True)
         
-        # Extract parameters from request_data
-        score_type = request_data["score_type"]
-        pgs_ids = request_data["pgs_ids"]
-        cohort = request_data["cohort"]
-        plot_type = request_data["plot_type"]
-        perspective = request_data.get("perspective", "sample")  # Default to sample
-        max_vectors = request_data.get("max_vectors", 10)  # Default to 10
+        # Extract and validate parameters
+        params = extract_svd_parameters(request_data)
         
         # Generate hash for caching
-        request_hash = generate_svd_hash(
-            score_type,
-            pgs_ids,
-            cohort,
-            plot_type,
-            perspective,
-            max_vectors
+        request_hash = generate_svd_hash(**params)
+        
+        # Check for cached result
+        cached_file = check_svd_cache(request_hash)
+        if cached_file:
+            return cached_file
+        
+        # Perform SVD analysis
+        svd_result = perform_svd_analysis(
+            score_type=params['score_type'],
+            specific_pgs_ids=params['pgs_ids'],
+            cohort=params['cohort']
         )
         
-        # Check if we already have a file with this hash
-        for filename in os.listdir("temp"):
-            if filename.endswith(".html") and request_hash in filename and "svd" in filename:
-                # Found a cached file, update its access time
-                cached_filepath = os.path.join("temp", filename)
-                os.utime(cached_filepath)
-                
-                print(f"Using cached SVD visualization: {filename}")
-                
-                # Return file path
-                return f"/temp/{filename}"
+        # Generate visualization
+        fig = generate_svd_visualization(svd_result, params)
         
-        # First, perform SVD analysis to get the matrices
-        U, S, Vt, pgs_ids, sample_ids, stats = perform_svd_analysis(
-            score_type=score_type,
-            specific_pgs_ids=pgs_ids,
-            cohort=cohort
-        )
-        
-        # Generate filename with hash
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        score_type_safe = score_type.replace("/", "_").replace("\\", "_")
-        cohort_indicator = f"{cohort}_" if cohort and cohort != "ALL" else ""
-        filename = f"svd_{cohort_indicator}{score_type_safe}_{plot_type}_{request_hash}_{timestamp}.html"
-        filepath = os.path.join("temp", filename)
-        
-        # Route to the appropriate visualization function
-        if plot_type == "scree":
-            fig = generate_svd_scree_plot(S, stats)
-        elif plot_type == "biplot":
-            if perspective == "score":
-                fig = generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=max_vectors)
-            else:  # Default to sample perspective
-                fig = generate_svd_biplot_sample(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=max_vectors)
-        elif plot_type == "component_weights":
-            fig = generate_svd_component_weights(Vt, pgs_ids, stats)
-        elif plot_type == "heatmap":
-            fig = generate_svd_heatmap(Vt, pgs_ids, stats)
-        elif plot_type == "combined":
-            fig = generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats)
-        
-        # Save the figure to HTML
-        fig.write_html(
-            filepath,
-            include_plotlyjs='cdn',
-            include_mathjax=False,
-            config={
-                'displayModeBar': True,
-                'responsive': True
-            }
-        )
-        
-        # Return file path
-        return f"/temp/{filename}"
+        # Save and return file path
+        filepath = save_svd_visualization(fig, params, request_hash)
+        return filepath
         
     except Exception as e:
-        # Log the error
         print(f"Error generating SVD visualization: {str(e)}")
-        raise e 
+        raise e
+
+def extract_svd_parameters(request_data):
+    """Extract and validate SVD parameters from request data."""
+    return {
+        'score_type': request_data["score_type"],
+        'pgs_ids': request_data["pgs_ids"],
+        'cohort': request_data["cohort"],
+        'plot_type': request_data["plot_type"],
+        'perspective': request_data.get("perspective", "sample"),
+        'max_vectors': request_data.get("max_vectors", 10)
+    }
+
+def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_vectors):
+    """Generate a hash for the SVD request parameters for caching."""
+    params = {
+        "score_type": score_type,
+        "pgs_ids": sorted(pgs_ids) if pgs_ids else "all",
+        "cohort": cohort if cohort else "ALL",
+        "plot_type": plot_type,
+        "perspective": perspective,
+        "max_vectors": max_vectors
+    }
+    param_str = json.dumps(params, sort_keys=True)
+    hash_obj = hashlib.md5(param_str.encode())
+    return hash_obj.hexdigest()
+
+def check_svd_cache(request_hash):
+    """Check if SVD visualization is already cached."""
+    for filename in os.listdir("temp"):
+        if filename.endswith(".html") and request_hash in filename and "svd" in filename:
+            cached_filepath = os.path.join("temp", filename)
+            os.utime(cached_filepath)
+            print(f"Using cached SVD visualization: {filename}")
+            return f"/temp/{filename}"
+    return None
+
+def generate_svd_visualization(svd_result, params):
+    """Route to appropriate visualization function based on plot type."""
+    plot_type = params['plot_type']
+    
+    if plot_type == "scree":
+        return generate_svd_scree_plot(
+            svd_result['S'], 
+            svd_result['stats']
+        )
+    elif plot_type == "biplot":
+        if params['perspective'] == "score":
+            return generate_svd_biplot_score(
+                U=svd_result['U'],
+                S=svd_result['S'],
+                Vt=svd_result['Vt'],
+                pgs_ids=svd_result['pgs_ids'],
+                sample_ids=svd_result['sample_ids'],
+                stats=svd_result['stats'],
+                max_vectors=params['max_vectors']
+            )
+        else:
+            return generate_svd_biplot_sample(
+                U=svd_result['U'],
+                S=svd_result['S'],
+                Vt=svd_result['Vt'],
+                pgs_ids=svd_result['pgs_ids'],
+                sample_ids=svd_result['sample_ids'],
+                stats=svd_result['stats'],
+                max_vectors=params['max_vectors']
+            )
+    elif plot_type == "component_weights":
+        return generate_svd_component_weights(
+            svd_result['Vt'],
+            svd_result['pgs_ids'],
+            svd_result['stats']
+        )
+    elif plot_type == "heatmap":
+        return generate_svd_heatmap(
+            svd_result['Vt'],
+            svd_result['pgs_ids'],
+            svd_result['stats']
+        )
+    elif plot_type == "combined":
+        return generate_svd_combined(
+            U=svd_result['U'],
+            S=svd_result['S'],
+            Vt=svd_result['Vt'],
+            pgs_ids=svd_result['pgs_ids'],
+            sample_ids=svd_result['sample_ids'],
+            stats=svd_result['stats']
+        )
+
+def save_svd_visualization(fig, params, request_hash):
+    """Save SVD visualization to HTML file."""
+    # Generate filename
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    score_type_safe = params['score_type'].replace("/", "_").replace("\\", "_")
+    cohort_indicator = f"{params['cohort']}_" if params['cohort'] and params['cohort'] != "ALL" else ""
+    filename = f"svd_{cohort_indicator}{score_type_safe}_{params['plot_type']}_{request_hash}_{timestamp}.html"
+    filepath = os.path.join("temp", filename)
+    
+    # Save figure
+    fig.write_html(
+        filepath,
+        include_plotlyjs='cdn',
+        include_mathjax=False,
+        config={
+            'displayModeBar': True,
+            'responsive': True
+        }
+    )
+    
+    return f"/temp/{filename}"
 
 def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None):
     """
     Build a matrix of PGS scores x samples and perform SVD on it.
-    
-    Parameters:
-    - score_type: The SCORE_TYPE to filter on
-    - specific_pgs_ids: List of specific PGS IDs to include (if None, use all)
-    - cohort: Name of cohort to filter samples (optional)
-    
-    Returns:
-    - U: Left singular vectors (sample space)
-    - S: Singular values
-    - Vt: Right singular vectors (PGS score space)
-    - pgs_ids: List of PGS IDs used (for reference)
-    - sample_ids: List of sample IDs used (for reference)
-    - stats: Dictionary containing additional statistics
+    This is identical to PCA analysis since SVD is used for PCA computation.
     """
     print(f"=== Performing SVD Analysis ===")
     print(f"Score Type: {score_type}")
     
-    # Database connection
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
+    # Fetch required data
+    data = fetch_svd_data(score_type, specific_pgs_ids, cohort)
     
-    # Get PGS IDs 
-    if specific_pgs_ids:
-        placeholders = ','.join(['?'] * len(specific_pgs_ids))
-        cursor.execute(f"""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            AND PGS_ID IN ({placeholders})
-            ORDER BY PGS_ID
-        """, [score_type] + specific_pgs_ids)
-    else:
-        cursor.execute("""
-            SELECT DISTINCT PGS_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ?
-            ORDER BY PGS_ID
-        """, (score_type,))
+    # Get the score matrix
+    matrix = fetch_svd_matrix(data['sample_ids'], data['pgs_ids'], score_type)
     
-    pgs_ids = [row[0] for row in cursor.fetchall()]
+    # Perform SVD
+    svd_result = perform_svd_computation(matrix)
+    
+    # Calculate statistics
+    stats = calculate_svd_statistics(
+        svd_result,
+        len(data['sample_ids']),
+        len(data['pgs_ids']),
+        score_type,
+        cohort
+    )
+    
+    return {
+        'U': svd_result['U'],
+        'S': svd_result['S'],
+        'Vt': svd_result['Vt'],
+        'pgs_ids': data['pgs_ids'],
+        'sample_ids': data['sample_ids'],
+        'stats': stats
+    }
+
+def fetch_svd_data(score_type, specific_pgs_ids, cohort):
+    """Fetch PGS IDs and sample IDs for SVD analysis."""
+    # Get PGS IDs
+    pgs_ids = db.scores.fetch_pgs_ids(
+        specific_pgs_ids=specific_pgs_ids,
+        score_type=score_type
+    )
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
-            
-    # Modified sample ID fetching with population filtering
-    print("Getting all SAMPLE_IDs for the selected PGS_IDs...")
-
-    if cohort and cohort != "ALL":
-        # Query the ancestry table to get sample IDs for the specified population
-        cursor.execute("SELECT sample_ids FROM ancestry_groups WHERE population = ?", (cohort,))
-        cohort_result = cursor.fetchone()
-        
-        if cohort_result:
-            # Parse the JSON array of sample IDs
-            sample_ids = json.loads(cohort_result[0])
-            print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
-            
-
-        else:
-            print(f"Warning: Population {cohort} not found in database. Using all samples.")
-            cursor.execute(f"""
-                SELECT DISTINCT SAMPLE_ID 
-                FROM scores 
-                WHERE SCORE_TYPE = ? 
-                AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-                ORDER BY SAMPLE_ID
-            """, [score_type] + pgs_ids)
-            sample_ids = [row[0] for row in cursor.fetchall()]
-    else:
-        # No population filtering
-        cursor.execute(f"""
-            SELECT DISTINCT SAMPLE_ID 
-            FROM scores 
-            WHERE SCORE_TYPE = ? 
-            AND PGS_ID IN ({','.join(['?']*len(pgs_ids))})
-            ORDER BY SAMPLE_ID
-        """, [score_type] + pgs_ids)
     
-        sample_ids = [row[0] for row in cursor.fetchall()]
+    # Get sample IDs
+    if cohort and cohort != "ALL":
+        sample_ids = db.ancestry.sample_ids_by_cohort(cohort)
+        print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
+    else:
+        # Get all sample IDs that have scores for these PGS IDs
+        sample_ids = db.scores.get_sample_ids_with_scores(
+            score_type=score_type,
+            pgs_ids=pgs_ids
+        )
+        print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
+    
+    return {
+        'pgs_ids': pgs_ids,
+        'sample_ids': sample_ids
+    }
 
-    print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
-
+def fetch_svd_matrix(sample_ids, pgs_ids, score_type):
+    """Fetch and prepare the score matrix for SVD."""
     start_time = time.time()
     print("Starting data processing...")
-
-    matrix, _ = get_matrix(
+    
+    matrix, _ = db.scores.get_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
         output_format="numpy",
-        handle_missing=True  
+        handle_missing=True
     )
-
+    
     total_time = time.time() - start_time
     print(f"Total processing time: {total_time:.2f} seconds.")
-    print(f"Matrix shape: {matrix.shape}")   
+    print(f"Matrix shape: {matrix.shape}")
+    
+    return matrix
 
+def perform_svd_computation(matrix):
+    """Perform SVD on the centered matrix."""
+    print("Performing SVD...")
+    
     # Center the data (important for SVD/PCA interpretation)
     matrix_centered = matrix - np.mean(matrix, axis=0)
     
     # Perform SVD
-    print("Performing SVD...")
     U, S, Vt = np.linalg.svd(matrix_centered, full_matrices=False)
+    
+    return {
+        'U': U,
+        'S': S,
+        'Vt': Vt,
+        'matrix_centered': matrix_centered
+    }
+
+def calculate_svd_statistics(svd_result, num_samples, num_pgs_ids, score_type, cohort):
+    """Calculate SVD statistics including explained variance."""
+    S = svd_result['S']
+    matrix_centered = svd_result['matrix_centered']
     
     # Calculate explained variance
     explained_variance = (S ** 2) / (matrix_centered.shape[0] - 1)
     total_variance = np.sum(explained_variance)
     explained_variance_ratio = explained_variance / total_variance
     
-    # Compile statistics
-    stats = {
+    return {
         "explained_variance_ratio": explained_variance_ratio.tolist(),
         "cumulative_variance": np.cumsum(explained_variance_ratio).tolist(),
         "singular_values": S.tolist(),
-        "num_samples": len(sample_ids),
-        "num_pgs_ids": len(pgs_ids),
+        "num_samples": num_samples,
+        "num_pgs_ids": num_pgs_ids,
         "score_type": score_type,
         "cohort": cohort if cohort else "ALL"
     }
-    
-    # Close database connection
-    conn.close()
-    
-    return U, S, Vt, pgs_ids, sample_ids, stats
 
 def generate_svd_scree_plot(S, stats):
-    """Generate a scree plot to visualize singular values and explained variance"""
+    """Generate a scree plot to visualize singular values and explained variance."""
     explained_variance_ratio = stats["explained_variance_ratio"]
     cumulative_variance = stats["cumulative_variance"]
     
     # Create scree plot with two traces
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    fig = create_scree_plot_figure()
     
-    # Bar chart for individual explained variance
+    # Add bar chart for individual explained variance
+    add_variance_bars(fig, explained_variance_ratio)
+    
+    # Add line chart for cumulative explained variance
+    add_cumulative_line(fig, cumulative_variance)
+    
+    # Update layout
+    configure_scree_plot_layout(fig, stats["score_type"], explained_variance_ratio)
+    
+    return fig
+
+def create_scree_plot_figure():
+    """Create the base figure for scree plot."""
+    return make_subplots(specs=[[{"secondary_y": True}]])
+
+def add_variance_bars(fig, explained_variance_ratio):
+    """Add bar chart for individual explained variance."""
     fig.add_trace(
         go.Bar(
-            x=list(range(1, len(S)+1)),
+            x=list(range(1, len(explained_variance_ratio)+1)),
             y=explained_variance_ratio,
             name="Explained Variance",
             marker_color="blue"
         ),
         secondary_y=False
     )
-    
-    # Line chart for cumulative explained variance
+
+def add_cumulative_line(fig, cumulative_variance):
+    """Add line chart for cumulative explained variance."""
     fig.add_trace(
         go.Scatter(
-            x=list(range(1, len(S)+1)),
+            x=list(range(1, len(cumulative_variance)+1)),
             y=cumulative_variance,
             name="Cumulative Variance",
             mode="lines+markers",
@@ -249,10 +316,11 @@ def generate_svd_scree_plot(S, stats):
         ),
         secondary_y=True
     )
-    
-    # Update layout
+
+def configure_scree_plot_layout(fig, score_type, explained_variance_ratio):
+    """Configure layout for scree plot."""
     fig.update_layout(
-        title=f'SVD Scree Plot: {stats["score_type"]} Scores',
+        title=f'SVD Scree Plot: {score_type} Scores',
         xaxis=dict(
             title='Component',
             tickmode='linear',
@@ -285,170 +353,110 @@ def generate_svd_scree_plot(S, stats):
         opacity=0.6,
         selector=dict(type='bar')
     )
+
+def generate_svd_biplot_sample(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=20):
+    """Generate a biplot to visualize samples and features in the same 2D space."""
+    n_components = 2
+    
+    # Scale the singular vectors
+    U_scaled = scale_singular_vectors(U, S, n_components)
+    
+    # Create figure
+    fig = go.Figure()
+    
+    # Add sample scatter plot
+    add_sample_scatter(fig, U_scaled, sample_ids)
+    
+    # Get top contributing PGS scores
+    top_indices = get_top_contributing_indices(Vt, n_components, pgs_ids, max_vectors)
+    
+    # Calculate scaling factor
+    scale_factor = calculate_biplot_scale_factor(U_scaled, Vt, n_components)
+    
+    # Fetch metadata and add PGS vectors
+    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
+    add_pgs_vectors(fig, Vt, pgs_ids, top_indices, scale_factor, pgs_metadata, n_components)
+    
+    # Update layout
+    update_biplot_layout(
+        fig,
+        f'SVD Biplot: {stats["score_type"]} Scores (Sample-centered view)',
+        stats,
+        n_components
+    )
+    
+    # Add scale reference circle
+    add_scale_circle(fig, U_scaled)
     
     return fig
 
-def generate_svd_biplot_sample(U, S, Vt, pgs_ids, sample_ids, stats, pgs_metadata=None, max_vectors=20):
-    """Generate a biplot to visualize samples and features in the same 2D space"""
-    # Number of components to use (typically 2 for a 2D plot)
+def generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=20):
+    """Generate a biplot to visualize PGS scores and samples in the same 2D space."""
     n_components = 2
-
-    # Scale the singular vectors by the singular values
-    U_scaled = U[:, :n_components] * S[:n_components]
-
+    
+    # Scale the singular vectors
+    Vt_scaled = scale_singular_vectors_transpose(Vt, S, n_components)
+    
     # Create figure
     fig = go.Figure()
+    
+    # Fetch metadata and create hover text
+    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
+    hover_text = create_score_hover_text(pgs_ids, pgs_metadata, sample_ids)
+    
+    # Add PGS score scatter plot
+    add_score_scatter(fig, Vt_scaled, pgs_ids, hover_text)
+    
+    # Calculate scaling factor and get top samples
+    scale_factor = calculate_score_biplot_scale_factor(Vt_scaled, U, n_components)
+    top_sample_indices = get_top_contributing_samples(U, n_components, sample_ids, max_vectors)
+    
+    # Add sample vectors
+    add_sample_vectors(fig, U, sample_ids, top_sample_indices, scale_factor, n_components)
+    
+    # Update layout
+    update_biplot_layout(
+        fig,
+        f'SVD Biplot: {stats["score_type"]} Scores (Score-centered view)',
+        stats,
+        n_components
+    )
+    
+    # Add scale reference circle
+    add_scale_circle(fig, Vt_scaled)
+    
+    return fig
 
-    # Add samples as scatter points
+def scale_singular_vectors(U, S, n_components):
+    """Scale the left singular vectors by the singular values."""
+    return U[:, :n_components] * S[:n_components]
+
+def scale_singular_vectors_transpose(Vt, S, n_components):
+    """Scale the right singular vectors by the singular values."""
+    return Vt[:n_components, :].T * S[:n_components]
+
+def add_sample_scatter(fig, U_scaled, sample_ids):
+    """Add sample points to biplot."""
     fig.add_trace(
         go.Scatter(
             x=U_scaled[:, 0],
             y=U_scaled[:, 1],
             mode='markers',
-            marker=dict(
-                size=5,
-                color='green',  # Changed from blue to green as per your example
-                opacity=0.6
-            ),
+            marker=dict(size=5, color='green', opacity=0.6),
             name='Samples',
             text=[f"Sample: {sample_id}" for sample_id in sample_ids],
             hoverinfo='text'
         )
     )
 
-    # Calculate scaling factor for feature vectors
-    scale_factor = np.percentile(np.abs(U_scaled), 95) / np.percentile(np.abs(Vt[:n_components, :]), 95) * 0.5
-
-    # Find top contributing PGS scores
-    if len(pgs_ids) > max_vectors:
-        # Calculate contribution of each PGS to the first 2 components
-        pgs_contributions = np.sum(Vt[:n_components, :]**2, axis=0)
-        # Get indices of top contributors
-        top_indices = np.argsort(pgs_contributions)[::-1][:max_vectors]
-    else:
-        # If fewer PGS than max_vectors, use all of them
-        top_indices = range(len(pgs_ids))
-
-    # Create hover text for PGS vectors
-    hover_texts = []
-    for idx in top_indices:
-        pgs_id = pgs_ids[idx]
-        
-        # Get metadata if available
-        if pgs_metadata and pgs_id in pgs_metadata:
-            meta = pgs_metadata[pgs_id]
-            hover_text = (
-                f"PGS ID: {pgs_id}<br>"
-                f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
-                f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
-                f"Publication: {meta.get('Publication_ID', 'N/A')}"
-            )
-        else:
-            hover_text = f"PGS ID: {pgs_id}"
-        
-        hover_texts.append(['', hover_text])  # Empty string for the origin point, hover text for the arrow endpoint
-
-    # Add PGS features as vectors (only top contributors)
-    for i, idx in enumerate(top_indices):
-        fig.add_trace(
-            go.Scatter(
-                x=[0, Vt[0, idx] * scale_factor],
-                y=[0, Vt[1, idx] * scale_factor],
-                mode='lines+text',
-                line=dict(color='red', width=1),
-                text=['', pgs_ids[idx]],
-                textposition='top center',
-                name=pgs_ids[idx],
-                hovertext=hover_texts[i],
-                hoverinfo='text'
-            )
-        )
-
-    # Update layout
-    fig.update_layout(
-        title=f'SVD Biplot: {stats["score_type"]} Scores (Sample-centered view)',
-        xaxis=dict(
-            title=f'Component 1 ({stats["explained_variance_ratio"][0]*100:.1f}%)',
-            zeroline=True
-        ),
-        yaxis=dict(
-            title=f'Component 2 ({stats["explained_variance_ratio"][1]*100:.1f}%)',
-            zeroline=True
-        ),
-        showlegend=False,
-        height=800,
-        width=1000,
-        hoverlabel=dict(
-            bgcolor="white",
-            font_size=12,
-            font_family="Arial"
-        )
-    )
-
-    # Add a dashed circle to indicate scale
-    theta = np.linspace(0, 2*np.pi, 100)
-    radius = np.percentile(np.sqrt(np.sum(U_scaled**2, axis=1)), 75)
-    fig.add_trace(
-        go.Scatter(
-            x=radius * np.cos(theta),
-            y=radius * np.sin(theta),
-            mode='lines',
-            line=dict(color='gray', dash='dash', width=1),
-            name='Scale Reference',
-            hoverinfo='skip'
-        )
-    )
-
-    return fig
-
-def generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, pgs_metadata=None, data_dict=None, max_vectors=20):
-    """Generate a biplot to visualize PGS scores and samples in the same 2D space"""
-    # Number of components to use (typically 2 for a 2D plot)
-    n_components = 2
-    
-    # Scale the singular vectors by the singular values
-    Vt_scaled = Vt[:n_components, :].T * S[:n_components]
-    
-    # Create figure
-    fig = go.Figure()
-    
-    # Create hover text for PGS points
-    hover_text = []
-    for i, pgs_id in enumerate(pgs_ids):
-        # Get metadata for this PGS ID
-        if pgs_metadata and pgs_id in pgs_metadata:
-            meta = pgs_metadata[pgs_id]
-            
-            # Calculate average score if data_dict is available
-            avg_score_text = ""
-            if data_dict:
-                scores = [data_dict[sample_id].get(pgs_id, np.nan) for sample_id in sample_ids]
-                avg_score = np.nanmean([s for s in scores if not np.isnan(s)])
-                avg_score_text = f"<br>Avg Score: {avg_score:.4f}"
-            
-            hover_info = (
-                f"PGS ID: {pgs_id}<br>"
-                f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
-                f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
-                f"Publication: {meta.get('Publication_ID', 'N/A')}"
-                f"{avg_score_text}"
-            )
-        else:
-            hover_info = f"PGS ID: {pgs_id}"
-            
-        hover_text.append(hover_info)
-    
-    # Add PGS scores as scatter points
+def add_score_scatter(fig, Vt_scaled, pgs_ids, hover_text):
+    """Add PGS score points to biplot."""
     fig.add_trace(
         go.Scatter(
             x=Vt_scaled[:, 0],
             y=Vt_scaled[:, 1],
             mode='markers+text',
-            marker=dict(
-                size=5,
-                color='red',
-                opacity=0.6
-            ),
+            marker=dict(size=5, color='red', opacity=0.6),
             name='PGS Scores',
             text=pgs_ids,
             textposition="top center",
@@ -456,36 +464,99 @@ def generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, pgs_metadata
             hoverinfo='text'
         )
     )
-    
-    # Calculate scaling factor for sample vectors
-    scale_factor = np.percentile(np.abs(Vt_scaled), 95) / np.percentile(np.abs(U[:, :n_components]), 95) * 0.5
-    
-    # Find top contributing samples
-    if len(sample_ids) > max_vectors:
-        # Calculate contribution of each sample to the first 2 components
-        sample_contributions = np.sum(U[:, :n_components]**2, axis=1)
-        # Get indices of top contributors
-        top_indices = np.argsort(sample_contributions)[::-1][:max_vectors]
+
+def get_top_contributing_indices(Vt, n_components, pgs_ids, max_vectors):
+    """Get indices of top contributing PGS scores."""
+    if len(pgs_ids) > max_vectors:
+        pgs_contributions = np.sum(Vt[:n_components, :]**2, axis=0)
+        return np.argsort(pgs_contributions)[::-1][:max_vectors]
     else:
-        # If fewer samples than max_vectors, use all of them
-        top_indices = range(len(sample_ids))
-    
-    # Add samples as vectors (only top contributors)
+        return range(len(pgs_ids))
+
+def get_top_contributing_samples(U, n_components, sample_ids, max_vectors):
+    """Get indices of top contributing samples."""
+    if len(sample_ids) > max_vectors:
+        sample_contributions = np.sum(U[:, :n_components]**2, axis=1)
+        return np.argsort(sample_contributions)[::-1][:max_vectors]
+    else:
+        return range(len(sample_ids))
+
+def calculate_biplot_scale_factor(U_scaled, Vt, n_components):
+    """Calculate scaling factor for feature vectors in sample biplot."""
+    return np.percentile(np.abs(U_scaled), 95) / np.percentile(np.abs(Vt[:n_components, :]), 95) * 0.5
+
+def calculate_score_biplot_scale_factor(Vt_scaled, U, n_components):
+    """Calculate scaling factor for sample vectors in score biplot."""
+    return np.percentile(np.abs(Vt_scaled), 95) / np.percentile(np.abs(U[:, :n_components]), 95) * 0.5
+
+def add_pgs_vectors(fig, Vt, pgs_ids, top_indices, scale_factor, pgs_metadata, n_components):
+    """Add PGS feature vectors to biplot."""
+    for idx in top_indices:
+        pgs_id = pgs_ids[idx]
+        hover_text = create_pgs_vector_hover_text(pgs_id, pgs_metadata)
+        
+        fig.add_trace(
+            go.Scatter(
+                x=[0, Vt[0, idx] * scale_factor],
+                y=[0, Vt[1, idx] * scale_factor],
+                mode='lines+text',
+                line=dict(color='red', width=1),
+                text=['', pgs_id],
+                textposition='top center',
+                name=pgs_id,
+                hovertext=['', hover_text],
+                hoverinfo='text'
+            )
+        )
+
+def add_sample_vectors(fig, U, sample_ids, top_indices, scale_factor, n_components):
+    """Add sample vectors to score biplot."""
     for idx in top_indices:
         fig.add_trace(
             go.Scatter(
                 x=[0, U[idx, 0] * scale_factor],
                 y=[0, U[idx, 1] * scale_factor],
-                mode='lines',  # Removed text to make the plot cleaner
+                mode='lines',
                 line=dict(color='blue', width=1),
                 name=sample_ids[idx],
                 hoverinfo='name'
             )
         )
-    
-    # Update layout
+
+def create_pgs_vector_hover_text(pgs_id, pgs_metadata):
+    """Create hover text for PGS vectors."""
+    if pgs_metadata and pgs_id in pgs_metadata:
+        meta = pgs_metadata[pgs_id]
+        return (
+            f"PGS ID: {pgs_id}<br>"
+            f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
+            f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
+            f"Publication: {meta.get('Publication_ID', 'N/A')}"
+        )
+    else:
+        return f"PGS ID: {pgs_id}"
+
+def create_score_hover_text(pgs_ids, pgs_metadata, sample_ids):
+    """Create hover text for PGS score points."""
+    hover_text = []
+    for pgs_id in pgs_ids:
+        if pgs_metadata and pgs_id in pgs_metadata:
+            meta = pgs_metadata[pgs_id]
+            hover_info = (
+                f"PGS ID: {pgs_id}<br>"
+                f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
+                f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
+                f"Publication: {meta.get('Publication_ID', 'N/A')}"
+            )
+        else:
+            hover_info = f"PGS ID: {pgs_id}"
+        hover_text.append(hover_info)
+    return hover_text
+
+def update_biplot_layout(fig, title, stats, n_components):
+    """Update layout for biplot."""
     fig.update_layout(
-        title=f'SVD Biplot: {stats["score_type"]} Scores (Score-centered view)',
+        title=title,
         xaxis=dict(
             title=f'Component 1 ({stats["explained_variance_ratio"][0]*100:.1f}%)',
             zeroline=True
@@ -503,10 +574,12 @@ def generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, pgs_metadata
             font_family="Arial"
         )
     )
-    
-    # Add a dashed circle to indicate scale
+
+def add_scale_circle(fig, scaled_data):
+    """Add a dashed circle to indicate scale."""
     theta = np.linspace(0, 2*np.pi, 100)
-    radius = np.percentile(np.sqrt(np.sum(Vt_scaled**2, axis=1)), 75)
+    radius = np.percentile(np.sqrt(np.sum(scaled_data**2, axis=1)), 75)
+    
     fig.add_trace(
         go.Scatter(
             x=radius * np.cos(theta),
@@ -517,49 +590,60 @@ def generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, pgs_metadata
             hoverinfo='skip'
         )
     )
+
+def generate_svd_component_weights(Vt, pgs_ids, stats):
+    """Generate a visualization of component weights (loadings) for top components."""
+    n_components = min(5, Vt.shape[0])
+    n_top_pgs = min(20, len(pgs_ids))
+    
+    # Create subplots
+    fig = create_component_weights_subplots(n_components, stats)
+    
+    # Add bar charts for each component
+    for i in range(n_components):
+        add_component_weights_bars(fig, Vt, pgs_ids, i, n_top_pgs)
+    
+    # Update layout
+    configure_component_weights_layout(fig, stats["score_type"], n_components)
     
     return fig
 
-def generate_svd_component_weights(Vt, pgs_ids, stats):
-    """Generate a visualization of component weights (loadings) for top components"""
-    # Number of components to visualize
-    n_components = min(5, Vt.shape[0])
-    
-    # Number of top PGS IDs to show per component
-    n_top_pgs = min(20, len(pgs_ids))
-    
-    # Create subplots, one for each component
-    fig = make_subplots(
-        rows=n_components, 
+def create_component_weights_subplots(n_components, stats):
+    """Create subplots for component weights visualization."""
+    return make_subplots(
+        rows=n_components,
         cols=1,
-        subplot_titles=[f'Component {i+1} ({stats["explained_variance_ratio"][i]*100:.1f}%)' 
-                        for i in range(n_components)]
+        subplot_titles=[
+            f'Component {i+1} ({stats["explained_variance_ratio"][i]*100:.1f}%)'
+            for i in range(n_components)
+        ]
     )
+
+def add_component_weights_bars(fig, Vt, pgs_ids, component_idx, n_top_pgs):
+    """Add bar chart for a single component's weights."""
+    # Sort PGS IDs by absolute contribution
+    sorted_indices = np.argsort(np.abs(Vt[component_idx, :]))[::-1][:n_top_pgs]
     
-    # For each component, show the top contributing PGS scores
-    for i in range(n_components):
-        # Sort PGS IDs by absolute contribution to this component
-        sorted_indices = np.argsort(np.abs(Vt[i, :]))[::-1][:n_top_pgs]
-        
-        # Get the weights and corresponding PGS IDs
-        weights = Vt[i, sorted_indices]
-        component_pgs_ids = [pgs_ids[idx] for idx in sorted_indices]
-        
-        # Add bar chart for this component
-        fig.add_trace(
-            go.Bar(
-                x=component_pgs_ids,
-                y=weights,
-                marker_color=['red' if w < 0 else 'green' for w in weights],
-                name=f'Component {i+1}'
-            ),
-            row=i+1, 
-            col=1
-        )
+    # Get weights and PGS IDs
+    weights = Vt[component_idx, sorted_indices]
+    component_pgs_ids = [pgs_ids[idx] for idx in sorted_indices]
     
-    # Update layout
+    # Add bar chart
+    fig.add_trace(
+        go.Bar(
+            x=component_pgs_ids,
+            y=weights,
+            marker_color=['red' if w < 0 else 'green' for w in weights],
+            name=f'Component {component_idx+1}'
+        ),
+        row=component_idx+1,
+        col=1
+    )
+
+def configure_component_weights_layout(fig, score_type, n_components):
+    """Configure layout for component weights visualization."""
     fig.update_layout(
-        title=f'SVD Component Weights: {stats["score_type"]} Scores',
+        title=f'SVD Component Weights: {score_type} Scores',
         height=300 * n_components,
         width=1000,
         showlegend=False
@@ -569,67 +653,88 @@ def generate_svd_component_weights(Vt, pgs_ids, stats):
     for i in range(n_components):
         fig.update_xaxes(title_text="PGS ID", row=i+1, col=1)
         fig.update_yaxes(title_text="Loading Weight", row=i+1, col=1)
-    
-    return fig
 
 def generate_svd_heatmap(Vt, pgs_ids, stats):
-    """Generate a heatmap of component loadings"""
-    # Number of components to visualize
+    """Generate a heatmap of component loadings."""
     n_components = min(10, Vt.shape[0])
-    
-    # Number of top PGS IDs to show
     n_top_pgs = min(50, len(pgs_ids))
     
-    # Get the top contributing PGS IDs across all components
-    overall_importance = np.sum(Vt[:n_components, :]**2, axis=0)
-    top_indices = np.argsort(overall_importance)[::-1][:n_top_pgs]
+    # Get top contributing PGS IDs
+    top_indices = get_top_pgs_for_heatmap(Vt, n_components, n_top_pgs)
     
-    # Extract the submatrix for visualization
+    # Extract data for heatmap
     heatmap_data = Vt[:n_components, top_indices]
-    
-    # Get corresponding PGS IDs
     heatmap_pgs_ids = [pgs_ids[idx] for idx in top_indices]
     
     # Create heatmap
-    fig = go.Figure(data=go.Heatmap(
-        z=heatmap_data,
-        x=heatmap_pgs_ids,
-        y=[f'Component {i+1} ({stats["explained_variance_ratio"][i]*100:.1f}%)' for i in range(n_components)],
-        colorscale='RdBu',
-        zmid=0,
-        text=[[f'PGS: {pgs_id}<br>Component: {i+1}<br>Weight: {weight:.3f}' 
-              for pgs_id, weight in zip(heatmap_pgs_ids, row)] 
-              for i, row in enumerate(heatmap_data)],
-        hoverinfo='text'
-    ))
+    fig = create_loading_heatmap(heatmap_data, heatmap_pgs_ids, stats, n_components)
     
     # Update layout
-    fig.update_layout(
-        title=f'SVD Component Loading Heatmap: {stats["score_type"]} Scores',
-        xaxis=dict(
-            title='PGS ID',
-            tickangle=45
-        ),
-        yaxis=dict(
-            title='Component',
-            autorange='reversed'
-        ),
-        height=600,
-        width=1200
-    )
+    configure_heatmap_layout(fig, stats["score_type"])
     
     return fig
 
+def get_top_pgs_for_heatmap(Vt, n_components, n_top_pgs):
+    """Get indices of top contributing PGS IDs across all components."""
+    overall_importance = np.sum(Vt[:n_components, :]**2, axis=0)
+    return np.argsort(overall_importance)[::-1][:n_top_pgs]
+
+def create_loading_heatmap(heatmap_data, heatmap_pgs_ids, stats, n_components):
+    """Create the loading heatmap figure."""
+    return go.Figure(data=go.Heatmap(
+        z=heatmap_data,
+        x=heatmap_pgs_ids,
+        y=[f'Component {i+1} ({stats["explained_variance_ratio"][i]*100:.1f}%)'
+           for i in range(n_components)],
+        colorscale='RdBu',
+        zmid=0,
+        text=[[f'PGS: {pgs_id}<br>Component: {i+1}<br>Weight: {weight:.3f}'
+              for pgs_id, weight in zip(heatmap_pgs_ids, row)]
+              for i, row in enumerate(heatmap_data)],
+        hoverinfo='text'
+    ))
+
+def configure_heatmap_layout(fig, score_type):
+    """Configure layout for loading heatmap."""
+    fig.update_layout(
+        title=f'SVD Component Loading Heatmap: {score_type} Scores',
+        xaxis=dict(title='PGS ID', tickangle=45),
+        yaxis=dict(title='Component', autorange='reversed'),
+        height=600,
+        width=1200
+    )
+
 def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
-    """Generate a combined visualization with multiple SVD plots"""
-    # Create a figure with subplots
-    fig = make_subplots(
-        rows=2, 
+    """Generate a combined visualization with multiple SVD plots."""
+    # Create subplots
+    fig = create_combined_subplots()
+    
+    # Add scree plot
+    add_combined_scree_plot(fig, S, stats)
+    
+    # Add biplot
+    add_combined_biplot(fig, U, S, Vt, pgs_ids)
+    
+    # Add component weights
+    add_combined_component_weights(fig, Vt, pgs_ids)
+    
+    # Add heatmap
+    add_combined_heatmap(fig, Vt, pgs_ids)
+    
+    # Update layout
+    configure_combined_layout(fig, stats)
+    
+    return fig
+
+def create_combined_subplots():
+    """Create subplots for combined visualization."""
+    return make_subplots(
+        rows=2,
         cols=2,
         subplot_titles=[
-            "Scree Plot", 
+            "Scree Plot",
             "Biplot (PC1 vs PC2)",
-            "Top PGS Contributions to PC1", 
+            "Top PGS Contributions to PC1",
             "Component Loading Heatmap"
         ],
         specs=[
@@ -637,8 +742,9 @@ def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
             [{"type": "xy"}, {"type": "heatmap"}]
         ]
     )
-    
-    # 1. Scree plot
+
+def add_combined_scree_plot(fig, S, stats):
+    """Add scree plot to combined visualization."""
     explained_variance_ratio = stats["explained_variance_ratio"]
     cumulative_variance = stats["cumulative_variance"]
     
@@ -662,8 +768,9 @@ def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
         ),
         row=1, col=1
     )
-    
-    # 2. Biplot
+
+def add_combined_biplot(fig, U, S, Vt, pgs_ids):
+    """Add biplot to combined visualization."""
     n_components = 2
     U_scaled = U[:, :n_components] * S[:n_components]
     
@@ -679,7 +786,7 @@ def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
         row=1, col=2
     )
     
-    # Add a few key PGS features as vectors
+    # Add top PGS features as vectors
     scale_factor = np.percentile(np.abs(U_scaled), 95) / np.percentile(np.abs(Vt[:n_components, :]), 95) * 0.5
     
     # Find the top 10 contributors to PC1 and PC2
@@ -700,8 +807,9 @@ def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
             ),
             row=1, col=2
         )
-    
-    # 3. Top PGS contributions to PC1
+
+def add_combined_component_weights(fig, Vt, pgs_ids):
+    """Add component weights to combined visualization."""
     n_top_pgs = 15
     sorted_indices = np.argsort(np.abs(Vt[0, :]))[::-1][:n_top_pgs]
     weights = Vt[0, sorted_indices]
@@ -716,8 +824,9 @@ def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
         ),
         row=2, col=1
     )
-    
-    # 4. Heatmap of top components
+
+def add_combined_heatmap(fig, Vt, pgs_ids):
+    """Add heatmap to combined visualization."""
     n_components_heatmap = min(5, Vt.shape[0])
     n_top_pgs_heatmap = min(20, len(pgs_ids))
     
@@ -737,8 +846,11 @@ def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
         ),
         row=2, col=2
     )
+
+def configure_combined_layout(fig, stats):
+    """Configure layout for combined visualization."""
+    explained_variance_ratio = stats["explained_variance_ratio"]
     
-    # Update layout
     fig.update_layout(
         title=f'SVD Analysis of {stats["score_type"]} Scores ({stats["num_pgs_ids"]} PGS IDs, {stats["num_samples"]} Samples)',
         height=1000,
@@ -757,19 +869,3 @@ def generate_svd_combined(U, S, Vt, pgs_ids, sample_ids, stats):
     fig.update_yaxes(title_text="Component Weight", row=2, col=1)
     
     fig.update_xaxes(title_text="PGS ID", row=2, col=2, tickangle=45)
-    
-    return fig
-
-def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_vectors):
-    """Generate a hash for the SVD request parameters for caching"""
-    params = {
-        "score_type": score_type,
-        "pgs_ids": sorted(pgs_ids) if pgs_ids else "all",
-        "cohort": cohort if cohort else "ALL",
-        "plot_type": plot_type,
-        "perspective": perspective,
-        "max_vectors": max_vectors
-    }
-    param_str = json.dumps(params, sort_keys=True)
-    hash_obj = hashlib.md5(param_str.encode())
-    return hash_obj.hexdigest()

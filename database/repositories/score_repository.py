@@ -325,13 +325,157 @@ class ScoreRepository(BaseRepository):
 
         return cohort_data
 
+    def get_sample_ids_with_scores(self, score_type, pgs_ids):
+        """
+        Get all sample IDs that have scores for the given PGS IDs and score type.
+        
+        Parameters:
+        -----------
+        score_type : str
+            Type of score to filter by
+        pgs_ids : list
+            List of PGS IDs to check
+            
+        Returns:
+        --------
+        list
+            List of sample IDs
+        """
+        pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+        query = f"""
+            SELECT DISTINCT SAMPLE_ID 
+            FROM scores 
+            WHERE SCORE_TYPE = ? 
+            AND PGS_ID IN ({pgs_placeholders})
+            ORDER BY SAMPLE_ID
+        """
+        params = [score_type] + pgs_ids
+        rows = self.execute_query(query, params)
+        return [row[0] for row in rows]
 
-DB_PATH = '/data/dev/db/pgs_data.db' 
-db_connection = DatabaseConnection(DB_PATH)
-test_run = ScoreRepository(db_connection)
-start_time = time.time()
-print(f"Found {len(test_run.get_all_pgs_ids())} unique PGS IDs in {time.time()-start_time} seconds.")
-start_time = time.time()
-print(f"Found {len(test_run.get_all_score_types())} unique score types in {time.time()-start_time} seconds.")
-start_time = time.time()
-print(f"Found {len(test_run.get_all_sample_ids())} unique sample IDs in {time.time()-start_time} seconds.")
+    def get_score_statistics_with_outliers(self, score_type, pgs_ids, std_dev_threshold=None):
+        """
+        Calculate comprehensive statistics for scores including outlier counts.
+        
+        Parameters:
+        -----------
+        score_type : str
+            Type of score
+        pgs_ids : list
+            List of PGS IDs
+        std_dev_threshold : float, optional
+            Number of standard deviations for outlier calculation.
+            If provided, will calculate outlier counts.
+            
+        Returns:
+        --------
+        dict
+            Dictionary containing:
+            - avg: Average score
+            - min: Minimum score
+            - max: Maximum score
+            - stdev: Standard deviation
+            - count: Total number of scores
+            - outlier_count: Number of outliers (if std_dev_threshold provided)
+            - upper_threshold: Upper outlier threshold (if std_dev_threshold provided)
+            - lower_threshold: Lower outlier threshold (if std_dev_threshold provided)
+        """
+        placeholders = ','.join(['?'] * len(pgs_ids))
+        
+        # Get basic statistics
+        query = f"""
+            SELECT 
+                AVG(SCORE) as avg, 
+                MIN(SCORE) as min, 
+                MAX(SCORE) as max, 
+                SQRT(AVG(SCORE * SCORE) - AVG(SCORE) * AVG(SCORE)) AS stdev,
+                COUNT(*) as count
+            FROM scores
+            WHERE SCORE_TYPE = ? AND PGS_ID IN ({placeholders})
+        """
+        params = [score_type] + pgs_ids
+        row = self.execute_query_single(query, params)
+        
+        if not row or row['count'] == 0:
+            return {
+                'avg': 0,
+                'min': 0,
+                'max': 0,
+                'stdev': 1.0,
+                'count': 0,
+                'outlier_count': 0
+            }
+        
+        stats = {
+            'avg': row['avg'],
+            'min': row['min'],
+            'max': row['max'],
+            'stdev': row['stdev'] if row['stdev'] is not None else 1.0,
+            'count': row['count']
+        }
+        
+        # Calculate outliers if threshold provided
+        if std_dev_threshold is not None:
+            upper_threshold = stats['avg'] + (std_dev_threshold * stats['stdev'])
+            lower_threshold = stats['avg'] - (std_dev_threshold * stats['stdev'])
+            
+            # Count outliers
+            outlier_query = f"""
+                SELECT COUNT(*)
+                FROM scores
+                WHERE SCORE_TYPE = ? AND PGS_ID IN ({placeholders})
+                AND (SCORE > ? OR SCORE < ?)
+            """
+            outlier_params = [score_type] + pgs_ids + [upper_threshold, lower_threshold]
+            outlier_count = self.execute_query_scalar(outlier_query, outlier_params) or 0
+            
+            stats.update({
+                'outlier_count': outlier_count,
+                'upper_threshold': upper_threshold,
+                'lower_threshold': lower_threshold
+            })
+        
+        return stats
+
+    # For backward compatibility, you can keep these simplified versions that use the combined method:
+
+    def get_score_statistics(self, score_type, pgs_ids):
+        """
+        Calculate basic statistics for scores (backward compatibility).
+        
+        Returns:
+        --------
+        tuple
+            (avg, min_score, max_score, stdev)
+        """
+        stats = self.get_score_statistics_with_outliers(score_type, pgs_ids)
+        return (stats['avg'], stats['min'], stats['max'], stats['stdev'])
+
+    def count_outliers(self, score_type, pgs_ids, upper_threshold, lower_threshold):
+        """
+        Count outliers in the dataset (backward compatibility).
+        
+        Returns:
+        --------
+        int
+            Number of outliers
+        """
+        placeholders = ','.join(['?'] * len(pgs_ids))
+        query = f"""
+            SELECT COUNT(*)
+            FROM scores
+            WHERE SCORE_TYPE = ? AND PGS_ID IN ({placeholders})
+            AND (SCORE > ? OR SCORE < ?)
+        """
+        params = [score_type] + pgs_ids + [upper_threshold, lower_threshold]
+        return self.execute_query_scalar(query, params) or 0
+
+# DB_PATH = '/data/dev/db/pgs_data.db' 
+# db_connection = DatabaseConnection(DB_PATH)
+# test_run = ScoreRepository(db_connection)
+# start_time = time.time()
+# print(f"Found {len(test_run.get_all_pgs_ids())} unique PGS IDs in {time.time()-start_time} seconds.")
+# start_time = time.time()
+# print(f"Found {len(test_run.get_all_score_types())} unique score types in {time.time()-start_time} seconds.")
+# start_time = time.time()
+# print(f"Found {len(test_run.get_all_sample_ids())} unique sample IDs in {time.time()-start_time} seconds.")

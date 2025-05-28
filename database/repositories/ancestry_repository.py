@@ -63,3 +63,34 @@ class AncestryRepository(BaseRepository):
         """
         rows = self.execute_query(query, sample_ids)
         return [row[0] for row in rows]
+
+    def get_sample_ancestry(self, sample_id):
+        """
+        Get ancestry information for a specific sample.
+        
+        Parameters:
+        -----------
+        sample_id : str
+            The sample ID to look up
+            
+        Returns:
+        --------
+        str
+            Ancestry/population information for the sample, or 'Unknown' if not found
+        """
+        query = """
+            SELECT ag.population
+            FROM ancestry_groups ag
+            WHERE EXISTS (
+                SELECT 1
+                FROM json_each(ag.sample_ids) AS sample
+                WHERE sample.value = ?
+            )
+        """
+        
+        result = self.execute_query_single(query, [sample_id])
+        
+        if result:
+            return result['population']
+        
+        return 'Unknown'
