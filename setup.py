@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 """
 Setup script for PGS Visualizer
 This script creates the necessary directory structure and files
@@ -62,27 +61,5 @@ def main():
     else:
         print("All required files found!")
     
-    # Create sample cohort files
-    print("\nCreating sample cohort files...")
-    
-    sample_cohort = """sample1
-sample2
-sample3
-sample4
-sample5
-"""
-    
-    create_file("cohorts/example_cohort.txt", sample_cohort)
-    
-    # Final instructions
-    print("\nSetup complete!")
-    print("\nTo run the application:")
-    print("1. Install dependencies: pip install -r requirements.txt")
-    print("2. Start the server: uvicorn app:app --reload")
-    print("3. Open http://127.0.0.1:8000 in your browser")
-    
-    print("\nNote: You'll need to add your PGS data to the database before using the application.")
-    print("The initialization script in app.py will create the database schema when you first run the application.")
-
 if __name__ == "__main__":
     main()

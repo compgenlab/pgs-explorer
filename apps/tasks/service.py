@@ -1,0 +1,98 @@
+import uuid
+from typing import Optional
+from datetime import datetime
+from fastapi import BackgroundTasks
+from database import db
+from apps.core.models import TaskResponse
+
+def process_background_task(task_id: str, request_data: dict, processing_function):
+    """
+    Process a background task and update its status.
+    
+    Parameters:
+    -----------
+    task_id : str
+        Unique task identifier
+    request_data : dict
+        Request data for processing
+    processing_function : callable
+        Function that performs the actual processing
+    """
+    try:
+        # Update status to "processing"
+        db.tasks.update_task_status(task_id, "processing")
+        
+        # Call the actual processing function
+        result_path = processing_function(request_data)
+        
+        # Update task with success status and result path
+        db.tasks.update_task_status(
+            task_id=task_id,
+            status="completed",
+            result_path=result_path
+        )
+        
+    except Exception as e:
+        # Update task with error status
+        db.tasks.update_task_status(
+            task_id=task_id,
+            status="failed",
+            error=str(e)
+        )
+
+async def process_image_request(
+    request_data: dict,
+    task_type: str,
+    task_name: Optional[str],
+    processing_function,
+    background_tasks: BackgroundTasks
+) -> TaskResponse:
+    """
+    Generic function to handle image generation requests.
+    
+    Parameters:
+    -----------
+    request_data : dict
+        Dictionary containing the request parameters
+    task_type : str
+        Type of task (heatmap, clustering, etc.)
+    task_name : str, optional
+        User-provided name for the task
+    processing_function : callable
+        The function that will generate the image
+    background_tasks : BackgroundTasks
+        FastAPI BackgroundTasks object
+    
+    Returns:
+    --------
+    TaskResponse
+        Object with task_id and status
+    """
+    # Generate a unique task ID
+    task_id = str(uuid.uuid4())
+    created_at = datetime.now().isoformat()
+    
+    # Store task in database using TaskRepository
+    db.tasks.create_task(
+        task_id=task_id,
+        task_type=task_type,
+        name=task_name or f"{task_type} task",
+        request_data=request_data
+    )
+    
+    # Add task to background tasks
+    background_tasks.add_task(
+        process_background_task, 
+        task_id, 
+        request_data, 
+        processing_function
+    )
+    
+    # Return task ID and initial status to client
+    return TaskResponse(
+        task_id=task_id,
+        task_type=task_type,
+        name=task_name,
+        status="queued",
+        created_at=created_at
+    )

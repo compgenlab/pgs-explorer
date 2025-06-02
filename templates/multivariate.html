@@ -1285,7 +1285,6 @@
                 success: function(response) {
                     // Check if we received a task ID (background task) or direct file path
                     if (response.task_id) {
-                        // We got a task ID - this is the new background task system
                         const taskId = response.task_id;
                         
                         // Show task info in the alert
@@ -1294,7 +1293,6 @@
                         // Start polling for task status
                         pollTaskStatus(taskId, 'heatmap');
                     } else if (response.file_path) {
-                        // We got a direct file path - this is the old immediate response
                         // Handle as before
                         $('#loadingSpinner').hide();
                         
