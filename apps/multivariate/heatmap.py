@@ -151,7 +151,7 @@ def fetch_heatmap_data(score_type, specific_pgs_ids, cohort):
         score_type=score_type
     )
     pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
-    sample_ids = db.ancestry.sample_ids_by_cohort(cohort)
+    sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
     
     return {
         'pgs_ids': pgs_ids,
@@ -189,7 +189,7 @@ def fetch_score_matrix(sample_ids, pgs_ids, score_type, upper_threshold, lower_t
     print("Creating matrix data structure...")
     start_time = time.time()
     
-    matrix, pgs_list = db.scores.get_matrix(
+    matrix, pgs_list = db.scores.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,

@@ -32,7 +32,6 @@ def check_existing_files(request_hash):
             os.utime(cached_filepath)
             
             print(f"Using cached request: {filename}")
-            
             # Return file path with empty statistics
             return True
     

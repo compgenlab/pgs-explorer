@@ -174,7 +174,7 @@ def fetch_pca_data(score_type, specific_pgs_ids, cohort):
     
     # Get sample IDs
     if cohort and cohort != "ALL":
-        sample_ids = db.ancestry.sample_ids_by_cohort(cohort)
+        sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
         print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
     else:
         # Get all sample IDs that have scores for these PGS IDs
@@ -194,7 +194,7 @@ def fetch_pca_matrix(sample_ids, pgs_ids, score_type):
     start_time = time.time()
     print("Starting data processing...")
     
-    matrix, _ = db.scores.get_matrix(
+    matrix, _ = db.scores.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,

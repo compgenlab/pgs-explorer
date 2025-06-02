@@ -1,5 +1,6 @@
 from ..base_repository import BaseRepository
 import json
+from typing import List, Dict, Any
 
 class AncestryRepository(BaseRepository):
     def get_sample_ids_by_cohort(self, cohort=None):
@@ -94,3 +95,41 @@ class AncestryRepository(BaseRepository):
             return result['population']
         
         return 'Unknown'
+
+    def get_all_cohorts(self) -> List[Dict[str, Any]]:
+        """
+        Get all cohorts/populations with their sample IDs.
+        
+        Returns:
+        --------
+        list
+            List of dictionaries with name and sample_ids
+        """
+        query = """
+            SELECT population, sample_ids 
+            FROM ancestry_groups
+            ORDER BY population
+        """
+        rows = self.execute_query(query)
+        
+        cohorts = []
+        for row in rows:
+            population = row["population"]
+            sample_ids_json = row["sample_ids"]
+            
+            # Parse the JSON array of sample IDs
+            try:
+                sample_ids = json.loads(sample_ids_json) if sample_ids_json else []
+                print(f"For {population} loading {len(sample_ids)} samples.")
+                
+                if sample_ids:
+                    cohorts.append({
+                        "name": population,
+                        "sample_ids": sample_ids
+                    })
+            except json.JSONDecodeError as e:
+                print(f"Error parsing sample_ids for {population}: {e}")
+                continue
+        
+        return cohorts
+

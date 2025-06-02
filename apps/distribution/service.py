@@ -339,11 +339,14 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
     params = extract_cohort_parameters(request_data)
     validate_cohort_parameters(params)
     
-    # Get cohort data
+    # Prepare cohorts with sample_ids
+    prepared_cohorts = prepare_cohorts_with_sample_ids(params["cohorts"])
+    
+    # Get cohort data with sample_ids already populated
     cohort_data = db.scores.get_score_by_cohorts(
         pgs_id=params["pgs_id"],
         score_type=params["score_type"],
-        cohorts=params["cohorts"]
+        cohorts=prepared_cohorts
     )
     
     # Generate visualization
@@ -351,6 +354,38 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
     
     # Save outputs
     save_visualization_outputs(fig, cohort_data, html_path, json_path, "cohorts")
+
+def prepare_cohorts_with_sample_ids(cohorts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Ensure all cohorts have their sample_ids populated.
+    
+    Parameters:
+    -----------
+    cohorts : list
+        List of cohort dictionaries
+        
+    Returns:
+    --------
+    list
+        List of cohorts with sample_ids populated
+    """
+    prepared_cohorts = []
+    
+    for cohort in cohorts:
+        # Skip invalid cohorts
+        if "name" not in cohort:
+            continue
+        
+        # Copy cohort to avoid modifying original
+        cohort_copy = cohort.copy()
+        
+        # If sample_ids not provided and it's not the "ALL" cohort, fetch them
+        if "sample_ids" not in cohort_copy and cohort_copy["name"] != "ALL":
+            cohort_copy["sample_ids"] = db.ancestry.sample_ids_by_cohort(cohort_copy["name"])
+        
+        prepared_cohorts.append(cohort_copy)
+    
+    return prepared_cohorts
 
 def extract_cohort_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """Extract parameters for cohort visualization."""

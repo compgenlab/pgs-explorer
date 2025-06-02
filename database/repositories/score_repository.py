@@ -5,6 +5,7 @@ import numpy as np
 # for testing
 import time 
 from ..connection import DatabaseConnection
+from typing import List, Dict, Any
 
 class ScoreRepository(BaseRepository):
     def get_all_pgs_ids(self):
@@ -131,6 +132,60 @@ class ScoreRepository(BaseRepository):
         rows = self.execute_query(query, params)
         return {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
     
+    def get_score_types_for_pgs(self, pgs_id: str) -> List[str]:
+        """
+        Get distinct score types for a specific PGS ID.
+        
+        Parameters:
+        -----------
+        pgs_id : str
+            PGS ID to get score types for
+            
+        Returns:
+        --------
+        list
+            List of score types
+        """
+        query = """
+            SELECT DISTINCT SCORE_TYPE 
+            FROM scores 
+            WHERE PGS_ID = ? 
+            ORDER BY SCORE_TYPE
+        """
+        rows = self.execute_query(query, [pgs_id])
+        return [row[0] for row in rows]
+
+    def get_all_scores_for_pgs(self, pgs_id: str) -> List[Dict[str, Any]]:
+        """
+        Get all scores for a PGS ID across all score types and samples.
+        
+        Parameters:
+        -----------
+        pgs_id : str
+            PGS ID to get scores for
+            
+        Returns:
+        --------
+        list
+            List of dictionaries with SAMPLE_ID, SCORE_TYPE, and SCORE
+        """
+        query = """
+            SELECT SAMPLE_ID, SCORE_TYPE, SCORE 
+            FROM scores 
+            WHERE PGS_ID = ?
+            ORDER BY SCORE_TYPE, SAMPLE_ID
+        """
+        rows = self.execute_query(query, [pgs_id])
+        
+        return [
+            {
+                "SAMPLE_ID": row["SAMPLE_ID"],
+                "SCORE_TYPE": row["SCORE_TYPE"],
+                "SCORE": row["SCORE"]
+            }
+            for row in rows
+        ]
+
     def get_score_matrix(self, sample_ids, pgs_ids, score_type, 
                          output_format="dict", handle_missing=False,
                          upper_threshold=None, lower_threshold=None):
@@ -279,15 +334,14 @@ class ScoreRepository(BaseRepository):
         score_type : str
             Type of score to retrieve
         cohorts : list
-            List of cohort dictionaries with name, color, and sample_ids
+            List of cohort dictionaries with name, color, and sample_ids.
+            Each cohort MUST have sample_ids already populated.
 
         Returns:
         --------
         list
             List of dictionaries containing cohort data
         """
-        ancestry_repository = AncestryRepository()
-        
         # Get all scores for this PGS ID
         score_dict = self.get_scores_for_pgs(pgs_id, score_type)
         
@@ -297,9 +351,10 @@ class ScoreRepository(BaseRepository):
                 continue
                 
             if cohort["name"] != "ALL":
-                # If sample_ids not provided, get them from ancestry repository
+                # Expect sample_ids to be provided
                 if "sample_ids" not in cohort:
-                    cohort["sample_ids"] = ancestry_repository.get_sample_ids_by_cohort(cohort["name"])
+                    print(f"Warning: cohort '{cohort['name']}' missing sample_ids")
+                    continue
                     
                 # Filter to include only samples that exist in our data
                 valid_samples = [
@@ -324,7 +379,7 @@ class ScoreRepository(BaseRepository):
             })
 
         return cohort_data
-
+        
     def get_sample_ids_with_scores(self, score_type, pgs_ids):
         """
         Get all sample IDs that have scores for the given PGS IDs and score type.
@@ -436,8 +491,6 @@ class ScoreRepository(BaseRepository):
             })
         
         return stats
-
-    # For backward compatibility, you can keep these simplified versions that use the combined method:
 
     def get_score_statistics(self, score_type, pgs_ids):
         """

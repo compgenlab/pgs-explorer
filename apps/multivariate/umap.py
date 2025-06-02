@@ -149,7 +149,7 @@ def fetch_umap_data(score_type, specific_pgs_ids, cohort):
     pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids)
     
     # Get sample IDs
-    sample_ids = db.ancestry.sample_ids_by_cohort(cohort)
+    sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
     
     if cohort and cohort != "ALL":
@@ -163,7 +163,7 @@ def fetch_umap_data(score_type, specific_pgs_ids, cohort):
 
 def fetch_score_dictionary(sample_ids, pgs_ids, score_type):
     """Fetch score data as a dictionary."""
-    data_dict, _ = db.scores.get_matrix(
+    data_dict, _ = db.scores.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,

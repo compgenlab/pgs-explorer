@@ -464,7 +464,7 @@
             }
             if (pgsId) {
                 fetchScoreTypes(pgsId);
-                loadMetadata(pgsId); // Add this line to load metadata when PGS ID changes
+                loadMetadata(pgsId);
             } else {
                 // Hide metadata card if no PGS ID is selected
                 $('#metadataCard').hide();
@@ -579,7 +579,6 @@
                 let table = $('<table class="table table-striped table-hover"></table>');
                 let tbody = $('<tbody></tbody>');
                 
-                // Add rows for each metadata field
                 // Sort keys for consistent display
                 const sortedKeys = Object.keys(data.metadata).sort();
                 
@@ -1023,7 +1022,7 @@
             $.ajax({
                 url: '/api/permanent_cohorts',
                 type: 'GET',
-                async: false,  // Make this synchronous to block until we get the result
+                async: false,  
                 success: function(cohortsData) {
                     const selectedCohort = cohortsData.cohorts.find(c => c.id === cohortId || c.name === cohortName);
                     
@@ -1102,16 +1101,12 @@
                     success: function(response) {
                         // Check if we received a task ID (background task) or direct file path
                         if (response.task_id) {
-                            // We got a task ID - this is the new background task system
                             const taskId = response.task_id;
-                            
-                            // Show task info in the alert
                             showAlert(`Distribution plot generation started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
                             
                             // Start polling for task status
                             pollTaskStatus(taskId, 'distribution');
                         } else if (response.plot_path) {
-                            // We got a direct response - this is the old immediate response
                             // Handle as before
                             $('#loadingSpinner').hide();
                             
@@ -1221,7 +1216,6 @@
                                     // Start polling for task status
                                     pollTaskStatus(taskId, 'distribution');
                                 } else if (response.plot_path) {
-                                    // Old immediate response system
                                     // Hide loading spinner
                                     $('#loadingSpinner').hide();
                                     
@@ -1272,7 +1266,6 @@
             }
         }
 
-        // Make sure we update the pollTaskStatus function to handle distribution plots
         function pollTaskStatus(taskId, taskType) {
             // Create a status area if it doesn't exist
             if ($('#taskStatusArea').length === 0) {
@@ -1339,10 +1332,7 @@
                                 // Enable download buttons
                                 $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.result_path);
                                 $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.result_path);
-                                
-                                // Note: We can't populate the sample table here since the task response 
-                                // doesn't include the data array. We would need to modify the backend to 
-                                // include this data in the task result or make a separate request.
+
                             } else {
                                 // Load the visualization for other plot types
                                 const iframe = `<iframe src="${response.result_path}" style="width:100%; height:800px; border:none;"></iframe>`;
@@ -1741,7 +1731,7 @@
         // Function to display loading state
         function showLoadingState() {
             $('#loadingSpinner').show();
-            $('#distributionContainer').hide();  // Or whichever element holds your visualization
+            $('#distributionContainer').hide();  
             if($('#plotPlaceholder').length > 0) {
                 $('#plotPlaceholder').remove();
             }

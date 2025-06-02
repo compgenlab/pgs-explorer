@@ -18,7 +18,8 @@ def process_tsne(request_data):
         
         # Generate hash for caching
         request_hash = generate_tsne_hash(**params)
-        
+        print(f"Request hash: {request_hash}")
+
         # Check for cached result
         cached_file = check_tsne_cache(request_hash)
         if cached_file:
@@ -159,7 +160,7 @@ def fetch_tsne_data(score_type, specific_pgs_ids, cohort):
     
     # Get sample IDs
     if cohort and cohort != "ALL":
-        sample_ids = db.ancestry.sample_ids_by_cohort(cohort)
+        sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
         print(f"Filtering to {len(sample_ids)} samples from {cohort} cohort")
     else:
         # Get all sample IDs that have scores for these PGS IDs
@@ -176,7 +177,7 @@ def fetch_tsne_data(score_type, specific_pgs_ids, cohort):
 
 def fetch_tsne_matrix(sample_ids, pgs_ids, score_type):
     """Fetch the score matrix for t-SNE analysis."""
-    matrix, _ = db.scores.get_matrix(
+    matrix, _ = db.scores.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,

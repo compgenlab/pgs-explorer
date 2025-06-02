@@ -1,4 +1,3 @@
-# database/base_repository.py
 class BaseRepository:
     def __init__(self, connection):
         """

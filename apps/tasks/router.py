@@ -1,9 +1,8 @@
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, HTTPException, Depends
 from fastapi.responses import HTMLResponse
 from typing import Optional
-import sqlite3
 from apps.core.config import templates
-from apps.core.database import TASK_DB_PATH
+from database import db
 
 router = APIRouter(tags=["tasks"])
 
@@ -13,60 +12,46 @@ async def tasks_page(request: Request):
 
 @router.get("/api/task_status/{task_id}")
 async def get_task_status(task_id: str):
-    conn = sqlite3.connect(TASK_DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT * FROM image_tasks WHERE task_id = ?", (task_id,))
-    task = cursor.fetchone()
-    conn.close()
+    """Get the status of a specific task."""
+    task = db.tasks.get_task(task_id)
     
     if not task:
-        return {"error": "Task not found"}
-    
-    # Convert DB row to dictionary
-    columns = ["task_id", "task_type", "name", "status", "created_at", 
-               "completed_at", "result_path", "error", "request_data"]
-    task_dict = {columns[i]: task[i] for i in range(len(columns))}
+        raise HTTPException(status_code=404, detail="Task not found")
     
     return {
-        "task_id": task_dict["task_id"],
-        "task_type": task_dict["task_type"],
-        "name": task_dict["name"],
-        "status": task_dict["status"],
-        "created_at": task_dict["created_at"],
-        "completed_at": task_dict["completed_at"],
-        "result_path": task_dict["result_path"] if task_dict["status"] == "completed" else None,
-        "error": task_dict["error"] if task_dict["status"] == "failed" else None
+        "task_id": task["task_id"],
+        "task_type": task["task_type"],
+        "name": task["name"],
+        "status": task["status"],
+        "created_at": task["created_at"],
+        "completed_at": task["completed_at"],
+        "result_path": task["result_path"] if task["status"] == "completed" else None,
+        "error": task["error"] if task["status"] == "failed" else None
     }
 
 @router.get("/api/list_tasks")
-async def list_tasks(task_type: Optional[str] = None, limit: int = 20, offset: int = 0):
-    conn = sqlite3.connect(TASK_DB_PATH)
-    cursor = conn.cursor()
-    
+async def list_tasks(
+    task_type: Optional[str] = None, 
+    limit: int = 20, 
+    offset: int = 0
+):
+    """List tasks with optional filtering and pagination."""
     if task_type:
-        cursor.execute(
-            "SELECT task_id, task_type, name, status, created_at, completed_at FROM image_tasks WHERE task_type = ? ORDER BY created_at DESC LIMIT ? OFFSET ?", 
-            (task_type, limit, offset)
-        )
+        # Get tasks by type with pagination
+        tasks = db.tasks.get_tasks_by_type_paginated(task_type, limit, offset)
     else:
-        cursor.execute(
-            "SELECT task_id, task_type, name, status, created_at, completed_at FROM image_tasks ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset)
-        )
+        # Get all tasks with pagination
+        tasks = db.tasks.get_tasks_paginated(limit, offset)
     
-    tasks = cursor.fetchall()
-    conn.close()
-    
+    # Format response
     return [
         {
-            "task_id": task[0],
-            "task_type": task[1],
-            "name": task[2],
-            "status": task[3],
-            "created_at": task[4],
-            "completed_at": task[5]
+            "task_id": task["task_id"],
+            "task_type": task["task_type"],
+            "name": task["name"],
+            "status": task["status"],
+            "created_at": task["created_at"],
+            "completed_at": task["completed_at"]
         }
         for task in tasks
     ]
-

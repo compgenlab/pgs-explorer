@@ -127,7 +127,7 @@ def fetch_pgs_scores(pgs_id: str, score_type: str) -> Dict[str, float]:
 def fetch_base_cohort_scores(base_cohort: str, score_dict: Dict[str, float]) -> List[float]:
     """Fetch and filter scores for the base cohort."""
     # Get base cohort sample IDs
-    base_sample_ids = db.ancestry.sample_ids_by_cohort(base_cohort)
+    base_sample_ids = db.ancestry.get_sample_ids_by_cohort(base_cohort)
     
     # Filter to include only samples that exist in our data
     base_valid_samples = filter_valid_samples(base_sample_ids, score_dict)
