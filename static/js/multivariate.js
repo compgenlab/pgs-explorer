@@ -1,0 +1,1450 @@
+const MAX_PGS_IDS = 5500;
+$(document).ready(function() {
+    // First check if we are loading previous image
+    const urlParams = new URLSearchParams(window.location.search);
+    const taskId = urlParams.get('task_id');
+    
+    if (taskId) {
+        console.log(taskId)
+        // Show loading indicator
+        showLoadingState();
+        // Load task data
+        loadTaskData(taskId);
+    }
+
+    // Update the max PGS ID display
+    $('#maxPgsValue').text(MAX_PGS_IDS);
+    let heatmapPlot = null;
+    let pgsScores = []; 
+    let selectedCohort = "ALL"; 
+    let subcohorts = [];
+
+    // Define preset colors
+    const PRESET_COLORS = [
+        "#e41a1c",  // Red
+        "#377eb8",  // Blue
+        "#4daf4a",  // Green
+        "#984ea3",  // Purple
+        "#ff7f00",  // Orange
+        "#FFD700",  // Gold
+        "#a65628",  // Brown
+        "#f781bf",  // Pink
+        "#999999"   // Gray
+    ];
+
+    loadPermanentCohorts();
+    updatePlotTypeControls()
+
+    // Add event handler for cohort selection changes
+    $('#plotType').on('change', function() {
+        updatePlotTypeControls()
+    });
+
+    $('#svdPlotType').on('change', function() {
+        updatePlotTypeControls();
+    });
+    
+    // Add listener for the range slider
+    $('#maxVectors').on('input', function() {
+        $('#maxVectorsValue').text($(this).val());
+    });
+
+    // Add event handler for cohort selection changes
+    $('#cohortSelection').on('change', function() {
+        selectedCohort = $(this).val();
+        // Clear any existing heatmap
+        $('#heatmapPlot').hide();
+        if ($('#plotPlaceholder').length === 0) {
+            $('#heatmapContainer').append(`
+                <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                    <div class="text-center p-4">
+                        <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                        <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                    </div>
+                </div>
+            `);
+        }
+        $('#plotPlaceholder').show();
+    });
+    
+    // Add subcohort button handler
+    $('#addSubcohortBtn').on('click', function() {
+        addSubcohort();
+    });
+
+    // Add PGS button click handler
+    $('#addPgsBtn').on('click', function() {
+        addPgsIds();
+    });
+    
+    // Form submission - Update to include selected PGS IDs
+    $('#generateButton').on('click', function(e) {
+        e.preventDefault();
+        console.log('Form submitted - generate visualization clicked');
+        
+        if (pgsScores.length === 0 && !$('#selectAllPgs').is(':checked')){
+            showAlert('Please add at least one PGS ID', 'warning');
+            return;
+        }
+        
+        // Get the plot type
+        const plotType = $('#plotType').val();
+        
+        // Update modal title based on plot type
+        $('#taskNameModalLabel').text(`Name Your ${plotType.toUpperCase()} Visualization`);
+        
+        // Set placeholder based on plot type
+        $('#taskName').attr('placeholder', `My ${plotType.charAt(0).toUpperCase() + plotType.slice(1)} Visualization`);
+        
+        // Show the modal
+        const taskNameModal = new bootstrap.Modal(document.getElementById('taskNameModal'));
+        taskNameModal.show();
+    });
+
+    // Handle the confirm button in the task name modal
+    $('#confirmTaskName').on('click', function() {
+        // Get the task name
+        const taskName = $('#taskName').val().trim();
+        
+        // Hide the name input and show the status area
+        $('.modal-body:first').hide();
+        $('#taskStatusArea').show();
+        $('#confirmTaskName').prop('disabled', true);
+        
+        // Get the plot type
+        const plotType = $('#plotType').val();
+        
+        // Call appropriate function based on plot type, passing the task name
+        switch (plotType) {
+            case 'heatmap':
+                generateHeatmap(taskName);
+                break;
+            case 'umap':
+                generateUmap(taskName);
+                break;
+            case 'svd':
+                generateSVD(taskName);
+                break;
+            case 'pca':
+                generatePCA(taskName);
+                break;
+            case 'tsne':
+                generateTSNE(taskName);
+                break;
+        }
+    });
+
+    // Download HTML button
+    $('#downloadHtmlBtn').on('click', function() {
+        const filePath = $(this).attr('data-filepath');
+        if (!filePath) return;
+        
+        // Create a link to download the file
+        const link = document.createElement('a');
+        link.href = filePath;
+        link.download = `heatmap_${$('#scoreType').val()}_${new Date().toISOString().slice(0, 10)}.html`;
+        link.click();
+    });
+
+    // Open in new window button
+    $('#downloadPngBtn').on('click', function() {
+        const filePath = $(this).attr('data-filepath');
+        if (!filePath) return;
+        window.open(filePath, '_blank');
+    });
+    
+    $('#generateInteractive').on('click', function() {
+        const filePath = $(this).attr('data-filepath');
+        const plotType = $(this).attr('plot-type')
+        if (!filePath) return;
+        const requestData = {
+            plot_type: plotType,
+            plot_url: filePath
+        };
+
+        // Send API request
+        $.ajax({
+            url: '/api/generate_interactive_plot',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                if (!response || !response.plot_url) {
+                    showAlert('Error: Invalid response from server', 'danger');
+                    return;
+                }
+                window.open(response.plot_url, '_blank');
+            },
+            error: function(xhr, status, error) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                } catch (e) {
+                    showAlert('Error generating interactive UMAP: ' + error, 'danger');
+                }
+            }
+        });
+    });
+
+    // Initialize color picker
+    $('#subcohortColor').on('input', function() {
+        $('#colorPreview').css('background-color', $(this).val());
+    });
+
+    // Initial setup for the PGS selection
+    $('#selectAllPgs').change(function() {
+        if($(this).is(':checked')) {
+            // Hide the manual PGS selection area
+            $('#manualPgsSelection').hide();
+            // Clear any previously entered PGS IDs
+            $('#pgsIdsInput').val('');
+            // Update the PGS list to show "All PGS IDs will be used"
+            $('#pgsList').html('<div class="alert alert-info">All available PGS IDs will be used</div>');
+            $('#noPgs').hide();
+            populateScoreTypeDropdown();
+        } else {
+            // Show the manual PGS selection area
+            $('#manualPgsSelection').show();
+            // Reset the PGS list
+            $('#pgsList').html('');
+            $('#noPgs').show();
+        }
+    });
+
+    // Apply sync to all controls
+    syncSliderAndInput("tsnePerplexity", "tsnePerplexityInput");
+    syncSliderAndInput("tsneIterations", "tsneIterationsInput");
+    syncSliderAndInput("tsneLearningRate", "tsneLearningRateInput");
+    
+    function syncSliderAndInput(sliderId, inputId) {
+        const slider = document.getElementById(sliderId);
+        const input = document.getElementById(inputId);
+
+        // Slider updates input
+        slider.addEventListener('input', () => {
+            input.value = slider.value;
+        });
+
+        // Input updates slider
+        input.addEventListener('input', () => {
+            slider.value = input.value;
+        });
+    }
+
+    // Function to load permanent cohorts
+    function loadPermanentCohorts() {
+        $.ajax({
+            url: '/api/permanent_cohorts',
+            type: 'GET',
+            success: function(data) {
+                if (data.cohorts && data.cohorts.length > 0) {
+                    // Populate cohort dropdown
+                    const cohortSelect = $('#cohortSelection');
+                    
+                    data.cohorts.forEach(function(cohort) {
+                        cohortSelect.append(`<option value="${cohort.name}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`);
+                    });
+                }
+            },
+            error: function(xhr) {
+                console.log('Error loading permanent cohorts:', xhr.status);
+            }
+        });
+    }
+    
+    function updatePlotTypeControls() {
+        const plotType = $('#plotType').val();
+        const svdPlotType = $('#svdPlotType').val();
+        const subcohortSections = $('#cohortSelection').parent().nextAll();
+
+        // First, hide all specialized controls
+        $('#umapControls').hide();
+        $('#svdControls').hide();
+        $('#biplotControlsContainer').hide();
+        $('#pcaControls').hide();
+        $('#tsneControls').hide();
+        $('#dendrogramView').parent().hide();
+        $('#stdDevThreshold').parent().hide(); // Show by default for most plot types
+
+        // Handle subcohort sections visibility
+        if (plotType === 'heatmap') {
+            // Show subcohort management for heatmap only
+            subcohortSections.show();
+            $('#stdDevThreshold').parent().show();
+        } else {
+            // Hide subcohort management for other plot types
+            subcohortSections.hide();
+        }
+        
+        // Plot-specific controls
+        switch (plotType) {
+            case 'heatmap':
+                // Show heatmap-specific controls
+                $('#dendrogramView').parent().show();
+                break;
+                
+            case 'umap':
+                // Show UMAP-specific controls
+                $('#umapControls').show();
+                break;
+                
+            case 'svd':
+                // Show SVD-specific controls
+                $('#svdControls').show();
+                
+                // Show biplot perspective controls only for biplot or combined views
+                if (svdPlotType === 'biplot' || svdPlotType === 'combined') {
+                    $('#biplotControlsContainer').show();
+                }
+                break;
+                
+            case 'pca':
+                // Show PCA-specific controls
+                $('#pcaControls').show();
+                break;
+                
+            case 'tsne':
+                // Show t-SNE specific controls
+                $('#tsneControls').show();
+                break;
+        }
+    }
+
+    function populateScoreTypeDropdown() {
+        const scoreTypes = [
+            'SUM',
+            'Z_MostSimilarPop',
+            'Z_norm1',
+            'Z_norm2',
+            'percentile_MostSimilarPop'
+        ];
+        
+        const $scoreTypeSelect = $('#scoreType');
+        $scoreTypeSelect.empty(); // Clear existing options
+        
+        // Add the default "Select Score Type" option
+        $scoreTypeSelect.append($('<option>', {
+            value: '',
+            text: 'Select Score Type',
+            selected: true,
+            disabled: true
+        }));
+        
+        // Add the score type options
+        scoreTypes.forEach(scoreType => {
+            $scoreTypeSelect.append($('<option>', {
+                value: scoreType,
+                text: scoreType
+            }));
+        });
+    }
+    
+    // Function to add PGS IDs
+    function addPgsIds() {
+        const pgsIdsText = $('#pgsIdsInput').val().trim();
+        if (!pgsIdsText) {
+            showAlert('Please enter at least one PGS ID', 'warning');
+            return;
+        }
+        
+        const pgsIds = pgsIdsText.split('\n').map(id => id.trim()).filter(id => id);
+        if (pgsIds.length === 0) {
+            showAlert('Please enter valid PGS IDs', 'warning');
+            return;
+        }
+        
+        // Show loading
+        $('#pgsList').html('<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p>Validating PGS IDs...</p></div>');
+        
+        // Validate PGS IDs
+        validatePgsIds(pgsIds);
+    }
+    
+    // Function to validate PGS IDs
+    async function validatePgsIds(pgsIds) {
+        const validPgsIds = [];
+        const invalidPgsIds = [];
+        
+        for (const pgsId of pgsIds) {
+            try {
+                const response = await $.ajax({
+                    url: `/api/score_types/${pgsId}`,
+                    type: 'GET'
+                });
+                
+                if (response.score_types && response.score_types.length > 0) {
+                    // Check if this PGS ID is already added
+                    if (!pgsScores.some(p => p.id === pgsId)) {
+                        validPgsIds.push({
+                            id: pgsId,
+                            scoreTypes: response.score_types
+                        });
+                    }
+                } else {
+                    invalidPgsIds.push(pgsId);
+                }
+            } catch (error) {
+                invalidPgsIds.push(pgsId);
+            }
+        }
+        
+        // Add valid PGS IDs
+        if (validPgsIds.length > 0) {
+            addValidPgsIds(validPgsIds);
+        }
+        
+        // Show notification
+        if (invalidPgsIds.length > 0) {
+            showAlert(`Added ${validPgsIds.length} PGS IDs. ${invalidPgsIds.length} invalid IDs: ${invalidPgsIds.join(', ')}`, 'warning');
+        } else if (validPgsIds.length > 0) {
+            showAlert(`Added ${validPgsIds.length} PGS IDs successfully`, 'success');
+        } else {
+            showAlert('No new valid PGS IDs to add', 'info');                
+        }
+        
+        // Clear input
+        $('#pgsIdsInput').val('');
+
+        // Update PGS list
+        updatePgsList();
+
+        // Update score types dropdown
+        updateScoreTypes();
+    }
+    
+    // Function to add valid PGS IDs to the list
+    function addValidPgsIds(validPgsIds) {
+        // Clear "No PGS" message if it's the first PGS
+        if (pgsScores.length === 0) {
+            $('#pgsList').empty();
+        }
+        
+        validPgsIds.forEach((pgs, index) => {
+            const pgsId = pgs.id;
+            const color = PRESET_COLORS[pgsScores.length % PRESET_COLORS.length];
+            
+            // Create UI element
+            const pgsRow = $(`
+                <div class="cohort-row" data-pgs-id="${pgsId}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge rounded-pill me-2" style="background-color: ${color};">&nbsp;</span>
+                            <strong>${pgsId}</strong>
+                        </div>
+                        <div>
+                            <i class="fas fa-times delete-pgs" data-pgs-id="${pgsId}" style="cursor: pointer; color: #dc3545;"></i>
+                        </div>
+                    </div>
+                </div>
+            `);
+            
+            // Add to UI
+            $('#pgsList').append(pgsRow);
+            
+            // Add to array
+            pgsScores.push({
+                id: pgsId,
+                scoreTypes: pgs.scoreTypes
+            });
+            
+            // Add event listener for delete button
+            pgsRow.find('.delete-pgs').on('click', function() {
+                const pgsId = $(this).data('pgs-id');
+                deletePgs(pgsId);
+            });
+        });
+    }
+    
+    // Function to delete a PGS ID
+    function deletePgs(pgsId) {
+        // Remove from UI
+        $(`.cohort-row[data-pgs-id="${pgsId}"]`).remove();
+        
+        // Remove from array
+        pgsScores = pgsScores.filter(p => p.id !== pgsId);
+        
+        // Show "No PGS" message if no PGS left
+        if (pgsScores.length === 0) {
+            $('#pgsList').html('<div class="text-center text-muted py-3" id="noPgs">No PGS IDs added yet</div>');
+        }
+        
+        // Update score types
+        updateScoreTypes();
+        
+        showAlert('PGS ID removed', 'info');
+    }
+    
+    // Function to update PGS list UI
+    function updatePgsList() {
+        const pgsList = $('#pgsList');
+        pgsList.empty();
+        
+        if (pgsScores.length === 0) {
+            pgsList.html('<div class="text-center text-muted py-3" id="noPgs">No PGS IDs added yet</div>');
+            return;
+        }
+        
+        pgsScores.forEach((pgs, index) => {
+            const color = PRESET_COLORS[index % PRESET_COLORS.length];
+            
+            const pgsRow = $(`
+                <div class="cohort-row" data-pgs-id="${pgs.id}">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <span class="badge rounded-pill me-2" style="background-color: ${color};">&nbsp;</span>
+                            <strong>${pgs.id}</strong>
+                        </div>
+                        <div>
+                            <i class="fas fa-times delete-pgs" data-pgs-id="${pgs.id}" style="cursor: pointer; color: #dc3545;"></i>
+                        </div>
+                    </div>
+                </div>
+            `);
+            
+            pgsList.append(pgsRow);
+            
+            // Add event listener for delete button
+            pgsRow.find('.delete-pgs').on('click', function() {
+                const pgsId = $(this).data('pgs-id');
+                deletePgs(pgsId);
+            });
+        });
+    }
+    
+    // Function to update score types dropdown based on common score types
+    function updateScoreTypes() {
+        const scoreTypeSelect = $('#scoreType');
+        scoreTypeSelect.empty();
+        
+        if (pgsScores.length === 0) {
+            scoreTypeSelect.append('<option value="" selected disabled>Select Score Type</option>');
+            return;
+        }
+        
+        // Find common score types across all selected PGS IDs
+        let commonScoreTypes = [...pgsScores[0].scoreTypes];
+        
+        for (let i = 1; i < pgsScores.length; i++) {
+            commonScoreTypes = commonScoreTypes.filter(type => 
+                pgsScores[i].scoreTypes.includes(type)
+            );
+        }
+        
+        scoreTypeSelect.append('<option value="" selected disabled>Select Score Type</option>');
+        
+        if (commonScoreTypes.length === 0) {
+            scoreTypeSelect.append('<option value="" disabled>No common score types</option>');
+        } else {
+            commonScoreTypes.forEach(type => {
+                scoreTypeSelect.append(`<option value="${type}">${type}</option>`);
+            });
+        }
+    }
+    
+    // Function to add a subcohort
+    function addSubcohort() {
+        const name = $('#subcohortName').val().trim();
+        const color = $('#subcohortColor').val();
+        const sampleIdsText = $('#sampleIdsInput').val().trim();
+        
+        if (!name) {
+            showAlert('Please enter a name for the subcohort', 'warning');
+            return;
+        }
+        
+        if (!sampleIdsText) {
+            showAlert('Please enter at least one sample ID', 'warning');
+            return;
+        }
+        
+        const sampleIds = sampleIdsText.split('\n').map(id => id.trim()).filter(id => id);
+        
+        if (sampleIds.length === 0) {
+            showAlert('Please enter valid sample IDs', 'warning');
+            return;
+        }
+        
+        // Check for duplicate subcohort name
+        if (subcohorts.some(sc => sc.name === name)) {
+            showAlert(`A subcohort with name "${name}" already exists`, 'warning');
+            return;
+        }
+        
+        // Add to subcohorts array
+        subcohorts.push({
+            name: name,
+            color: color,
+            sampleIds: sampleIds,
+            active: true
+        });
+        
+        // Update UI
+        updateSubcohortsList();
+        
+        // Clear input fields
+        $('#subcohortName').val('');
+        $('#sampleIdsInput').val('');
+        
+        // Pick next color in preset list
+        const presetColors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf'];
+        $('#subcohortColor').val(presetColors[subcohorts.length % presetColors.length]);
+        $('#colorPreview').css('background-color', $('#subcohortColor').val());
+        
+        showAlert(`Added subcohort "${name}" with ${sampleIds.length} samples`, 'success');
+        updateSubcohortSelects();
+    }
+    
+    // Function to update the subcohorts list UI
+    function updateSubcohortsList() {
+        const subcohortsList = $('#subcohortsList');
+        subcohortsList.empty();
+        
+        if (subcohorts.length === 0) {
+            subcohortsList.html('<div class="text-center text-muted py-3" id="noSubcohorts">No subcohorts added yet</div>');
+            return;
+        }
+        
+        subcohorts.forEach((subcohort, index) => {
+            const subcohortRow = $(`
+                <div class="subcohort-row" data-subcohort-id="${index}">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <span class="color-indicator" style="background-color: ${subcohort.color};"></span>
+                            <strong>${subcohort.name}</strong>
+                        </div>
+                        <div>
+                            <div class="form-check form-switch d-inline-block me-2">
+                                <input class="form-check-input subcohort-toggle" type="checkbox" 
+                                    id="subcohort-${index}" data-subcohort-id="${index}" ${subcohort.active ? 'checked' : ''}>
+                            </div>
+                            <i class="fas fa-times delete-subcohort" data-subcohort-id="${index}" 
+                            style="cursor: pointer; color: #dc3545;"></i>
+                        </div>
+                    </div>
+                    <div>
+                        <small class="text-muted">${subcohort.sampleIds.length} samples</small>
+                    </div>
+                </div>
+            `);
+            
+            // Add event listeners
+            subcohortRow.find('.subcohort-toggle').on('change', function() {
+                const subcohortId = parseInt($(this).data('subcohort-id'));
+                subcohorts[subcohortId].active = $(this).prop('checked');
+                
+                // If we have data, regenerate the plot
+                if (baseData) {
+                    renderPlot();
+                }
+            });
+            
+            subcohortRow.find('.delete-subcohort').on('click', function() {
+                const subcohortId = parseInt($(this).data('subcohort-id'));
+                deleteSubcohort(subcohortId);
+            });
+            
+            subcohortsList.append(subcohortRow);
+        });
+    }
+    
+    // Function to delete a subcohort
+    function deleteSubcohort(subcohortId) {
+        subcohorts.splice(subcohortId, 1);
+        updateSubcohortsList();
+        
+        // If we have data, regenerate the plot
+        if (baseData) {
+            renderPlot();
+        }
+        
+        showAlert('Subcohort removed', 'info');
+        updateSubcohortSelects();
+    }
+
+    // Populate subcohort selects when subcohorts are added
+    function updateSubcohortSelects() {
+        const subcohort1Select = $('#subcohort1Select');
+        const subcohort2Select = $('#subcohort2Select');
+        
+        subcohort1Select.empty();
+        subcohort2Select.empty();
+        
+        subcohort1Select.append('<option value="" selected disabled>Select subcohort</option>');
+        subcohort2Select.append('<option value="" selected disabled>Select subcohort</option>');
+        
+        subcohorts.forEach((subcohort, index) => {
+            subcohort1Select.append(`<option value="${index}">${subcohort.name}</option>`);
+            subcohort2Select.append(`<option value="${index}">${subcohort.name}</option>`);
+        });
+    }
+            
+    // Function to poll for task status
+    function pollTaskStatus(taskId, taskType) {
+        // Create a status area if it doesn't exist
+        if ($('#taskStatusArea').length === 0) {
+            $('body').append(`
+                <div id="taskStatusArea" class="position-fixed bottom-0 end-0 p-3" style="z-index: 5">
+                    <div class="toast show" role="alert" aria-live="assertive" aria-atomic="true">
+                        <div class="toast-header">
+                            <strong class="me-auto">Task Status: <span id="taskStatusLabel">Processing</span></strong>
+                            <button type="button" class="btn-close" data-bs-dismiss="toast" aria-label="Close"></button>
+                        </div>
+                        <div class="toast-body">
+                            <div class="d-flex align-items-center mb-2">
+                                <div class="spinner-border spinner-border-sm text-primary me-2" id="taskSpinner" role="status">
+                                    <span class="visually-hidden">Processing...</span>
+                                </div>
+                                <div>Task ID: <span id="taskIdLabel">${taskId}</span></div>
+                            </div>
+                            <div class="progress" style="height: 5px;">
+                                <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `);
+        } else {
+            // Update existing status area
+            $('#taskIdLabel').text(taskId);
+            $('#taskStatusLabel').text('Processing');
+            $('#taskSpinner').show();
+            $('.progress-bar').addClass('progress-bar-animated').css('width', '100%');
+            $('.toast').toast('show');
+        }
+        
+        const checkStatus = function() {
+            $.ajax({
+                url: `/api/task_status/${taskId}`,
+                type: 'GET',
+                success: function(response) {
+                    // Update status display
+                    $('#taskStatusLabel').text(response.status.charAt(0).toUpperCase() + response.status.slice(1));
+                    
+                    if (response.status === 'completed') {
+                        // Task is complete, stop spinner and update progress
+                        $('#taskSpinner').hide();
+                        $('.progress-bar').removeClass('progress-bar-animated').css('width', '100%');
+                        
+                        // Show success message
+                        showAlert(`${taskType.charAt(0).toUpperCase() + taskType.slice(1)} generated successfully!`, 'success');
+
+                        // Hide the loading spinner
+                        $('#loadingSpinner').hide();
+                        
+                        // Load the visualization
+                        const iframe = `<iframe src="${response.result_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                        $('#heatmapPlot').html(iframe).show();
+                        
+                        // Enable download buttons
+                        $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.result_path);
+                        $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.result_path);
+                        $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.result_path).attr('plot-type', response.task_type);
+                        
+                        // Auto-dismiss the status toast after 5 seconds
+                        setTimeout(() => {
+                            $('.toast').toast('hide');
+                        }, 5000);
+                        
+                    } else if (response.status === 'failed') {
+                        // Task failed
+                        $('#taskSpinner').hide();
+                        $('.progress-bar').removeClass('progress-bar-animated').addClass('bg-danger').css('width', '100%');
+                        $('#taskStatusLabel').text('Failed');
+                        
+                        // Show error message
+                        showAlert(`Error generating ${taskType}: ${response.error || 'Unknown error'}`, 'danger');
+                        
+                        // Restore placeholder if needed
+                        $('#loadingSpinner').hide();
+                        if($('#plotPlaceholder').length === 0) {
+                            $('#heatmapContainer').append(`
+                                <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                                    <div class="text-center p-4">
+                                        <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                                        <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                                    </div>
+                                </div>
+                            `);
+                        }
+                        $('#plotPlaceholder').show();
+                        
+                    } else {
+                        // Task is still processing, check again in 2 seconds
+                        setTimeout(checkStatus, 2000);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    // Handle error
+                    console.error("Error checking task status:", status, error);
+                    // Try again after a delay
+                    setTimeout(checkStatus, 5000);
+                }
+            });
+        };
+        
+        // Start checking status
+        checkStatus();
+    }
+    
+    // Generate heatmap
+    function generateHeatmap(taskName = '') {
+        const scoreType = $('#scoreType').val();
+        const stdDevThreshold = parseFloat($('#stdDevThreshold').val());
+        const compactView = $('#compactView').is(':checked');
+        // Get active subcohorts
+        const activeSubcohorts = subcohorts.filter(sc => sc.active);
+
+        if (!scoreType) {
+            showAlert('Please select a score type', 'danger');
+            return;
+        }
+        
+        // Show loading
+        $('#loadingSpinner').show();
+        $('#heatmapPlot').hide();
+        if($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+        $('#alertContainer').empty();
+        
+        // Get selected PGS IDs
+        const selectedPgsIds = pgsScores.map(p => p.id);
+
+        // Prepare request data with cohort information
+        const requestData = {
+            score_type: scoreType,
+            max_pgs_ids: MAX_PGS_IDS,
+            std_dev_threshold: stdDevThreshold,
+            compact_view: compactView,
+            pgs_ids: selectedPgsIds,
+            cohort: selectedCohort !== "ALL" ? selectedCohort : null, 
+            subcohorts: activeSubcohorts,
+            name: taskName // Add task name to the request
+        };
+        
+        // Close the task name modal if it's open
+        const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+        if (taskNameModal) {
+            taskNameModal.hide();
+            
+            // Reset modal for next use
+            setTimeout(() => {
+                $('.modal-body:first').show();
+                $('#taskStatusArea').hide();
+                $('#confirmTaskName').prop('disabled', false);
+            }, 500);
+        }
+        
+        // Send API request
+        $.ajax({
+            url: '/api/generate_heatmap',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                // Check if we received a task ID (background task) or direct file path
+                if (response.task_id) {
+                    const taskId = response.task_id;
+                    
+                    // Show task info in the alert
+                    showAlert(`Heatmap generation started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                    
+                    // Start polling for task status
+                    pollTaskStatus(taskId, 'heatmap');
+                } else if (response.file_path) {
+                    // Handle as before
+                    $('#loadingSpinner').hide();
+                    
+                    // Create an iframe to display the heatmap
+                    const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                    $('#heatmapPlot').html(iframe).show();
+                    
+                    // Enable download buttons
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'heatmap');
+                    // showAlert($(this).attr('plot-type'))
+                    // showAlert($(this).attr('plot-type'))
+                    // Show cohort info in the alert
+                    const cohortInfo = selectedCohort !== "ALL" ? 
+                        `Filtered to ${selectedCohort} cohort` : 
+                        'Showing all samples';
+                    
+                    // showAlert(`Heatmap generated successfully. ${cohortInfo}`, 'success');
+                } else {
+                    // Unexpected response format
+                    $('#loadingSpinner').hide();
+                    showAlert('Error: Invalid response from server', 'danger');
+                }
+            },
+            error: function(xhr, status, error) {
+                $('#loadingSpinner').hide();
+                
+                // Restore placeholder if needed
+                if($('#plotPlaceholder').length === 0) {
+                    $('#heatmapContainer').append(`
+                        <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                            <div class="text-center p-4">
+                                <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
+                                <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                            </div>
+                        </div>
+                    `);
+                }
+                $('#plotPlaceholder').show();
+                
+                console.error("AJAX error:", status, error);
+                console.error("Response status:", xhr.status);
+                console.error("Response text:", xhr.responseText);
+                
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                } catch (e) {
+                    showAlert('Error generating heatmap: ' + error, 'danger');
+                }
+            }
+        });
+    }
+
+    // Generate UMAP plot
+    function generateUmap(taskName = '') {
+        const scoreType = $('#scoreType').val();
+        const nNeighbors = parseInt($('#nNeighbors').val() || 15); // Default value: 15
+        const minDist = parseFloat($('#minDist').val() || 0.1);    // Default value: 0.1
+        const viewType = $('#viewType').val();
+
+        if (!scoreType) {
+            showAlert('Please select a score type', 'danger');
+            return;
+        }
+        
+        // Show loading
+        $('#loadingSpinner').show();
+        $('#heatmapPlot').hide();
+        if($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+        $('#alertContainer').empty();
+        
+        // Get selected PGS IDs
+        const selectedPgsIds = pgsScores.map(p => p.id);
+
+        // Prepare request data with cohort information
+        const requestData = {
+            score_type: scoreType,
+            n_neighbors: nNeighbors,
+            min_dist: minDist,
+            pgs_ids: selectedPgsIds,
+            cohort: selectedCohort !== "ALL" ? selectedCohort : null,
+            view_type: viewType,
+            name: taskName // Add task name to the request
+        };
+        
+        // Close the task name modal if it's open
+        const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+        if (taskNameModal) {
+            taskNameModal.hide();
+        }
+        
+        // Reset modal for next use
+        $('#taskNameModal .modal-body:first').show();
+        $('#taskNameModal #taskStatusArea').hide();
+        $('#taskNameModal #confirmTaskName').prop('disabled', false);
+        
+        // Send API request
+        $.ajax({
+            url: '/api/generate_umap',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                // Check if we received a task ID (background task) or direct file path
+                if (response.task_id) {
+                    // We got a task ID - this is the new background task system
+                    const taskId = response.task_id;
+                    
+                    // Show task info in the alert
+                    showAlert(`UMAP generation started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                    
+                    // Start polling for task status
+                    pollTaskStatus(taskId, 'umap');
+                } else if (response.file_path) {
+                    // We got a direct file path - this is the old immediate response
+                    // Handle as before
+                    $('#loadingSpinner').hide();
+                    
+                    // Create an iframe to display the UMAP plot
+                    const iframe = `<iframe src="${response.file_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                    $('#heatmapPlot').html(iframe).show();
+                    
+                    // Enable download buttons 
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'umap');
+                    // showAlert($(this).attr('plot-type'))
+                    // Show cohort info in the alert
+                    const cohortInfo = selectedCohort !== "ALL" ? 
+                        `Filtered to ${selectedCohort} cohort` : 
+                        'Showing all samples';
+                    
+                    // showAlert(`UMAP plot generated successfully. ${cohortInfo}`, 'success');
+                } else {
+                    // Unexpected response format
+                    $('#loadingSpinner').hide();
+                    showAlert('Error: Invalid response from server', 'danger');
+                }
+            },
+            error: function(xhr, status, error) {
+                $('#loadingSpinner').hide();
+                
+                // Restore placeholder if needed
+                if($('#plotPlaceholder').length === 0) {
+                    $('#heatmapContainer').append(`
+                        <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                            <div class="text-center p-4">
+                                <i class="fas fa-project-diagram fa-3x text-muted mb-3"></i>
+                                <p class="text-muted">Add PGS IDs, select a score type, and click "Generate UMAP" to visualize the data.</p>
+                            </div>
+                        </div>
+                    `);
+                }
+                $('#plotPlaceholder').show();
+                
+                console.error("AJAX error:", status, error);
+                console.error("Response status:", xhr.status);
+                console.error("Response text:", xhr.responseText);
+                
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                } catch (e) {
+                    showAlert('Error generating UMAP plot: ' + error, 'danger');
+                }
+            }
+        });
+    }
+
+    // Generate SVD
+    function generateSVD(taskName = '') {
+        // Show loading spinner
+        $('#loadingSpinner').show();
+        if($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+
+        // Get parameters
+        const scoreType = $('#scoreType').val();
+        const svdPlotType = $('#svdPlotType').val();
+        const cohort = $('#cohortSelection').val();
+
+        // Get biplot-specific parameters if applicable
+        let perspective = 'sample';  // Default value
+        let maxVectors = 20;         // Default value
+        
+        if (svdPlotType === 'biplot' || svdPlotType === 'combined') {
+            perspective = $('#biplotPerspective').val();
+            maxVectors = parseInt($('#maxVectors').val());
+        }
+
+        // Get selected PGS IDs
+        let pgsIds = [];
+        if (!$('#selectAllPgs').is(':checked')) {
+            pgsIds = pgsScores.map(p => p.id);
+            console.log(pgsIds.length)
+        }
+        
+        // Prepare request data
+        const requestData = {
+            score_type: scoreType,
+            pgs_ids: pgsIds.length > 0 ? pgsIds : null,
+            cohort: cohort,
+            plot_type: svdPlotType,
+            perspective: perspective,
+            max_vectors: maxVectors,
+            name: taskName // Add task name to the request
+        };
+        
+        // Close the task name modal if it's open
+        const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+        if (taskNameModal) {
+            taskNameModal.hide();
+            
+            // Reset modal for next use
+            setTimeout(() => {
+                $('.modal-body:first').show();
+                $('#taskStatusArea').hide();
+                $('#confirmTaskName').prop('disabled', false);
+            }, 500);
+        }
+        
+        // Make API request
+        $.ajax({
+            url: '/api/generate_svd_image',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                // Check if we received a task ID (background task) or direct file path
+                if (response.task_id) {
+                    // We got a task ID - this is the new background task system
+                    const taskId = response.task_id;
+                    
+                    // Show task info in the alert
+                    showAlert(`SVD visualization started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                    
+                    // Start polling for task status
+                    pollTaskStatus(taskId, 'svd');
+                } else if (response.file_path) {
+                    // We got a direct file path - this is the old immediate response
+                    // Handle as before
+                    $('#loadingSpinner').hide();
+                    
+                    // Display the SVD visualization
+                    $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
+                    $('#heatmapPlot').show();
+                    
+                    // Enable download buttons 
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'svd');
+                    showAlert($(this).attr('plot-type'))
+                    // Show success message
+                    // showAlert('SVD visualization generated successfully.', 'success');
+                } else {
+                    // Unexpected response format
+                    $('#loadingSpinner').hide();
+                    showAlert('Error: Invalid response from server', 'danger');
+                }
+            },
+            error: function(xhr, status, error) {
+                // Hide loading spinner and show error
+                $('#loadingSpinner').hide();
+                
+                console.error("AJAX error:", status, error);
+                console.error("Response status:", xhr.status);
+                console.error("Response text:", xhr.responseText);
+                
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                } catch (e) {
+                    showAlert('Error generating SVD visualization: ' + error, 'danger');
+                }
+                
+                // Restore placeholder if needed
+                if($('#plotPlaceholder').length === 0) {
+                    $('#heatmapContainer').append(`
+                        <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                            <div class="text-center p-4">
+                                <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                                <p class="text-muted">Select parameters and click "Generate SVD" to visualize the data.</p>
+                            </div>
+                        </div>
+                    `);
+                }
+                $('#plotPlaceholder').show();
+            }
+        });
+    }
+
+    // Generate PCA
+    function generatePCA(taskName = ''){
+        // Show loading spinner
+        $('#loadingSpinner').show();
+        if($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+
+        // Get parameters
+        const scoreType = $('#scoreType').val();
+        const cohort = $('#cohortSelection').val();
+        const perspective = $('#pcaPerspective').val();
+
+        // Get selected PGS IDs
+        let pgsIds = [];
+        if (!$('#selectAllPgs').is(':checked')) {
+            pgsIds = pgsScores.map(p => p.id);
+            console.log(pgsIds.length)
+        }
+        
+        // Get requested axes 
+        const x_axis = $('#pcaXComponent').val();
+        const y_axis = $('#pcaYComponent').val();
+        const include_variance = $('#pcaVarExplained').val();
+
+        // Prepare request data
+        const requestData = {
+            score_type: scoreType,
+            pgs_ids: pgsIds.length > 0 ? pgsIds : null,
+            cohort: cohort,
+            perspective: perspective,
+            x_axis: x_axis,
+            y_axis: y_axis,
+            include_variance: include_variance,
+            name: taskName 
+        };
+        
+        // Close the task name modal if it's open
+        const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+        if (taskNameModal) {
+            taskNameModal.hide();
+            
+            // Reset modal for next use
+            setTimeout(() => {
+                $('.modal-body:first').show();
+                $('#taskStatusArea').hide();
+                $('#confirmTaskName').prop('disabled', false);
+            }, 500);
+        }
+        
+        // Make API request
+        $.ajax({
+            url: '/api/generate_pca',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function(response) {
+                // Check if we received a task ID (background task) or direct file path
+                if (response.task_id) {
+                    // We got a task ID - this is the new background task system
+                    const taskId = response.task_id;
+                    
+                    // Show task info in the alert
+                    showAlert(`PCA visualization started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                    
+                    // Start polling for task status
+                    pollTaskStatus(taskId, 'svd');
+                } else if (response.file_path) {
+                    // Handle as before
+                    $('#loadingSpinner').hide();
+                    
+                    // Display the PCA visualization
+                    $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
+                    $('#heatmapPlot').show();
+                    
+                    // Enable download buttons 
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'pca');
+                    // showAlert($(this).attr('plot-type'))
+                    // Show success message
+                    // showAlert('PCA visualization generated successfully.', 'success');
+                } else {
+                    // Unexpected response format
+                    $('#loadingSpinner').hide();
+                    showAlert('Error: Invalid response from server', 'danger');
+                }
+            },
+            error: function(xhr, status, error) {
+                // Hide loading spinner and show error
+                $('#loadingSpinner').hide();
+                
+                console.error("AJAX error:", status, error);
+                console.error("Response status:", xhr.status);
+                console.error("Response text:", xhr.responseText);
+                
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    showAlert('Error: ' + (response.detail || 'Unknown server error'), 'danger');
+                } catch (e) {
+                    showAlert('Error generating SVD visualization: ' + error, 'danger');
+                }
+                
+                // Restore placeholder if needed
+                if($('#plotPlaceholder').length === 0) {
+                    $('#heatmapContainer').append(`
+                        <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+                            <div class="text-center p-4">
+                                <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                                <p class="text-muted">Select parameters and click "Generate PCA" to visualize the data.</p>
+                            </div>
+                        </div>
+                    `);
+                }
+                $('#plotPlaceholder').show();
+            }
+        });
+    }
+
+    // Generate t-SNE
+    function generateTSNE(taskName = '') {
+        // Show loading spinner
+        $('#loadingSpinner').show();
+        if ($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+
+        // Get parameters
+        const scoreType = $('#scoreType').val();
+        const cohort = $('#cohortSelection').val();
+        const perspective = $('#tsnePerspective').val();  // Assuming same control is used
+
+        // Get selected PGS IDs
+        let pgsIds = [];
+        if (!$('#selectAllPgs').is(':checked')) {
+            pgsIds = pgsScores.map(p => p.id);
+        }
+
+        // t-SNE-specific parameters
+        const perplexity = parseInt($('#tsnePerplexity').val());
+        const iterations = parseInt($('#tsneIterations').val());
+        const learningRate = parseFloat($('#tsneLearningRate').val());
+
+        // Prepare request data
+        const requestData = {
+            score_type: scoreType,
+            pgs_ids: pgsIds.length > 0 ? pgsIds : null,
+            cohort: cohort,
+            perspective: perspective,
+            perplexity: perplexity,
+            iterations: iterations,
+            learning_rate: learningRate,
+            name: taskName
+        };
+
+        // Close the task name modal if it's open
+        const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
+        if (taskNameModal) {
+            taskNameModal.hide();
+            setTimeout(() => {
+                $('.modal-body:first').show();
+                $('#taskStatusArea').hide();
+                $('#confirmTaskName').prop('disabled', false);
+            }, 500);
+        }
+
+        // Make API request
+        $.ajax({
+            url: '/api/generate_tsne',
+            method: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify(requestData),
+            success: function (response) {
+                $('#loadingSpinner').hide();
+
+                if (response.task_id) {
+                    showAlert(`t-SNE visualization started (Task ID: ${response.task_id}). You'll be notified when it's ready.`, 'info');
+                    pollTaskStatus(response.task_id, 'tsne');
+                } else if (response.file_path) {
+                    $('#heatmapPlot').html('<iframe src="' + response.file_path + '" width="100%" height="900px" frameborder="0"></iframe>');
+                    $('#heatmapPlot').show();
+
+                    $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', response.file_path);
+                    $('#generateInteractive').prop('disabled', false).attr('data-filepath', response.file_path).attr('plot-type', 'tsne');
+                    // showAlert($(this).attr('plot-type'))
+                    // showAlert('t-SNE visualization generated successfully.', 'success');
+                } else {
+                    showAlert('Error: Invalid response from server', 'danger');
+                }
+            },
+            error: function (xhr, status, error) {
+                $('#loadingSpinner').hide();
+                console.error("AJAX error:", status, error);
+                console.error("Response status:", xhr.status);
+                console.error("Response text:", xhr.responseText);
+                showAlert('Error generating t-SNE visualization. See console for details.', 'danger');
+            }
+        });
+    }
+
+    // Show alert message
+    function showAlert(message, type) {
+        const alert = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        $('#alertContainer').html(alert);
+    }
+    
+    // Function to display loading state
+    function showLoadingState() {
+        $('#loadingSpinner').show();
+        $('#heatmapContainer').hide();  // Or whichever element holds your visualization
+        if($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+        $('#alertContainer').empty();
+        
+        // Show a loading message
+        showAlert('Loading visualization...', 'info');
+    }
+
+    // Function to load and display task data
+    function loadTaskData(taskId) {
+        $.ajax({
+            url: `/api/task_status/${taskId}`,
+            type: 'GET',
+            success: function(task) {
+            if (task.status === 'completed' && task.result_path) {
+                // Display the completed visualization
+                $('#loadingSpinner').hide();
+                
+                // Create an iframe to display the result
+                const iframe = `<iframe src="${task.result_path}" style="width:100%; height:800px; border:none;"></iframe>`;
+                $('#heatmapContainer').html(iframe).show();  
+                
+                // Enable download buttons
+                $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', task.result_path);
+                $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', task.result_path);
+                $('#generateInteractive').prop('disabled', false).attr('data-filepath', task.result_path);
+                
+                // Show success message
+                const taskName = task.name || `${task.task_type.charAt(0).toUpperCase() + task.task_type.slice(1)}`;
+                showAlert(`${taskName} visualization loaded successfully.`, 'success');
+                
+            } else if (task.status === 'processing' || task.status === 'queued') {
+                // Task is still processing, show status and set up polling
+                showAlert(`Visualization is still being generated (${task.status})...`, 'info');
+                
+                // Poll for updates
+                setTimeout(function() {
+                loadTaskData(taskId);
+                }, 5000);
+                
+            } else {
+                // Task failed
+                $('#loadingSpinner').hide();
+                
+                // Show error message
+                showAlert(`Error generating visualization: ${task.error || 'Unknown error'}`, 'danger');
+                
+                // Restore placeholder if needed
+                if($('#plotPlaceholder').length === 0) {
+                // Add placeholder appropriate for current page
+                addPlaceholder();
+                }
+                $('#plotPlaceholder').show();
+            }
+            },
+            error: function(xhr, status, error) {
+            $('#loadingSpinner').hide();
+            
+            console.error("Error loading task:", status, error);
+            showAlert('Error loading visualization. Please try again.', 'danger');
+            
+            // Restore placeholder
+            if($('#plotPlaceholder').length === 0) {
+                addPlaceholder();
+            }
+            $('#plotPlaceholder').show();
+            }
+        });
+    }
+
+    // Function to add appropriate placeholder based on the page
+    function addPlaceholder() {
+        $('#heatmapContainer').append(`
+            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+            <div class="text-center p-4">
+                <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                <p class="text-muted">Select cohorts or PGS IDs, choose a chart type, and generate a distribution plot to visualize the data.</p>
+            </div>
+            </div>
+        `);
+        }
+
+});

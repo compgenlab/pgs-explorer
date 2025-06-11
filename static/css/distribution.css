@@ -1,0 +1,92 @@
+/* CSS extracted from distribution.html */
+
+#distributionContainer {
+    min-height: 600px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 20px;
+    background-color: white;
+}
+
+.cohort-row {
+    background-color: #f8f9fa;
+    border-radius: 8px;
+    padding: 15px;
+    margin-bottom: 10px;
+}
+
+.delete-cohort {
+    cursor: pointer;
+    color: #dc3545;
+}
+
+#colorPreview {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    border-radius: 4px;
+    vertical-align: middle;
+    border: 1px solid #ced4da;
+}
+
+.spinner-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 300px;
+}
+
+.alert-container {
+    margin: 20px 0;
+}
+
+#metadataDisplay {
+    min-height: 200px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 20px;
+    background-color: white;
+    overflow-x: auto;
+}
+
+/* For tables in the metadata display */
+#metadataDisplay table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+#metadataDisplay th, 
+#metadataDisplay td {
+    padding: 8px;
+    border: 1px solid #dee2e6;
+}
+
+#metadataDisplay th {
+    background-color: #f8f9fa;
+    font-weight: 600;
+}
+
+/* Striped rows for better readability */
+#metadataDisplay tr:nth-child(even) {
+    background-color: #f8f9fa;
+}
+
+th.sortable {
+    position: relative;
+}
+
+th.sortable i {
+    margin-left: 5px;
+    color: #ccc;
+}
+
+th.sortable i.fa-sort-up,
+th.sortable i.fa-sort-down {
+    color: #007bff;
+}
+
+th.sortable:hover {
+    background-color: #e9ecef;
+}

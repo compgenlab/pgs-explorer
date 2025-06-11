@@ -1,0 +1,37 @@
+/* CSS extracted from multivariate.html */
+
+.form-container {
+    background: #f8f9fa;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+#heatmapContainer {
+    min-height: 800px;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 10px;
+    margin-bottom: 20px;
+}
+
+.stats-card {
+    height: 100%;
+}
+
+.spinner-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 300px;
+}
+
+.alert-container {
+    margin: 20px 0;
+}
+.opacity-50 {
+    opacity: 0.5;
+}
+.pe-none {
+    pointer-events: none;
+}
