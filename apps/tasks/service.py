@@ -1,9 +1,10 @@
 import uuid
 from typing import Optional
 from datetime import datetime
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, Request
 from database import db
 from apps.core.models import TaskResponse
+from apps.session.service import SessionManager
 
 def process_background_task(task_id: str, request_data: dict, processing_function):
     """
@@ -41,6 +42,7 @@ def process_background_task(task_id: str, request_data: dict, processing_functio
         )
 
 async def process_image_request(
+    request: Request,  # Add request parameter
     request_data: dict,
     task_type: str,
     task_name: Optional[str],
@@ -52,6 +54,8 @@ async def process_image_request(
     
     Parameters:
     -----------
+    request : Request
+        FastAPI request object (needed for session)
     request_data : dict
         Dictionary containing the request parameters
     task_type : str
@@ -68,16 +72,31 @@ async def process_image_request(
     TaskResponse
         Object with task_id and status
     """
+    # Get the user's session ID
+    user_id = SessionManager.get_or_create_user_id(request)
+    
     # Generate a unique task ID
     task_id = str(uuid.uuid4())
     created_at = datetime.now().isoformat()
     
-    # Store task in database using TaskRepository
+    # Store task in database with user_id
     db.tasks.create_task(
         task_id=task_id,
         task_type=task_type,
         name=task_name or f"{task_type} task",
-        request_data=request_data
+        request_data=request_data,
+        user_id=user_id  # Associate task with user
+    )
+    
+    # Track this activity in the user's session
+    SessionManager.track_user_activity(
+        request,
+        f"create_{task_type}_task",
+        {
+            "task_id": task_id,
+            "task_name": task_name or f"{task_type} task",
+            "task_type": task_type
+        }
     )
     
     # Add task to background tasks

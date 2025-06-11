@@ -15,7 +15,7 @@ An interactive web application for visualizing and exploring Polygenic Score (PG
 ### Prerequisites
 
 - Python 3.8+
-- SQLite database with PGS data (or use the initialization script to create one)
+- SQLite database with PGS data 
 
 ### Setup
 
@@ -41,11 +41,6 @@ An interactive web application for visualizing and exploring Polygenic Score (PG
    mkdir -p db static/css static/js templates
    ```
 
-5. Copy the provided files to their respective directories:
-   - Python files to the root directory
-   - HTML templates to the `templates` directory
-   - CSS files to the `static/css` directory
-   - JavaScript files to the `static/js` directory
 
 ## Directory Structure
 
@@ -72,25 +67,8 @@ pgs-visualizer/
 
 1. Start the application:
    ```
-   uvicorn app:app --reload
+   uvicorn app:app --host 0.0.0.0 --port 5000
    ```
-
-2. Open your browser and go to:
-   ```
-   http://127.0.0.1:8000
-   ```
-
-## Using the Heatmap Generator
-
-1. Go to the "Heatmap" page
-2. Select a score type from the dropdown
-3. Adjust parameters as needed:
-   - Max PGS IDs: Maximum number of PGS IDs to include
-   - Std Dev Threshold: Standard deviation threshold for outlier removal
-   - Compact View: Toggle compact visualization with simplified hover info
-4. Click "Generate Heatmap" to create the visualization
-5. View statistics about the data below the heatmap
-6. Download the heatmap as PNG or HTML
 
 ## Data Requirements
 
@@ -100,14 +78,6 @@ The application expects a SQLite database with the following tables:
 2. `scores` - Contains score data in a long format (PGS_ID, SCORE_TYPE, SAMPLE_ID, SCORE)
 
 The initialization script will create these tables if the database doesn't exist.
-
-## Customization
-
-- Modify the CSS in `static/css/styles.css` to change the visual appearance
-- Adjust the heatmap function parameters in `app.py` to change clustering behavior
-- Add additional visualization types in the distribution page
-- Extend the API endpoints to support more complex queries
-- Customize the color scales used in the heatmap
 
 ## API Endpoints
 

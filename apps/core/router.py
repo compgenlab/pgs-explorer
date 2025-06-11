@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request
 import json
 from database import db, get_database, Database
+from apps.session.service import SessionManager
 
 router = APIRouter(tags=["core"])
 
@@ -52,11 +53,17 @@ def get_pgs_data(pgs_id: str, database: Database = Depends(get_database)):
     return {"scores": scores_data}
 
 @router.get("/api/permanent_cohorts")
-async def get_permanent_cohorts(database: Database = Depends(get_database)):
+async def get_permanent_cohorts(
+    request: Request,
+    database: Database = Depends(get_database)
+):
     """Get list of permanent cohorts from the ancestry groups."""
     try:
-        # Get all cohorts from ancestry repository
-        cohorts = db.ancestry.get_all_cohorts()
+        # Get user ID from session
+        user_id = SessionManager.get_or_create_user_id(request)
+        
+        # Get all cohorts (ancestry + user's custom cohorts)
+        cohorts = db.get_all_cohorts(user_id)
         
         # Add "ALL" as the first option
         cohort_list = [{"name": "ALL", "sample_ids": []}]

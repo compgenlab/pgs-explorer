@@ -381,7 +381,7 @@ def prepare_cohorts_with_sample_ids(cohorts: List[Dict[str, Any]]) -> List[Dict[
         
         # If sample_ids not provided and it's not the "ALL" cohort, fetch them
         if "sample_ids" not in cohort_copy and cohort_copy["name"] != "ALL":
-            cohort_copy["sample_ids"] = db.ancestry.sample_ids_by_cohort(cohort_copy["name"])
+            cohort_copy["sample_ids"] = db.sample_ids_by_cohort(cohort_copy["name"])
         
         prepared_cohorts.append(cohort_copy)
     

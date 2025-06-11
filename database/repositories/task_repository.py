@@ -4,9 +4,9 @@ from typing import Optional, List, Dict, Any
 from ..base_repository import BaseRepository
 
 class TaskRepository(BaseRepository):
-    def create_task(self, task_id: str, task_type: str, name: str, request_data: Dict[str, Any]) -> None:
+    def create_task(self, task_id: str, task_type: str, name: str, request_data: Dict[str, Any], user_id: str) -> None:
         """
-        Create a new task record.
+        Create a new task record with user association.
         
         Parameters:
         -----------
@@ -18,17 +18,20 @@ class TaskRepository(BaseRepository):
             Human-readable task name
         request_data : dict
             Request data as dictionary (will be JSON serialized)
+        user_id : str
+            User session ID who created this task
         """
         query = """
             INSERT INTO image_tasks 
-            (task_id, task_type, name, status, created_at, request_data)
-            VALUES (?, ?, ?, 'pending', datetime('now'), ?)
+            (task_id, task_type, name, status, created_at, request_data, user_id)
+            VALUES (?, ?, ?, 'pending', datetime('now'), ?, ?)
         """
         params = [
             task_id,
             task_type,
             name,
-            json.dumps(request_data)  # Serialize to JSON
+            json.dumps(request_data),  # Serialize to JSON
+            user_id
         ]
         
         with self.connection.get_connection() as conn:
@@ -82,7 +85,7 @@ class TaskRepository(BaseRepository):
     
     def get_task(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get task by ID.
+        Get task by ID (includes user_id for ownership checking).
         
         Parameters:
         -----------
@@ -384,3 +387,119 @@ class TaskRepository(BaseRepository):
         rows = self.execute_query(query)
         
         return [row[0] for row in rows]
+
+    def get_user_tasks_paginated(self, user_id: str, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        Get all tasks for a specific user with pagination.
+        
+        Parameters:
+        -----------
+        user_id : str
+            User session ID
+        limit : int
+            Maximum number of tasks to return
+        offset : int
+            Number of tasks to skip
+            
+        Returns:
+        --------
+        list
+            List of task dictionaries for this user
+        """
+        query = """
+            SELECT * FROM image_tasks 
+            WHERE user_id = ?
+            ORDER BY created_at DESC 
+            LIMIT ? OFFSET ?
+        """
+        rows = self.execute_query(query, [user_id, limit, offset])
+        
+        return [self._format_task_row(row) for row in rows]
+    
+    def get_user_tasks_by_type_paginated(self, user_id: str, task_type: str, limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
+        """
+        Get tasks by type for a specific user with pagination.
+        
+        Parameters:
+        -----------
+        user_id : str
+            User session ID
+        task_type : str
+            Type of tasks to retrieve
+        limit : int
+            Maximum number of tasks to return
+        offset : int
+            Number of tasks to skip
+            
+        Returns:
+        --------
+        list
+            List of task dictionaries for this user and type
+        """
+        query = """
+            SELECT * FROM image_tasks 
+            WHERE user_id = ? AND task_type = ?
+            ORDER BY created_at DESC 
+            LIMIT ? OFFSET ?
+        """
+        rows = self.execute_query(query, [user_id, task_type, limit, offset])
+        
+        return [self._format_task_row(row) for row in rows]
+    
+    def count_user_tasks(self, user_id: str, task_type: Optional[str] = None) -> int:
+        """
+        Count total number of tasks for a user.
+        
+        Parameters:
+        -----------
+        user_id : str
+            User session ID
+        task_type : str, optional
+            If provided, count only tasks of this type
+            
+        Returns:
+        --------
+        int
+            Total count of tasks for this user
+        """
+        if task_type:
+            query = "SELECT COUNT(*) FROM image_tasks WHERE user_id = ? AND task_type = ?"
+            params = [user_id, task_type]
+        else:
+            query = "SELECT COUNT(*) FROM image_tasks WHERE user_id = ?"
+            params = [user_id]
+        
+        return self.execute_query_scalar(query, params) or 0
+    
+    def get_user_task_types(self, user_id: str) -> List[str]:
+        """
+        Get all unique task types for a specific user.
+        
+        Parameters:
+        -----------
+        user_id : str
+            User session ID
+            
+        Returns:
+        --------
+        list
+            List of task types this user has created
+        """
+        query = """
+            SELECT DISTINCT task_type FROM image_tasks 
+            WHERE user_id = ?
+            ORDER BY task_type
+        """
+        rows = self.execute_query(query, [user_id])
+        
+        return [row[0] for row in rows]
+
+    def delete_user_tasks(self, user_id: str) -> int:
+        """Delete all tasks for a user."""
+        query = "DELETE FROM image_tasks WHERE user_id = ?"
+        with self.connection.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(query, [user_id])
+            deleted_count = cursor.rowcount
+            conn.commit()
+            return deleted_count
