@@ -1,5 +1,5 @@
 $(document).ready(function() {
-    // First check if we are loading previous image
+    // 1. Check if we are loading previous image
     const urlParams = new URLSearchParams(window.location.search);
     const taskId = urlParams.get('task_id');
     
@@ -11,7 +11,7 @@ $(document).ready(function() {
         loadTaskData(taskId);
     }
 
-    // State variables
+    // 2. Set variables to store cohorts and data
     let subcohorts = [];
     let baseData = null;
     let tableData = [];
@@ -21,33 +21,14 @@ $(document).ready(function() {
     let currentMargin = null;
     let currentHeight = null;
 
+    // 3. Populate data on page load
+    fetchPgsList()
+    loadPermanentCohorts()
+    
+    ////////// EVENT LISTENERS //////////
     // Initialize color picker
     $('#subcohortColor').on('input', function() {
         $('#colorPreview').css('background-color', $(this).val());
-    });
-    
-    // Fetch PGS list
-    $.get('/api/pgs_list', function(data) {
-        const pgsSelect = $('#pgsId');
-        pgsSelect.empty();
-        pgsSelect.append('<option value="" selected disabled>Select PGS ID</option>');
-        
-        data.pgs.forEach(function(pgsId) {
-            pgsSelect.append(`<option value="${pgsId}">${pgsId}</option>`);
-        });
-    }).fail(function() {
-        showAlert('Failed to load PGS list', 'danger');
-    });
-    
-    // Load cohorts
-    $.get('/api/permanent_cohorts', function(data) {
-        const cohortSelect = $('#baseCohort');
-        
-        data.cohorts.forEach(function(cohort) {
-            cohortSelect.append(`<option value="${cohort.name}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`);
-        });
-    }).fail(function() {
-        showAlert('Failed to load cohorts', 'danger');
     });
     
     // Handle PGS selection change
@@ -143,6 +124,111 @@ $(document).ready(function() {
     });
     $('input[name="orCalculationType"]:checked').change();
     
+    ////////// GENERAL FUNCTIONS //////////
+    // Function to add appropriate placeholder based on the page
+    function addPlaceholder() {
+        $('#plotContainer').append(`
+            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+            <div class="text-center p-4">
+                <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                <p class="text-muted">Select cohorts or PGS IDs, choose a chart type, and generate a distribution plot to visualize the data.</p>
+            </div>
+            </div>
+        `);
+    }
+
+    // Function to display loading state
+    function showLoadingState() {
+        $('#loadingSpinner').show();
+        $('#plotContainer').hide();  // Or whichever element holds your visualization
+        if($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+        $('#alertContainer').empty();
+        
+        // Show a loading message
+        showAlert('Loading visualization...', 'info');
+    }
+
+    // Fetch score types for a PGS ID
+    function fetchScoreTypes(pgsId) {
+        $.get(`/api/score_types/${pgsId}`, function(data) {
+            const scoreSelect = $('#scoreType');
+            scoreSelect.empty();
+            scoreSelect.append('<option value="" selected disabled>Select Score Type</option>');
+            
+            data.score_types.forEach(function(scoreType) {
+                scoreSelect.append(`<option value="${scoreType}">${scoreType}</option>`);
+            });
+        }).fail(function() {
+            showAlert('Failed to load score types', 'danger');
+        });
+    }
+    
+    // Function to show alert
+    function showAlert(message, type) {
+        const alert = `
+            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        `;
+        
+        $('#alertContainer').html(alert);
+    }
+
+    ////////// PGS FUNCTIONS //////////
+    // Get all PGS to populate dropdown
+    function fetchPgsList() {
+        $.get('/api/pgs_and_trait_list', function(data) {
+            const pgsSelect = $('#pgsId');
+            pgsSelect.empty();
+            pgsSelect.append('<option value="" selected disabled>Select PGS</option>');
+            
+            data.pgs.forEach(function(pgs) {
+                // Display format: "PGS000001 - Height"
+                const displayText = `${pgs.id} - ${pgs.trait}`;
+                pgsSelect.append(`<option value="${pgs.id}">${displayText}</option>`);
+            });
+        }).fail(function() {
+            showAlert('Failed to load PGS list', 'danger');
+        });
+    }
+
+    ////////// COHORT FUNCTIONS //////////
+    // Get permanent cohorts
+    function loadPermanentCohorts() {
+        $.ajax({
+            url: '/api/permanent_cohorts',
+            type: 'GET',
+            success: function(data) {
+                if (data.cohorts && data.cohorts.length > 0) {
+                    // Populate cohorts for regular cohort management
+                    data.cohorts.forEach(function(cohort, index) {
+                        const color = PRESET_COLORS[index % PRESET_COLORS.length];
+                        addPermanentCohort(cohort.name, cohort.sample_ids, color);
+                    });
+                    
+                    // Populate cohort dropdown for PGS comparison mode
+                    const cohortSelect = $('#cohortForConfig');
+                    cohortSelect.empty();
+                    cohortSelect.append('<option value="" selected disabled>Select Cohort</option>');
+                    
+                    data.cohorts.forEach(function(cohort) {
+                        cohortSelect.append(`<option value="${cohort.name}" data-samples="${cohort.sample_ids.length}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`);
+                    });
+                    
+                    // Hide "no cohorts" message since we have permanent cohorts
+                    $('#noCohorts').hide();
+                }
+            },
+            error: function(xhr) {
+                console.log('No permanent cohorts available or error loading them:', xhr.status);
+            }
+        });
+    }
+
+    ////////// SUBCOHORT FUNCTIONS //////////
     // Function to add a subcohort
     function addSubcohort() {
         const name = $('#subcohortName').val().trim();
@@ -253,16 +339,29 @@ $(document).ready(function() {
     function deleteSubcohort(subcohortId) {
         subcohorts.splice(subcohortId, 1);
         updateSubcohortsList();
-        
-        // // If we have data, regenerate the plot
-        // if (baseData) {
-        //     renderPlot();
-        // }
-        
+
         showAlert('Subcohort removed', 'info');
         updateSubcohortSelects();
     }
-    
+
+    // Populate subcohort selects when subcohorts are added
+    function updateSubcohortSelects() {
+        const subcohort1Select = $('#subcohort1Select');
+        const subcohort2Select = $('#subcohort2Select');
+        
+        subcohort1Select.empty();
+        subcohort2Select.empty();
+        
+        subcohort1Select.append('<option value="" selected disabled>Select subcohort</option>');
+        subcohort2Select.append('<option value="" selected disabled>Select subcohort</option>');
+        
+        subcohorts.forEach((subcohort, index) => {
+            subcohort1Select.append(`<option value="${index}">${subcohort.name}</option>`);
+            subcohort2Select.append(`<option value="${index}">${subcohort.name}</option>`);
+        });
+    }
+
+    ////////// TASK FUNCTIONS //////////
     // Function to generate the plot using the backend
     function generatePlot(taskName = '') {
         const pgsId = $('#pgsId').val();
@@ -515,167 +614,6 @@ $(document).ready(function() {
         // Start checking status
         checkStatus();
     }
-    
-    // Helper function to get the selected OR calculation type
-    function getSelectedORCalculationType() {
-        if ($('#orByBin').is(':checked')) {
-            return 'bin';
-        } else if ($('#orByQuantile').is(':checked')) {
-            return 'quantile';
-        } else if ($('#orByThreshold').is(':checked')) {
-            return 'threshold';
-        } else if ($('#orByDecileBaseline').is(':checked')) {
-            return 'decileBaseline';
-        } else if ($('#orByDecileCumulative').is(':checked')) {
-            return 'decileCumulative';
-        }
-        return null;
-    }
-
-    // Function to render percentile table
-    function renderPercentileTable(data) {
-        if (data.length === 0) {
-            $('#percentileTable').html('<div class="text-center text-muted py-3">No subcohort data available</div>');
-            return;
-        }
-        
-        const tableHtml = `
-            <table class="table table-striped table-hover">
-                <thead>
-                    <tr>
-                        <th data-sort="sample">Sample ID</th>
-                        <th data-sort="score">Score</th>
-                        <th data-sort="percentile">Percentile</th>
-                        <th data-sort="subcohort">Subcohort</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    ${data.slice(0, 1000).map(row => `
-                    <tr>
-                        <td>${row.SAMPLE_ID}</td>
-                        <td>${row.SCORE}</td>
-                        <td>${row.PERCENTILE}</td>
-                        <td>${row.SUBCOHORT}</td>
-                    </tr>
-                `).join('')}
-                </tbody>
-            </table>
-            <div class="text-muted mt-2">
-                Showing ${Math.min(data.length, 1000)} of ${data.length} records
-            </div>
-        `;
-        
-        $('#percentileTable').html(tableHtml);
-        
-        // Add sort functionality
-        $('#percentileTable th').on('click', function() {
-            const sortKey = $(this).data('sort');
-            sortTable(sortKey);
-        });
-    }
-
-    // Function to apply percentile filter
-    function applyPercentileFilter() {
-        const percentileValue = parseFloat($('#percentileInput').val());
-        const filterType = $('#percentileFilter').val();
-        
-        if (isNaN(percentileValue) || percentileValue < 0 || percentileValue > 100) {
-            showAlert('Please enter a valid percentile value between 0 and 100', 'warning');
-            return;
-        }
-        
-        // Filter the data
-        const filteredData = originalTableData.filter(row => {
-            const rowPercentile = parseFloat(row.PERCENTILE);
-            if (filterType === 'above') {
-                return rowPercentile >= percentileValue;
-            } else {
-                return rowPercentile <= percentileValue;
-            }
-        });
-        
-        // Update table data and re-render
-        tableData = filteredData;
-        renderPercentileTable(tableData);
-        
-        showAlert(`Showing ${filteredData.length} records ${filterType} ${percentileValue}%`, 'info');
-    }
-
-    // Function to download table as CSV
-    function downloadTableAsCsv() {
-        if (tableData.length === 0) {
-            showAlert('No data to download', 'warning');
-            return;
-        }
-        
-        // Create CSV content
-        let csvContent = 'Sample ID,Score,Percentile,Subcohort\n';
-        
-        tableData.forEach(row => {
-            csvContent += `${row.SAMPLE_ID},${row.SCORE},${row.PERCENTILE},${row.SUBCOHORT}\n`;
-        });
-        
-        // Create download link
-        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-        const url = URL.createObjectURL(blob);
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'subcohort_data.csv';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        // Clean up
-        URL.revokeObjectURL(url);
-    }
-
-    // Function to sort table
-    function sortTable(sortKey) {
-        const sortOrder = $('#percentileTable').data('sort-order') === 'asc' ? 'desc' : 'asc';
-        $('#percentileTable').data('sort-order', sortOrder);
-        
-        // Sort the table data
-        tableData.sort((a, b) => {
-            let valA, valB;
-            
-            if (sortKey === 'sample') {
-                valA = a.SAMPLE_ID;
-                valB = b.SAMPLE_ID;
-            } else if (sortKey === 'score') {
-                valA = parseFloat(a.SCORE);
-                valB = parseFloat(b.SCORE);
-            } else if (sortKey === 'percentile') {
-                valA = parseFloat(a.PERCENTILE);
-                valB = parseFloat(b.PERCENTILE);
-            } else if (sortKey === 'subcohort') {
-                valA = a.SUBCOHORT;
-                valB = b.SUBCOHORT;
-            }
-            
-            if (sortOrder === 'asc') {
-                return valA > valB ? 1 : -1;
-            } else {
-                return valA < valB ? 1 : -1;
-            }
-        });
-        
-        // Re-render the table
-        renderPercentileTable(tableData);
-    }
-
-    // Function to display loading state
-    function showLoadingState() {
-        $('#loadingSpinner').show();
-        $('#plotContainer').hide();  // Or whichever element holds your visualization
-        if($('#plotPlaceholder').length > 0) {
-            $('#plotPlaceholder').remove();
-        }
-        $('#alertContainer').empty();
-        
-        // Show a loading message
-        showAlert('Loading visualization...', 'info');
-    }
 
     // Function to load and display task data
     function loadTaskData(taskId) {
@@ -739,84 +677,20 @@ $(document).ready(function() {
         });
     }
 
-    // Function to add appropriate placeholder based on the page
-    function addPlaceholder() {
-        $('#plotContainer').append(`
-            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
-            <div class="text-center p-4">
-                <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
-                <p class="text-muted">Select cohorts or PGS IDs, choose a chart type, and generate a distribution plot to visualize the data.</p>
-            </div>
-            </div>
-        `);
+    ////////// ODDS RATIO CONTROLS //////////
+    // Helper function to get the selected OR calculation type
+    function getSelectedORCalculationType() {
+        if ($('#orByBin').is(':checked')) {
+            return 'bin';
+        } else if ($('#orByQuantile').is(':checked')) {
+            return 'quantile';
+        } else if ($('#orByThreshold').is(':checked')) {
+            return 'threshold';
+        } else if ($('#orByDecileBaseline').is(':checked')) {
+            return 'decileBaseline';
+        } else if ($('#orByDecileCumulative').is(':checked')) {
+            return 'decileCumulative';
         }
-
-    // Utility functions for density estimation
-    function kernelDensityEstimator(kernel, X) {
-        return function(V) {
-            return X.map(x => [x, d3.mean(V, v => kernel(x - v))]);
-        };
-    }
-    
-    function epanechnikovKernel(bandwidth) {
-        return function(u) {
-            return Math.abs(u /= bandwidth) <= 1 ? 0.75 * (1 - u * u) / bandwidth : 0;
-        };
-    }
-    
-    // Function to calculate percentile of a value in an array
-    function calculatePercentile(value, array) {
-        const sortedArray = [...array].sort((a, b) => a - b);
-        const position = sortedArray.findIndex(x => x >= value);
-        
-        if (position === -1) {
-            return 100; // Value is greater than all elements
-        }
-        
-        return (position / sortedArray.length * 100);
-    }
-
-    // Populate subcohort selects when subcohorts are added
-    function updateSubcohortSelects() {
-        const subcohort1Select = $('#subcohort1Select');
-        const subcohort2Select = $('#subcohort2Select');
-        
-        subcohort1Select.empty();
-        subcohort2Select.empty();
-        
-        subcohort1Select.append('<option value="" selected disabled>Select subcohort</option>');
-        subcohort2Select.append('<option value="" selected disabled>Select subcohort</option>');
-        
-        subcohorts.forEach((subcohort, index) => {
-            subcohort1Select.append(`<option value="${index}">${subcohort.name}</option>`);
-            subcohort2Select.append(`<option value="${index}">${subcohort.name}</option>`);
-        });
-    }
-
-    // Fetch score types for a PGS ID
-    function fetchScoreTypes(pgsId) {
-        $.get(`/api/score_types/${pgsId}`, function(data) {
-            const scoreSelect = $('#scoreType');
-            scoreSelect.empty();
-            scoreSelect.append('<option value="" selected disabled>Select Score Type</option>');
-            
-            data.score_types.forEach(function(scoreType) {
-                scoreSelect.append(`<option value="${scoreType}">${scoreType}</option>`);
-            });
-        }).fail(function() {
-            showAlert('Failed to load score types', 'danger');
-        });
-    }
-    
-    // Function to show alert
-    function showAlert(message, type) {
-        const alert = `
-            <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-            </div>
-        `;
-        
-        $('#alertContainer').html(alert);
+        return null;
     }
 });

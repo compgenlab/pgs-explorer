@@ -104,3 +104,17 @@ function downloadFile(filename, content, type = 'text/plain') {
     link.click();
     document.body.removeChild(link);
 }
+
+function fetchPgsList() {
+    $.get('/api/pgs_list', function(data) {
+        const pgsSelect = $('#pgsId');
+        pgsSelect.empty();
+        pgsSelect.append('<option value="" selected disabled>Select PGS ID</option>');
+        
+        data.pgs.forEach(function(pgsId) {
+            pgsSelect.append(`<option value="${pgsId}">${pgsId}</option>`);
+        });
+    }).fail(function() {
+        showAlert('Failed to load PGS list', 'danger');
+    });
+}

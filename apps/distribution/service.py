@@ -88,7 +88,7 @@ def fetch_pgs_comparison_data(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     result = []
     
     for pgs_id in params["pgs_ids"]:
-        scores_dict = db.scores.get_scores_for_pgs(
+        scores_dict = db.get_scores_for_pgs(
             pgs_id, 
             params["score_type"], 
             params["sample_ids"] if params["sample_ids"] else None
@@ -339,15 +339,26 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
     params = extract_cohort_parameters(request_data)
     validate_cohort_parameters(params)
     
+    print(f"DEBUG: PGS ID: {params['pgs_id']}")
+    print(f"DEBUG: Score type: {params['score_type']}")
+    # print(f"DEBUG: Cohorts: {params['cohorts']}")
+    
     # Prepare cohorts with sample_ids
     prepared_cohorts = prepare_cohorts_with_sample_ids(params["cohorts"])
+    print(f"DEBUG: Prepared cohorts count: {len(prepared_cohorts)}")
+    for cohort in prepared_cohorts:
+        print(f"DEBUG: Cohort '{cohort['name']}' has {len(cohort.get('sample_ids', []))} samples")
     
     # Get cohort data with sample_ids already populated
-    cohort_data = db.scores.get_score_by_cohorts(
+    cohort_data = db.get_score_by_cohorts(
         pgs_id=params["pgs_id"],
         score_type=params["score_type"],
         cohorts=prepared_cohorts
     )
+    
+    print(f"DEBUG: Cohort data count: {len(cohort_data)}")
+    for i, data in enumerate(cohort_data):
+        print(f"DEBUG: Cohort {i} '{data['name']}' has {len(data['values'])} scores")
     
     # Generate visualization
     fig = create_cohort_visualization(cohort_data, params)

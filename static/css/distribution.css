@@ -1,5 +1,3 @@
-/* CSS extracted from distribution.html */
-
 #distributionContainer {
     min-height: 600px;
     border: 1px solid #dee2e6;
@@ -89,4 +87,19 @@ th.sortable i.fa-sort-down {
 
 th.sortable:hover {
     background-color: #e9ecef;
+}
+
+.pgs-list-container {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    padding: 10px;
+}
+
+.color-preview {
+    background-color: #3366CC; 
+    width: 30px;
+    border: 1px solid #dee2e6;
+    border-radius: 0.25rem;
 }

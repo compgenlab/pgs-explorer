@@ -14,6 +14,7 @@ from apps.tasks.router import router as tasks_router
 from apps.core.router import router as core_router
 from apps.session.router import router as session_router
 from apps.cohorts.router import router as cohorts_router
+from apps.temporary_scores.router import router as temporary_scores_router
 
 # Create the app
 app = create_app()
@@ -37,3 +38,4 @@ app.include_router(tasks_router)
 app.include_router(core_router)
 app.include_router(session_router)  
 app.include_router(cohorts_router)
+app.include_router(temporary_scores_router)

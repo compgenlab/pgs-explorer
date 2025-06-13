@@ -54,19 +54,26 @@
                     </li>
                 </ul>
             </div>
-            <div class="dropdown ms-2">
-                <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                  Recent Requests
-                  <span class="badge bg-info text-dark ms-1" id="pendingRequestsCount">0</span>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="recentRequestsDropdown" id="recentRequestsList" style="width: 300px;">
-                  <li><p class="dropdown-item text-center text-muted">No recent requests</p></li>
-                </ul>
-            </div>
-            <div class="ms-2">
-                <button class="btn btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">
-                    <i class="fas fa-user-circle me-1"></i>Session Info
-                </button>
+            <div class="d-flex">
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                      Recent Requests
+                      <span class="badge bg-info text-dark ms-1" id="pendingRequestsCount">0</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="recentRequestsDropdown" id="recentRequestsList" style="width: 300px;">
+                      <li><p class="dropdown-item text-center text-muted">No recent requests</p></li>
+                    </ul>
+                </div>
+                <div class="ms-2">
+                    <button class="btn btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#addTempScoreModal">
+                        <i class="fas fa-plus-circle me-1"></i>Add Temporary Data
+                    </button>
+                </div>
+                <div class="ms-2">
+                    <button class="btn btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">
+                        <i class="fas fa-user-circle me-1"></i>Session Info
+                    </button>
+                </div>
             </div>
         </div>
     </nav>
@@ -82,6 +89,50 @@
             <p class="mb-0">PGS Visualizer - A tool for exploring Polygenic Score data</p>
         </div>
     </footer>
+
+    <!-- Add Temporary Score Data Modal -->
+    <div class="modal fade" id="addTempScoreModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus-circle me-2"></i>Add Temporary Score Data
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="tempScoreForm">
+                        <div class="mb-3">
+                            <label for="tempPgsId" class="form-label">PGS ID</label>
+                            <input type="text" class="form-control" id="tempPgsId" placeholder="e.g., PGS000999" required>
+                            <div class="form-text">Enter a unique PGS ID for your temporary data</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="tempTrait" class="form-label">Trait</label>
+                            <input type="text" class="form-control" id="tempTrait" placeholder="e.g., Custom Trait" required>
+                            <div class="form-text">Enter the trait name for this PGS</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="tempScoreFile" class="form-label">Score Data File</label>
+                            <input type="file" class="form-control" id="tempScoreFile" accept=".txt,.tsv,.gz,.txt.gz,.tsv.gz" required>
+                            <div class="form-text">Upload a tab-separated file (plain text or gzipped) with columns: sampleset, FID, IID, PGS, SUM, Z_MostSimilarPop, Z_norm1, Z_norm2, percentile_MostSimilarPop</div>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Expected format:</strong> Tab-separated file with headers: sampleset, FID, IID, PGS, SUM, Z_MostSimilarPop, Z_norm1, Z_norm2, percentile_MostSimilarPop<br>
+                            <strong>Note:</strong> Temporary score data is only available during your session and will be removed when you clear your session or after the specified time period.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="uploadTempScoreBtn">
+                        <i class="fas fa-upload me-1"></i>Upload Temporary Data
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Session Info Modal -->
     <div class="modal fade" id="sessionInfoModal" tabindex="-1">
@@ -236,6 +287,7 @@
             }
         });
     }
+    
     function loadSessionStats() {
         // Get recent activities
         $.ajax({
@@ -309,6 +361,7 @@
                                 <li>All custom cohorts you've created</li>
                                 <li>Your activity history</li>
                                 <li>Association with your completed tasks</li>
+                                <li>Any temporary score data you've uploaded</li>
                             </ul>
                             <p class="text-danger"><strong>This action cannot be undone!</strong></p>
                             <p>Are you sure you want to clear your session data?</p>
@@ -345,6 +398,53 @@
         
         $('#confirmClearModal').on('hidden.bs.modal', function() {
             $(this).remove();
+        });
+    });
+
+    // Temporary Score Data Upload Function
+    $('#uploadTempScoreBtn').click(function() {
+        const pgsId = $('#tempPgsId').val();
+        const trait = $('#tempTrait').val();
+        const fileInput = $('#tempScoreFile')[0];
+        
+        if (!pgsId || !trait || !fileInput.files[0]) {
+            alert('Please fill in all required fields and select a file.');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('pgs_id', pgsId);
+        formData.append('trait', trait);
+        formData.append('score_file', fileInput.files[0]);
+        
+        // Show loading state
+        $('#uploadTempScoreBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Uploading...');
+        
+        $.ajax({
+            url: '/api/temporary_scores/upload',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                $('#addTempScoreModal').modal('hide');
+                alert(`Temporary score data uploaded successfully! PGS ID: ${response.pgs_id}, Records: ${response.records_count}`);
+                
+                // Clear form
+                $('#tempScoreForm')[0].reset();
+                
+                // Refresh PGS list if function exists
+                if (typeof fetchPgsList === 'function') {
+                    fetchPgsList();
+                }
+            },
+            error: function(xhr) {
+                const error = xhr.responseJSON?.detail || 'Error uploading temporary score data';
+                alert(`Upload failed: ${error}`);
+            },
+            complete: function() {
+                $('#uploadTempScoreBtn').prop('disabled', false).html('<i class="fas fa-upload me-1"></i>Upload Temporary Data');
+            }
         });
     });
 

@@ -1,7 +1,5 @@
-// static/js/distribution.js
-// All JavaScript from distribution.html template
-
 $(document).ready(function() {
+    // 1. Check if we are loading previous image
     const urlParams = new URLSearchParams(window.location.search);
     const taskId = urlParams.get('task_id');
     
@@ -12,8 +10,13 @@ $(document).ready(function() {
         // Load task data
         loadTaskData(taskId);
     }
-
-    // Define preset colors for cohorts
+    
+    // 2. Set variables to store cohorts and data
+    let cohorts = [];
+    let plotData = null;
+    let pgsScores = [];
+    let tableData = [];
+    let originalTableData = []; 
     const PRESET_COLORS = [
         "#e41a1c",  // Red
         "#377eb8",  // Blue
@@ -25,18 +28,12 @@ $(document).ready(function() {
         "#f781bf",  // Pink
         "#999999"   // Gray
     ];
-    
-    // Variables to store cohorts and data
-    let cohorts = [];
-    let plotData = null;
-    let pgsScores = [];
-    let tableData = [];
-    let originalTableData = []; 
 
-    // Fetch PGS IDs on page load
+    // 3. Fetch PGS IDs and permanent cohorts on page load
     fetchPgsList();
     loadPermanentCohorts(); 
 
+    ////////// EVENT LISTENERS //////////
     // Initialize color picker
     $('#cohortColor').on('input', function() {
         $('#colorPreview').css('background-color', $(this).val());
@@ -124,6 +121,7 @@ $(document).ready(function() {
         generateDistribution(taskName);
     });
 
+    // Changes metadata display
     $('#analysisType').on('change', function(){
         const analysisType = $(this).val();
         if (analysisType === 'cohort') {
@@ -152,11 +150,7 @@ $(document).ready(function() {
         link.click();
     });
 
-    $("#downloadSampleDataBtn").on("click", function() {
-        downloadSampleDataAsCsv();
-    });
-
-    // Functions
+    ////////// GENERAL FUNCTIONS //////////
     function showAlert(message, type) {
         const alert = '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
             message +
@@ -165,12 +159,33 @@ $(document).ready(function() {
         $('#alertContainer').html(alert);
     }
     
-    function updatePgsCounter() {
-        $('#pgsCounter').text(`(${pgsScores.length})`);
+    // Function to add appropriate placeholder based on the page
+    function addPlaceholder() {
+        $('#distributionContainer').append(`
+            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
+            <div class="text-center p-4">
+                <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
+                <p class="text-muted">Select cohorts or PGS IDs, choose a chart type, and generate a distribution plot to visualize the data.</p>
+            </div>
+            </div>
+        `);
+    }
+    
+    // Function to display loading state
+    function showLoadingState() {
+        $('#loadingSpinner').show();
+        $('#distributionContainer').hide();  
+        if($('#plotPlaceholder').length > 0) {
+            $('#plotPlaceholder').remove();
+        }
+        $('#alertContainer').empty();
+        
+        // Show a loading message
+        showAlert('Loading visualization...', 'info');
     }
 
-    // PGS FUNCTIONALITY
-    // Loads PGS metadata on
+    ////////// PGS FUNCTIONS //////////
+    // Loads PGS metadata 
     async function loadMetadata(pgsId) {
         try {
             // Show loading indicator
@@ -382,6 +397,7 @@ $(document).ready(function() {
         }
     }
 
+    // Updates the common score types across PGS IDs
     function updateScoreTypesForPgs() {
         const scoreTypeSelect = $('#scoreTypeForPgs');
         scoreTypeSelect.empty();
@@ -412,20 +428,25 @@ $(document).ready(function() {
         });
     }
 
+    // Gets list of all PGS
     function fetchPgsList() {
-        $.get('/api/pgs_list', function(data) {
+        $.get('/api/pgs_and_trait_list', function(data) {
             const pgsSelect = $('#pgsId');
             pgsSelect.empty();
-            pgsSelect.append('<option value="" selected disabled>Select PGS ID</option>');
+            pgsSelect.append('<option value="" selected disabled>Select PGS</option>');
             
-            data.pgs.forEach(function(pgsId) {
-                pgsSelect.append(`<option value="${pgsId}">${pgsId}</option>`);
+            data.pgs.forEach(function(pgs) {
+                // Display format: "PGS000001 - Height"
+                const displayText = `${pgs.id} - ${pgs.trait}`;
+                pgsSelect.append(`<option value="${pgs.id}">${displayText}</option>`);
             });
         }).fail(function() {
             showAlert('Failed to load PGS list', 'danger');
         });
     }
+
     
+    // Gets score types for a single PGS ID
     function fetchScoreTypes(pgsId) {
         $.get(`/api/score_types/${pgsId}`, function(data) {
             const scoreSelect = $('#scoreType');
@@ -440,7 +461,13 @@ $(document).ready(function() {
         });
     }
     
-    // COHORT functions
+    // Updates total number of PGS
+    function updatePgsCounter() {
+        $('#pgsCounter').text(`(${pgsScores.length})`);
+    }
+
+    ////////// COHORT FUNCTIONS //////////
+    // Calls backend to pull stored permanent cohorts
     function loadPermanentCohorts() {
         $.ajax({
             url: '/api/permanent_cohorts',
@@ -491,6 +518,7 @@ $(document).ready(function() {
         });
     }
 
+    // Adds page-specific cohort 
     function addCohort() {
         const cohortName = $('#cohortName').val() || `Cohort ${cohorts.length + 1}`;
         const cohortColor = $('#cohortColor').val();
@@ -536,6 +564,7 @@ $(document).ready(function() {
         showAlert(`Added cohort "${cohortName}" with ${sampleIds.length} samples`, 'success');
     }
     
+    // Stores page-specific cohort information
     function createCohortItem(id, name, color, sampleIds, isPermanent) {
         const cohortDiv = document.createElement('div');
         cohortDiv.className = 'cohort-row';
@@ -583,6 +612,7 @@ $(document).ready(function() {
         return cohortDiv;
     }
     
+    // Removes page-specific cohort
     function deleteCohort(cohortId) {
         // Remove from DOM
         $(`.cohort-row[data-cohort-id="${cohortId}"]`).remove();
@@ -598,6 +628,7 @@ $(document).ready(function() {
         showAlert('Cohort removed', 'info');
     }
     
+    // Toggles page-specific cohort
     function toggleCohort(cohortId, isActive) {
         // Update in array
         const cohort = cohorts.find(c => c.id === cohortId);
@@ -605,51 +636,9 @@ $(document).ready(function() {
             cohort.active = isActive;
         }
     }
-    
-    function getCohortById(cohortId) {
-        // First check if it's one of our temporary cohorts
-        const localCohort = cohorts.find(c => c.id === cohortId);
-        if (localCohort) {
-            return {
-                id: localCohort.id,
-                name: localCohort.name,
-                sampleIds: localCohort.sampleIds
-            };
-        }
-        
-        // Get name from select element
-        const cohortName = $('#cohortForConfig option:selected').text();
-        
-        // Return a placeholder with a promise to update later
-        const cohortPlaceholder = {
-            id: cohortId,
-            name: cohortName,
-            sampleIds: []
-        };
-        
-        // Start loading the sample IDs asynchronously
-        $.ajax({
-            url: '/api/permanent_cohorts',
-            type: 'GET',
-            async: false,  
-            success: function(cohortsData) {
-                const selectedCohort = cohortsData.cohorts.find(c => c.id === cohortId || c.name === cohortName);
-                
-                if (selectedCohort) {
-                    // Update the placeholder with actual data
-                    cohortPlaceholder.name = selectedCohort.name;
-                    cohortPlaceholder.sampleIds = selectedCohort.sample_ids;
-                }
-            },
-            error: function() {
-                console.error('Error loading cohort data for ID: ' + cohortId);
-            }
-        });
-        
-        return cohortPlaceholder;
-    }
 
-    // VISUALIZATION + IMAGE FNS 
+    ////////// TASK FUNCTIONS //////////
+    // Submits distribution job to backend 
     function generateDistribution(taskName = '') {
         const analysisType = $('#analysisType').val();
         const chartType = $('input[name="chartType"]:checked').val();
@@ -875,6 +864,7 @@ $(document).ready(function() {
         }
     }
 
+    // Checks task status
     function pollTaskStatus(taskId, taskType) {
         // Create a status area if it doesn't exist
         if ($('#taskStatusArea').length === 0) {
@@ -1005,350 +995,6 @@ $(document).ready(function() {
         // Start checking status
         checkStatus();
     }
-    
-    // DATA TABLE
-    function populateSampleTable(cohortData) {
-        // Get the container
-        const tableContainer = $("#sampleDataTable");
-        
-        // Clear any existing content
-        tableContainer.empty();
-        
-        // Create table element with an ID for later reference
-        const table = $("<table>").addClass("table table-striped table-bordered")
-                                .attr("id", "sortableSampleTable");
-        
-        // Create table header
-        const thead = $("<thead>").appendTo(table);
-        const headerRow = $("<tr>").appendTo(thead);
-        
-        // Add sortable headers with cursor pointer and sort icons
-        $("<th>").html("Sample ID <i class='fas fa-sort'></i>")
-            .addClass("sortable")
-            .data("sort-type", "string")
-            .data("column-index", 0)
-            .css("cursor", "pointer")
-            .appendTo(headerRow);
-            
-        $("<th>").html("Cohort <i class='fas fa-sort'></i>")
-            .addClass("sortable")
-            .data("sort-type", "string")
-            .data("column-index", 1)
-            .css("cursor", "pointer")
-            .appendTo(headerRow);
-            
-        $("<th>").html("Score <i class='fas fa-sort'></i>")
-            .addClass("sortable")
-            .data("sort-type", "number")
-            .data("column-index", 2)
-            .css("cursor", "pointer")
-            .appendTo(headerRow);
-        
-        // Create table body
-        const tbody = $("<tbody>").appendTo(table);
-        
-        // Track seen sample IDs to avoid duplicates
-        const seenSampleIds = new Set();
-        
-        // Filter out the "ALL" cohort and handle other cohorts
-        const filteredCohorts = cohortData.filter(cohort => cohort.name !== "ALL");
-        
-        // Loop through cohorts and add their samples
-        filteredCohorts.forEach(cohort => {
-            cohort.samples.forEach(sample => {
-                // Skip if we've already seen this sample ID
-                if (seenSampleIds.has(sample.SAMPLE_ID)) {
-                    return;
-                }
-                
-                // Mark this sample ID as seen
-                seenSampleIds.add(sample.SAMPLE_ID);
-                
-                const row = $("<tr>").appendTo(tbody);
-                
-                $("<td>").text(sample.SAMPLE_ID).appendTo(row);
-                $("<td>")
-                    .text(cohort.name)
-                    .css("color", cohort.color)
-                    .appendTo(row);
-                
-                const score = parseFloat(sample.SCORE);
-                const scoreCell = $("<td>")
-                    .text(score.toFixed(4))
-                    .data("raw-value", score)  // Store raw value for sorting
-                    .appendTo(row);
-                
-                // Optional: Add highlighting based on score ranges
-                if (score > 2) {
-                    scoreCell.addClass("score-highlight-high");
-                } else if (score < -2) {
-                    scoreCell.addClass("score-highlight-low");
-                }
-            });
-        });
-        
-        // Add the table to the container
-        tableContainer.append(table);
-        
-        // Make the sample data card visible
-        $("#sampleDataCard").show();
-        
-        // Enable the download button if we have data
-        $("#downloadSampleDataBtn").prop("disabled", tbody.children().length === 0);
-        
-        // Set up filtering functionality
-        setupScoreFiltering(table);
-        
-        // Set up sorting functionality
-        setupTableSorting(table);
-    }
-
-    function setupScoreFiltering(table) {
-        // Get original table rows for resetting
-        const originalRows = table.find('tbody tr').toArray();
-        
-        // Apply filter button click handler
-        $('#applyScoreFilterBtn').on('click', function() {
-            const scoreValue = parseFloat($('#scoreInput').val());
-            const filterType = $('#scoreFilter').val();
-            
-            // Validate input
-            if (isNaN(scoreValue)) {
-                alert("Please enter a valid score value");
-                return;
-            }
-            
-            // Get all rows
-            const rows = table.find('tbody tr').toArray();
-            const tbody = table.find('tbody');
-            
-            // Clear table body
-            tbody.empty();
-            
-            // Filter rows
-            const filteredRows = rows.filter(row => {
-                const scoreCell = $(row).find('td:eq(2)');
-                const score = scoreCell.data('raw-value') || parseFloat(scoreCell.text());
-                
-                switch (filterType) {
-                    case 'above':
-                        return score > scoreValue;
-                    case 'below':
-                        return score < scoreValue;
-                    case 'equal':
-                        // Using a small epsilon for floating point comparison
-                        return Math.abs(score - scoreValue) < 0.0001;
-                    default:
-                        return true;
-                }
-            });
-            
-            // Add filtered rows back to the table
-            filteredRows.forEach(row => tbody.append(row));
-            
-            // Show filter status
-            updateFilterStatus(filteredRows.length, rows.length, filterType, scoreValue);
-        });
-        
-        // Reset filter button click handler
-        $('#resetScoreFilterBtn').on('click', function() {
-            // Clear the input field
-            $('#scoreInput').val('');
-            
-            // Get table body
-            const tbody = table.find('tbody');
-            
-            // Clear table body
-            tbody.empty();
-            
-            // Add all original rows back
-            originalRows.forEach(row => tbody.append(row));
-            
-            // Clear filter status
-            $('#filterStatus').remove();
-        });
-    }
-
-    function updateFilterStatus(filteredCount, totalCount, filterType, scoreValue) {
-        // Remove any existing status
-        $('#filterStatus').remove();
-        
-        // Create status message
-        let message = `Showing ${filteredCount} of ${totalCount} samples `;
-        
-        switch (filterType) {
-            case 'above':
-                message += `with score > ${scoreValue}`;
-                break;
-            case 'below':
-                message += `with score < ${scoreValue}`;
-                break;
-            case 'equal':
-                message += `with score = ${scoreValue}`;
-                break;
-        }
-        
-        // Create status element
-        const statusDiv = $('<div>')
-            .attr('id', 'filterStatus')
-            .addClass('alert alert-info mt-2')
-            .text(message);
-        
-        // Add a close button
-        const closeButton = $('<button>')
-            .attr('type', 'button')
-            .addClass('btn-close float-end')
-            .attr('aria-label', 'Close');
-        
-        // Add click handler to close button
-        closeButton.on('click', function() {
-            $('#resetScoreFilterBtn').click();
-        });
-        
-        statusDiv.append(closeButton);
-        
-        // Add to the page
-        $('#sampleDataTable').after(statusDiv);
-    }
-
-    function setupTableSorting(table) {
-        // Current sort state
-        let currentSortColumn = -1;
-        let currentSortDirection = 'asc';
-        
-        // Add click handler to sortable headers
-        table.find('th.sortable').on('click', function() {
-            const $header = $(this);
-            const columnIndex = $header.data('column-index');
-            const sortType = $header.data('sort-type');
-            
-            // Update sort direction
-            if (currentSortColumn === columnIndex) {
-                // Toggle direction if already sorting on this column
-                currentSortDirection = currentSortDirection === 'asc' ? 'desc' : 'asc';
-            } else {
-                // Default to ascending for new column
-                currentSortDirection = 'asc';
-                currentSortColumn = columnIndex;
-            }
-            
-            // Update sort icons
-            table.find('th.sortable i').attr('class', 'fas fa-sort');
-            const iconClass = currentSortDirection === 'asc' ? 'fas fa-sort-up' : 'fas fa-sort-down';
-            $header.find('i').attr('class', iconClass);
-            
-            // Get all rows to sort
-            const rows = table.find('tbody tr').toArray();
-            
-            // Sort the rows
-            rows.sort((a, b) => {
-                let aValue, bValue;
-                
-                if (sortType === 'number') {
-                    // For numeric columns, use the stored raw value if available
-                    aValue = $(a).find(`td:eq(${columnIndex})`).data('raw-value') || 
-                            parseFloat($(a).find(`td:eq(${columnIndex})`).text());
-                    bValue = $(b).find(`td:eq(${columnIndex})`).data('raw-value') || 
-                            parseFloat($(b).find(`td:eq(${columnIndex})`).text());
-                } else {
-                    // For string columns, use text content
-                    aValue = $(a).find(`td:eq(${columnIndex})`).text().toLowerCase();
-                    bValue = $(b).find(`td:eq(${columnIndex})`).text().toLowerCase();
-                }
-                
-                // Compare based on type
-                let comparison;
-                if (sortType === 'number') {
-                    comparison = aValue - bValue;
-                } else {
-                    comparison = aValue.localeCompare(bValue);
-                }
-                
-                // Apply sort direction
-                return currentSortDirection === 'asc' ? comparison : -comparison;
-            });
-            
-            // Reattach sorted rows to the table
-            const tbody = table.find('tbody');
-            tbody.empty();
-            rows.forEach(row => tbody.append(row));
-        });
-    }
-           
-    function downloadSampleDataAsCsv() {
-        // Get the table
-        const table = $("#sortableSampleTable");
-        
-        if (table.length === 0 || table.find("tbody tr").length === 0) {
-            alert("No data available to download");
-            return;
-        }
-        
-        // Create CSV content
-        let csvContent = "data:text/csv;charset=utf-8,";
-        
-        // Add header row
-        const headers = [];
-        table.find("th").each(function() {
-            // Get header text without the sort icon
-            let headerText = $(this).text().trim();
-            headerText = headerText.replace(/\s*[\u25B2\u25BC]|\s*$/, ""); // Remove sort icons
-            headers.push(headerText);
-        });
-        csvContent += headers.join(",") + "\r\n";
-        
-        // Add data rows
-        table.find("tbody tr").each(function() {
-            const row = [];
-            $(this).find("td").each(function(index) {
-                let cellValue;
-                
-                // For the score column, use the raw value if available
-                if (index === 2 && $(this).attr("data-raw-value")) {
-                    cellValue = $(this).attr("data-raw-value");
-                } else {
-                    cellValue = $(this).text().trim();
-                }
-                
-                // Escape quotes and wrap in quotes if content has commas
-                if (cellValue.includes(",") || cellValue.includes("\"")) {
-                    cellValue = "\"" + cellValue.replace(/"/g, "\"\"") + "\"";
-                }
-                
-                row.push(cellValue);
-            });
-            csvContent += row.join(",") + "\r\n";
-        });
-        
-        // Create download link
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        
-        // Set filename with PGS ID and date
-        const pgsId = $("#pgsId").val() || "samples";
-        const today = new Date();
-        const date = today.toISOString().slice(0, 10); // YYYY-MM-DD format
-        link.setAttribute("download", `${pgsId}_sample_scores_${date}.csv`);
-        
-        // Trigger download
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    }
-
-    // Function to display loading state
-    function showLoadingState() {
-        $('#loadingSpinner').show();
-        $('#distributionContainer').hide();  
-        if($('#plotPlaceholder').length > 0) {
-            $('#plotPlaceholder').remove();
-        }
-        $('#alertContainer').empty();
-        
-        // Show a loading message
-        showAlert('Loading visualization...', 'info');
-    }
 
     // Function to load and display task data
     function loadTaskData(taskId) {
@@ -1411,373 +1057,4 @@ $(document).ready(function() {
             }
         });
     }
-
-    // Function to add appropriate placeholder based on the page
-    function addPlaceholder() {
-        $('#distributionContainer').append(`
-            <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
-            <div class="text-center p-4">
-                <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
-                <p class="text-muted">Select cohorts or PGS IDs, choose a chart type, and generate a distribution plot to visualize the data.</p>
-            </div>
-            </div>
-        `);
-    }
-});// static/js/distribution.js
-// All JavaScript from distribution.html template
-
-$(document).ready(function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const taskId = urlParams.get('task_id');
-    
-    if (taskId) {
-        console.log(taskId)
-        // Show loading indicator
-        showLoadingState();
-        // Load task data
-        loadTaskData(taskId);
-    }
-
-    // Define preset colors for cohorts
-    const PRESET_COLORS = [
-        "#e41a1c",  // Red
-        "#377eb8",  // Blue
-        "#4daf4a",  // Green
-        "#984ea3",  // Purple
-        "#ff7f00",  // Orange
-        "#FFD700",  // Gold
-        "#a65628",  // Brown
-        "#f781bf",  // Pink
-        "#999999"   // Gray
-    ];
-    
-    // Variables to store cohorts and data
-    let cohorts = [];
-    let plotData = null;
-    let pgsScores = [];
-    let tableData = [];
-    let originalTableData = []; 
-
-    // Fetch PGS IDs on page load
-    fetchPgsList();
-    loadPermanentCohorts(); 
-
-    // Initialize color picker
-    $('#cohortColor').on('input', function() {
-        $('#colorPreview').css('background-color', $(this).val());
-    });
-    
-    // Set initial color
-    $('#colorPreview').css('background-color', $('#cohortColor').val());
-    
-    // Handle analysis type change
-    $('#analysisType').on('change', function() {
-        const type = $(this).val();
-        if (type === 'cohort') {
-            // Cohort comparison mode
-            $('#pgsSelectionDiv').show();
-            $('#scoreType').closest('.mb-3').show();  // Show score type in config
-            $('#cohortSelectionDiv').hide();         // Hide cohort selector in config
-            $('#cohortManagementCard').show();
-            $('#pgsManagementCard').hide();
-        } else {
-            // PGS comparison mode
-            $('#pgsSelectionDiv').hide();
-            $('#scoreType').closest('.mb-3').hide();  // Hide score type in config
-            $('#cohortSelectionDiv').show();         // Show cohort selector in config
-            $('#cohortManagementCard').hide();
-            $('#pgsManagementCard').show();
-        }
-    });
-
-    // Add PGS button
-    $('#addPgsBtn').on('click', function(e) {
-        e.preventDefault();
-        addPgsIds();
-    });
-    
-    // Handle PGS selection change
-    $('#pgsId').on('change', function() {
-        const pgsId = $(this).val();
-        if (pgsId) {
-            fetchScoreTypes(pgsId);
-            loadMetadata(pgsId);
-        } else {
-            // Hide metadata card if no PGS ID is selected
-            $('#metadataCard').hide();
-        }
-    });
-    
-    // Add cohort button
-    $('#addCohortBtn').on('click', function(e) {
-        e.preventDefault();
-        addCohort();
-    });
-    
-    // Form submission
-    $('#distributionForm').on('submit', function(e) {
-        e.preventDefault();
-
-        // Update modal title based on chart type
-        const chartType = $('input[name="chartType"]:checked').val();
-        const plotTitle = chartType === 'density' ? 'Density Plot' : 
-                        (chartType === 'histogram' ? 'Histogram' : 'Box Plot');
-        
-        $('#taskNameModalLabel').text(`Name Your ${plotTitle}`);
-        $('#taskName').attr('placeholder', `My ${plotTitle}`);
-        
-        // Show the modal
-        const taskNameModal = new bootstrap.Modal(document.getElementById('taskNameModal'));
-        taskNameModal.show();
-    });
-
-    $('#confirmTaskName').on('click', function() {
-        // Get the task name
-        const taskName = $('#taskName').val().trim();
-        
-        // Hide the modal
-        const taskNameModal = bootstrap.Modal.getInstance(document.getElementById('taskNameModal'));
-        if (taskNameModal) {
-            taskNameModal.hide();
-        }
-        
-        // Reset modal for future use
-        $('#taskNameModal .modal-body').show();
-        $('#taskNameModal #confirmTaskName').prop('disabled', false);
-        
-        // Call the generate function with the task name
-        generateDistribution(taskName);
-    });
-
-    $('#analysisType').on('change', function(){
-        const analysisType = $(this).val();
-        if (analysisType === 'cohort') {
-            $('#metadataCard').show();  
-        } else {
-            $('#metadataCard').hide();  
-        }
-    });
-
-    // Open in new window button
-    $('#downloadPngBtn').on('click', function() {
-        const filePath = $(this).attr('data-filepath');
-        if (!filePath) return;
-        window.open(filePath, '_blank');
-    });
-    
-    // Download HTML button
-    $('#downloadHtmlBtn').on('click', function() {
-        const filePath = $(this).attr('data-filepath');
-        if (!filePath) return;
-        
-        // Create a link to download the file
-        const link = document.createElement('a');
-        link.href = filePath;
-        link.download = `heatmap_${$('#scoreType').val()}_${new Date().toISOString().slice(0, 10)}.html`;
-        link.click();
-    });
-
-    $("#downloadSampleDataBtn").on("click", function() {
-        downloadSampleDataAsCsv();
-    });
-
-    // Functions
-    function showAlert(message, type) {
-        const alert = '<div class="alert alert-' + type + ' alert-dismissible fade show" role="alert">' +
-            message +
-            '<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>' +
-            '</div>';
-        $('#alertContainer').html(alert);
-    }
-    
-    function updatePgsCounter() {
-        $('#pgsCounter').text(`(${pgsScores.length})`);
-    }
-
-    // PGS FUNCTIONALITY
-    // Loads PGS metadata on
-    async function loadMetadata(pgsId) {
-        try {
-            // Show loading indicator
-            $('#metadataDisplay').html('<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p>Loading metadata...</p></div>');
-            $('#metadataCard').show();
-            
-            // Fetch metadata
-            let response = await fetch(`/api/metadata/${pgsId}`);
-            let data = await response.json();
-            
-            if (!data.metadata) {
-                $('#metadataDisplay').html('<div class="alert alert-warning">No metadata available for this PGS ID.</div>');
-                return;
-            }
-            
-            // Create a nicely formatted table
-            let table = $('<table class="table table-striped table-hover"></table>');
-            let tbody = $('<tbody></tbody>');
-            
-            // Sort keys for consistent display
-            const sortedKeys = Object.keys(data.metadata).sort();
-            
-            sortedKeys.forEach(key => {
-                const value = data.metadata[key];
-                // Skip null or empty values
-                if (value === null || value === "") return;
-                
-                // Format the key name for display (convert from snake_case to Title Case)
-                const formattedKey = key
-                    .split('_')
-                    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                    .join(' ');
-                
-                // Create the row
-                let row = $('<tr></tr>');
-                row.append($('<td class="fw-bold" style="width: 30%"></td>').text(formattedKey));
-                
-                // Format value based on type (boolean, array, etc.)
-                let cellValue = value;
-                if (typeof value === 'boolean') {
-                    cellValue = value ? 'Yes' : 'No';
-                } else if (Array.isArray(value)) {
-                    cellValue = value.join(', ');
-                }
-                
-                row.append($('<td></td>').text(cellValue));
-                tbody.append(row);
-            });
-            
-            table.append(tbody);
-            $('#metadataDisplay').empty().append(table);
-        } catch (error) {
-            console.error("Error loading metadata:", error);
-            $('#metadataDisplay').html('<div class="alert alert-danger">Failed to load metadata. Please try again later.</div>');
-        }
-    }
-
-    // Add PGS IDs from textarea
-    function addPgsIds() {
-        const pgsIdsText = $('#pgsIdsInput').val().trim();
-        if (!pgsIdsText) {
-            showAlert('Please enter at least one PGS ID', 'warning');
-            return;
-        }
-        
-        const pgsIds = pgsIdsText.split('\n').map(id => id.trim()).filter(id => id);
-        if (pgsIds.length === 0) {
-            showAlert('Please enter valid PGS IDs', 'warning');
-            return;
-        }
-        
-        // Process each PGS ID
-        processPgsIds(pgsIds);
-    }
-
-    // Process PGS ids
-    async function processPgsIds(pgsIds) {
-        // Show loading indicator
-        $('#pgsList').html('<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p>Validating PGS IDs...</p></div>');
-        
-        const validPgsIds = [];
-        const invalidPgsIds = [];
-        
-        // Check each PGS ID
-        for (const pgsId of pgsIds) {
-            try {
-                const response = await fetch(`/api/score_types/${pgsId}`);
-                if (!response.ok) {
-                    invalidPgsIds.push(pgsId);
-                    continue;
-                }
-                
-                const data = await response.json();
-                if (!data.score_types || data.score_types.length === 0) {
-                    invalidPgsIds.push(pgsId);
-                    continue;
-                }
-                
-                validPgsIds.push({
-                    id: pgsId,
-                    scoreTypes: data.score_types
-                });
-            } catch (error) {
-                console.error(`Error validating PGS ID ${pgsId}:`, error);
-                invalidPgsIds.push(pgsId);
-            }
-        }
-        
-        // Add valid PGS IDs
-        if (validPgsIds.length > 0) {
-            addValidPgsIds(validPgsIds);
-        }
-        
-        // Show results
-        if (invalidPgsIds.length > 0) {
-            showAlert(`Added ${validPgsIds.length} PGS IDs. ${invalidPgsIds.length} invalid IDs: ${invalidPgsIds.join(', ')}`, 'warning');
-        } else {
-            showAlert(`Added ${validPgsIds.length} PGS IDs successfully`, 'success');
-        }
-        
-        // Clear input
-        $('#pgsIdsInput').val('');
-        
-        // Update score types dropdown
-        updateScoreTypesForPgs();
-        updatePgsCounter();
-    }
-
-    function addValidPgsIds(validPgsIds) {
-        const pgsList = $('#pgsList');
-        
-        // Clear "No PGS IDs" message if it's the first PGS
-        if (pgsScores.length === 0) {
-            pgsList.empty();
-        }
-        
-        validPgsIds.forEach((pgs, index) => {
-            const pgsId = pgs.id;
-            const color = PRESET_COLORS[pgsScores.length % PRESET_COLORS.length];
-            
-            // Create UI element
-            const pgsRow = $(`
-                <div class="cohort-row" data-pgs-id="${pgsId}">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div>
-                            <span class="badge rounded-pill me-2" style="background-color: ${color};">&nbsp;</span>
-                            <strong>${pgsId}</strong>
-                        </div>
-                        <div>
-                            <i class="fas fa-times delete-pgs" data-pgs-id="${pgsId}"></i>
-                        </div>
-                    </div>
-                    <div class="d-flex justify-content-between align-items-center">
-                        <small class="text-muted">${pgs.scoreTypes.length} score types</small>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input pgs-toggle" type="checkbox" id="pgsActive${pgsScores.length}" data-pgs-id="${pgsId}" checked>
-                            <label class="form-check-label" for="pgsActive${pgsScores.length}">Active</label>
-                        </div>
-                    </div>
-                </div>
-            `);
-            
-            // Add to UI
-            pgsList.append(pgsRow);
-            
-            // Add to array
-            pgsScores.push({
-                id: pgsId,
-                color: color,
-                scoreTypes: pgs.scoreTypes,
-                active: true
-            });
-            
-            // Add event listeners
-            pgsRow.find('.delete-pgs').on('click', function() {
-                deletePgs(pgsId);
-            });
-            
-            pgsRow.find('.pgs-toggle').on('change', function() {
-                const isActive = $(this).prop('checked');
-                togglePgs(pgsId, isActive);
-            });
-        });
-    }
-})
+});

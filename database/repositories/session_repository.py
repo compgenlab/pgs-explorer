@@ -49,9 +49,24 @@ class SessionRepository(BaseRepository):
             conn.commit()
             
     def delete_session(self, session_id: str) -> None:
-        """Delete a session."""
-        query = "DELETE FROM user_sessions WHERE session_id = ?"
+        """Delete a session and all associated user data."""
         with self.connection.get_connection() as conn:
             cursor = conn.cursor()
-            cursor.execute(query, [session_id])
-            conn.commit()
+            
+            # First get the user_id for this session
+            cursor.execute("SELECT user_id FROM user_sessions WHERE session_id = ?", [session_id])
+            result = cursor.fetchone()
+            
+            if result:
+                user_id = result[0]
+                
+                # Delete user's temporary scores
+                cursor.execute("DELETE FROM user_temporary_scores WHERE user_id = ?", [user_id])
+                
+                # Delete user's cohorts
+                cursor.execute("DELETE FROM user_cohorts WHERE user_id = ?", [user_id])
+                
+                # Delete the session itself
+                cursor.execute("DELETE FROM user_sessions WHERE session_id = ?", [session_id])
+                
+                conn.commit()

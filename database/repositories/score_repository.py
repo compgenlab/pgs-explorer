@@ -17,7 +17,17 @@ class ScoreRepository(BaseRepository):
         params = []        
         rows = self.execute_query(query, params)
         return [row[0] for row in rows]
-    
+
+    def get_all_pgs_with_traits(self):
+        query = """
+            SELECT pgs_id, trait 
+            FROM pgs_trait_lookup
+            ORDER BY pgs_id
+        """
+        params = []        
+        rows = self.execute_query(query, params)
+        return [{"id": row[0], "trait": row[1]} for row in rows]
+
     def get_all_score_types(self):
         query = """
             SELECT score_type
@@ -84,7 +94,6 @@ class ScoreRepository(BaseRepository):
         rows = self.execute_query(query, params)
         return [row[0] for row in rows]
     
-    # TODO get rid of 
     def get_scores_for_pgs(self, pgs_ids, score_type, sample_ids=None):
         """
         Get scores for one or more PGS IDs.
