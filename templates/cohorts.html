@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+
+{% block title %}PGS Visualizer - Manage Cohorts{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card shadow">
+            <div class="card-body">
+                <h1 class="card-title mb-4">
+                    <i class="fas fa-users text-primary me-2"></i>Manage Your Cohorts
+                </h1>
+                <p class="lead">
+                    Create and manage custom sample cohorts for your analyses.
+                </p>
+                <p>
+                    Define your own groups of samples to use in distributions, multivariate analysis, and other visualizations.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Add New Cohort Form -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-primary text-white">
+                <h3 class="card-title mb-0">
+                    <i class="fas fa-plus me-2"></i>Add New Cohort
+                </h3>
+            </div>
+            <div class="card-body">
+                <form id="cohortForm">
+                    <div class="mb-3">
+                        <label for="cohortName" class="form-label">
+                            <i class="fas fa-tag me-1"></i>Cohort Name
+                        </label>
+                        <input type="text" 
+                               class="form-control" 
+                               id="cohortName" 
+                               placeholder="e.g., High Risk Group"
+                               required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="sampleIds" class="form-label">
+                            <i class="fas fa-list me-1"></i>Sample IDs
+                            <small class="text-muted">(one per line)</small>
+                        </label>
+                        <textarea class="form-control" 
+                                  id="sampleIds" 
+                                  rows="6"
+                                  placeholder="sample001&#10;sample002&#10;sample003"
+                                  required></textarea>
+                        <div class="form-text">
+                            <i class="fas fa-info-circle me-1"></i>
+                            Sample IDs will be validated against the database
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-save me-1"></i>Create Cohort
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Existing Cohorts List -->
+    <div class="col-md-6 mb-4">
+        <div class="card shadow h-100">
+            <div class="card-header bg-secondary text-white">
+                <h3 class="card-title mb-0">
+                    <i class="fas fa-users me-2"></i>Your Cohorts
+                    <span class="badge bg-light text-dark ms-2">{{ cohorts|length }}</span>
+                </h3>
+            </div>
+            <div class="card-body">
+                <div id="cohortsList">
+                    {% if cohorts %}
+                        {% for cohort in cohorts %}
+                        <div class="card mb-3" id="cohort-{{ cohort.cohort_id }}">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start">
+                                    <div>
+                                        <h5 class="card-title">
+                                            <i class="fas fa-users text-primary me-2"></i>
+                                            {{ cohort.cohort_name }}
+                                        </h5>
+                                        <p class="card-text">
+                                            <small class="text-muted">
+                                                <i class="fas fa-hashtag me-1"></i>
+                                                {{ cohort.sample_ids|length }} samples
+                                            </small><br>
+                                            <small class="text-muted">
+                                                <i class="fas fa-calendar me-1"></i>
+                                                Created: {{ cohort.created_at }}
+                                            </small>
+                                        </p>
+                                    </div>
+                                    <button class="btn btn-outline-danger btn-sm" 
+                                            onclick="deleteCohort('{{ cohort.cohort_id }}', '{{ cohort.cohort_name }}')">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="text-center text-muted py-4">
+                            <i class="fas fa-users fa-3x mb-3"></i>
+                            <p>No cohorts created yet.</p>
+                            <p class="small">Create your first cohort using the form on the left.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Success/Error Messages -->
+<div id="alertContainer"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="/static/js/cohorts.js"></script>
+{% endblock %}

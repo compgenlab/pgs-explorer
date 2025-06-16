@@ -29,7 +29,8 @@ def process_svd(request_data):
         svd_result = perform_svd_analysis(
             score_type=params['score_type'],
             specific_pgs_ids=params['pgs_ids'],
-            cohort=params['cohort']
+            cohort=params['cohort'],
+            user_id=params['user_id']
         )
         
         # Generate visualization
@@ -51,10 +52,11 @@ def extract_svd_parameters(request_data):
         'cohort': request_data["cohort"],
         'plot_type': request_data["plot_type"],
         'perspective': request_data.get("perspective", "sample"),
-        'max_vectors': request_data.get("max_vectors", 10)
+        'max_vectors': request_data.get("max_vectors", 10),
+        'user_id': request_data.get('user_id', None)
     }
 
-def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_vectors):
+def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_vectors, user_id):
     """Generate a hash for the SVD request parameters for caching."""
     params = {
         "score_type": score_type,
@@ -62,7 +64,8 @@ def generate_svd_hash(score_type, pgs_ids, cohort, plot_type, perspective, max_v
         "cohort": cohort if cohort else "ALL",
         "plot_type": plot_type,
         "perspective": perspective,
-        "max_vectors": max_vectors
+        "max_vectors": max_vectors,
+        "user_id": user_id
     }
     param_str = json.dumps(params, sort_keys=True)
     hash_obj = hashlib.md5(param_str.encode())
@@ -152,7 +155,7 @@ def save_svd_visualization(fig, params, request_hash):
     
     return f"/temp/{filename}"
 
-def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None):
+def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None, user_id=None):
     """
     Build a matrix of PGS scores x samples and perform SVD on it.
     This is identical to PCA analysis since SVD is used for PCA computation.
@@ -161,10 +164,10 @@ def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None):
     print(f"Score Type: {score_type}")
     
     # Fetch required data
-    data = fetch_svd_data(score_type, specific_pgs_ids, cohort)
+    data = fetch_svd_data(score_type, specific_pgs_ids, cohort, user_id=user_id)
     
     # Get the score matrix
-    matrix = fetch_svd_matrix(data['sample_ids'], data['pgs_ids'], score_type)
+    matrix = fetch_svd_matrix(data['sample_ids'], data['pgs_ids'], score_type, user_id=user_id)
     
     # Perform SVD
     svd_result = perform_svd_computation(matrix)
@@ -187,12 +190,13 @@ def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None):
         'stats': stats
     }
 
-def fetch_svd_data(score_type, specific_pgs_ids, cohort):
+def fetch_svd_data(score_type, specific_pgs_ids, cohort, user_id=None):
     """Fetch PGS IDs and sample IDs for SVD analysis."""
     # Get PGS IDs
-    pgs_ids = db.scores.fetch_pgs_ids(
+    pgs_ids = db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
-        score_type=score_type
+        score_type=score_type,
+        user_id=user_id
     )
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
     
@@ -213,17 +217,18 @@ def fetch_svd_data(score_type, specific_pgs_ids, cohort):
         'sample_ids': sample_ids
     }
 
-def fetch_svd_matrix(sample_ids, pgs_ids, score_type):
+def fetch_svd_matrix(sample_ids, pgs_ids, score_type, user_id=None):
     """Fetch and prepare the score matrix for SVD."""
     start_time = time.time()
     print("Starting data processing...")
     
-    matrix, _ = db.scores.get_score_matrix(
+    matrix, _ = db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
         output_format="numpy",
-        handle_missing=True
+        handle_missing=True,
+        user_id=user_id
     )
     
     total_time = time.time() - start_time

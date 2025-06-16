@@ -53,7 +53,8 @@ def extract_heatmap_parameters(request_data):
         "specific_pgs_ids": request_data["pgs_ids"],
         "cohort": request_data["cohort"],
         "subcohorts": request_data["subcohorts"],
-        "max_pgs_ids": request_data.get("max_pgs_ids")
+        "max_pgs_ids": request_data.get("max_pgs_ids"),
+        "user_id": request_data.get("user_id", "")
     }
 
 def save_heatmap_to_file(fig, filepath):
@@ -75,22 +76,23 @@ def save_data_to_json(data, filepath):
 
 def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=5500, 
                                              std_dev_threshold=3, dendrogram_view=False, 
-                                             specific_pgs_ids=None, cohort=None, subcohorts=None):
+                                             specific_pgs_ids=None, cohort=None, subcohorts=None, user_id=None):
     """
     Generate a simplified static heatmap for very large datasets.
     """
     # Fetch required data
-    data = fetch_heatmap_data(score_type, specific_pgs_ids, cohort)
-    
+    data = fetch_heatmap_data(score_type, specific_pgs_ids, cohort, user_id)
+    print(f"DEBUG: specific_pgs_ids: {specific_pgs_ids}")
+
     # Calculate statistics and thresholds
     stats_data = calculate_statistics_and_thresholds(
-        score_type, data['pgs_ids'], std_dev_threshold
+        score_type, data['pgs_ids'], std_dev_threshold, user_id
     )
     
     # Get the data matrix
     matrix, _ = fetch_score_matrix(
         data['sample_ids'], data['pgs_ids'], score_type,
-        stats_data['upper_threshold'], stats_data['lower_threshold']
+        stats_data['upper_threshold'], stats_data['lower_threshold'], user_id=user_id
     )
     
     # Handle subcohort clustering if needed
@@ -144,11 +146,12 @@ def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=
     )
     return fig, stats
 
-def fetch_heatmap_data(score_type, specific_pgs_ids, cohort):
+def fetch_heatmap_data(score_type, specific_pgs_ids, cohort, user_id):
     """Fetch all required data for heatmap generation."""
-    pgs_ids = db.scores.fetch_pgs_ids(
+    pgs_ids = db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
-        score_type=score_type
+        score_type=score_type,
+        user_id=user_id
     )
     pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
     sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
@@ -159,16 +162,25 @@ def fetch_heatmap_data(score_type, specific_pgs_ids, cohort):
         'sample_ids': sample_ids
     }
 
-def calculate_statistics_and_thresholds(score_type, pgs_ids, std_dev_threshold):
+def calculate_statistics_and_thresholds(score_type, pgs_ids, std_dev_threshold, user_id):
     """Calculate statistics and outlier thresholds."""
     print("Calculating overall score distribution...")
-    
     # Get all statistics in one call
-    stats = db.scores.get_score_statistics_with_outliers(
+    stats = db.get_score_statistics_with_outliers(
         score_type, 
         pgs_ids, 
-        std_dev_threshold
+        std_dev_threshold=std_dev_threshold,
+        user_id=user_id
     )
+
+    # Then when you try to access lower_threshold:
+    try:
+        lower_threshold = stats['lower_threshold']
+        # print(f"DEBUG: Successfully got lower_threshold: {lower_threshold}")
+    except KeyError as e:
+        print(f"DEBUG: KeyError accessing lower_threshold: {e}")
+        print(f"DEBUG: Available keys: {list(stats.keys())}")
+
     
     print(f"Score distribution: Mean = {stats['avg']:.4f}, Std Dev = {stats['stdev']:.4f}")
     print(f"Outlier thresholds: Lower = {stats['lower_threshold']:.4f}, Upper = {stats['upper_threshold']:.4f}")
@@ -184,18 +196,19 @@ def calculate_statistics_and_thresholds(score_type, pgs_ids, std_dev_threshold):
         'outlier_count': stats['outlier_count']
     }
     
-def fetch_score_matrix(sample_ids, pgs_ids, score_type, upper_threshold, lower_threshold):
+def fetch_score_matrix(sample_ids, pgs_ids, score_type, upper_threshold, lower_threshold, user_id=None):
     """Fetch the score matrix from database."""
     print("Creating matrix data structure...")
     start_time = time.time()
     
-    matrix, pgs_list = db.scores.get_score_matrix(
+    matrix, pgs_list = db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
         output_format="numpy",
         upper_threshold=upper_threshold,
-        lower_threshold=lower_threshold
+        lower_threshold=lower_threshold,
+        user_id=user_id
     )
     
     end_time = time.time()

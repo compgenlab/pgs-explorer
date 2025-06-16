@@ -1,3 +1,4 @@
+<!-- base.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -53,14 +54,26 @@
                     </li>
                 </ul>
             </div>
-            <div class="dropdown ms-2">
-                <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                  Recent Requests
-                  <span class="badge bg-info text-dark ms-1" id="pendingRequestsCount">0</span>
-                </button>
-                <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="recentRequestsDropdown" id="recentRequestsList" style="width: 300px;">
-                  <li><p class="dropdown-item text-center text-muted">No recent requests</p></li>
-                </ul>
+            <div class="d-flex">
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                      Recent Requests
+                      <span class="badge bg-info text-dark ms-1" id="pendingRequestsCount">0</span>
+                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="recentRequestsDropdown" id="recentRequestsList" style="width: 300px;">
+                      <li><p class="dropdown-item text-center text-muted">No recent requests</p></li>
+                    </ul>
+                </div>
+                <div class="ms-2">
+                    <button class="btn btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#addTempScoreModal">
+                        <i class="fas fa-plus-circle me-1"></i>Add Temporary Data
+                    </button>
+                </div>
+                <div class="ms-2">
+                    <button class="btn btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">
+                        <i class="fas fa-user-circle me-1"></i>Session Info
+                    </button>
+                </div>
             </div>
         </div>
     </nav>
@@ -77,6 +90,78 @@
         </div>
     </footer>
 
+    <!-- Add Temporary Score Data Modal -->
+    <div class="modal fade" id="addTempScoreModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus-circle me-2"></i>Add Temporary Score Data
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="tempScoreForm">
+                        <div class="mb-3">
+                            <label for="tempPgsId" class="form-label">PGS ID</label>
+                            <input type="text" class="form-control" id="tempPgsId" placeholder="e.g., PGS000999" required>
+                            <div class="form-text">Enter a unique PGS ID for your temporary data</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="tempTrait" class="form-label">Trait</label>
+                            <input type="text" class="form-control" id="tempTrait" placeholder="e.g., Custom Trait" required>
+                            <div class="form-text">Enter the trait name for this PGS</div>
+                        </div>
+                        <div class="mb-3">
+                            <label for="tempScoreFile" class="form-label">Score Data File</label>
+                            <input type="file" class="form-control" id="tempScoreFile" accept=".txt,.tsv,.gz,.txt.gz,.tsv.gz" required>
+                            <div class="form-text">Upload a tab-separated file (plain text or gzipped) with columns: sampleset, FID, IID, PGS, SUM, Z_MostSimilarPop, Z_norm1, Z_norm2, percentile_MostSimilarPop</div>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Expected format:</strong> Tab-separated file with headers: sampleset, FID, IID, PGS, SUM, Z_MostSimilarPop, Z_norm1, Z_norm2, percentile_MostSimilarPop<br>
+                            <strong>Note:</strong> Temporary score data is only available during your session and will be removed when you clear your session or after the specified time period.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="uploadTempScoreBtn">
+                        <i class="fas fa-upload me-1"></i>Upload Temporary Data
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Session Info Modal -->
+    <div class="modal fade" id="sessionInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-user-circle me-2"></i>Session Information
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="sessionInfoContent">
+                        <div class="text-center">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-danger" id="clearSessionBtn">
+                        <i class="fas fa-trash me-1"></i>Clear Session Data
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     
@@ -157,6 +242,216 @@
             }
         });
     }
+
+    // Session Info Modal Functions
+    function loadSessionInfo() {
+        $.ajax({
+            url: '/api/session/info',
+            type: 'GET',
+            success: function(data) {
+                const content = `
+                    <div class="row">
+                        <div class="col-md-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-id-card me-2"></i>Session Details</h6>
+                                </div>
+                                <div class="card-body">
+                                    <p><strong>User ID:</strong><br><code>${data.user_id}</code></p>
+                                    <p><strong>Created:</strong><br>${new Date(data.created_at).toLocaleString()}</p>
+                                    ${data.last_activity ? `<p><strong>Last Activity:</strong><br>${new Date(data.last_activity).toLocaleString()}</p>` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>Session Statistics</h6>
+                                </div>
+                                <div class="card-body" id="sessionStats">
+                                    <div class="text-center">
+                                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                $('#sessionInfoContent').html(content);
+                loadSessionStats();
+            },
+            error: function() {
+                $('#sessionInfoContent').html('<div class="alert alert-danger">Error loading session information</div>');
+            }
+        });
+    }
+    
+    function loadSessionStats() {
+        // Get recent activities
+        $.ajax({
+            url: '/api/session/recent-activities',
+            type: 'GET',
+            success: function(data) {
+                // Get task counts
+                $.ajax({
+                    url: '/api/list_tasks',
+                    type: 'GET',
+                    success: function(tasks) {
+                        // Get cohort counts
+                        $.ajax({
+                            url: '/api/cohorts',
+                            type: 'GET',
+                            success: function(cohorts) {
+                                const statsContent = `
+                                    <div class="row text-center">
+                                        <div class="col-md-3">
+                                            <div class="border-end">
+                                                <h4 class="text-primary">${tasks.length || 0}</h4>
+                                                <p class="mb-0">Total Tasks</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="border-end">
+                                                <h4 class="text-success">${cohorts.cohorts ? cohorts.cohorts.length : 0}</h4>
+                                                <p class="mb-0">Custom Cohorts</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <div class="border-end">
+                                                <h4 class="text-info">${data.activities ? data.activities.length : 0}</h4>
+                                                <p class="mb-0">Recent Activities</p>
+                                            </div>
+                                        </div>
+                                        <div class="col-md-3">
+                                            <h4 class="text-warning">${tasks.filter(t => t.status === 'completed').length || 0}</h4>
+                                            <p class="mb-0">Completed Tasks</p>
+                                        </div>
+                                    </div>
+                                `;
+                                $('#sessionStats').html(statsContent);
+                            },
+                            error: function() {
+                                $('#sessionStats').html('<p class="text-muted">Could not load statistics</p>');
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    }
+
+    // Clear session function with confirmation
+    $('#clearSessionBtn').click(function() {
+        const confirmModal = `
+            <div class="modal fade" id="confirmClearModal" tabindex="-1">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header bg-danger text-white">
+                            <h5 class="modal-title">
+                                <i class="fas fa-exclamation-triangle me-2"></i>Confirm Clear Session
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                        </div>
+                        <div class="modal-body">
+                            <p><strong>This will permanently delete:</strong></p>
+                            <ul>
+                                <li>Your session preferences</li>
+                                <li>All custom cohorts you've created</li>
+                                <li>Your activity history</li>
+                                <li>Association with your completed tasks</li>
+                                <li>Any temporary score data you've uploaded</li>
+                            </ul>
+                            <p class="text-danger"><strong>This action cannot be undone!</strong></p>
+                            <p>Are you sure you want to clear your session data?</p>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-danger" id="confirmClearBtn">
+                                <i class="fas fa-trash me-1"></i>Yes, Clear Everything
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        $('body').append(confirmModal);
+        $('#confirmClearModal').modal('show');
+        
+        $('#confirmClearBtn').click(function() {
+            $.ajax({
+                url: '/api/session/clear-all',
+                type: 'POST',
+                success: function() {
+                    $('#confirmClearModal').modal('hide');
+                    $('#sessionInfoModal').modal('hide');
+                    alert('Session cleared successfully. The page will reload.');
+                    window.location.reload();
+                },
+                error: function() {
+                    alert('Error clearing session. Please try again.');
+                }
+            });
+        });
+        
+        $('#confirmClearModal').on('hidden.bs.modal', function() {
+            $(this).remove();
+        });
+    });
+
+    // Temporary Score Data Upload Function
+    $('#uploadTempScoreBtn').click(function() {
+        const pgsId = $('#tempPgsId').val();
+        const trait = $('#tempTrait').val();
+        const fileInput = $('#tempScoreFile')[0];
+        
+        if (!pgsId || !trait || !fileInput.files[0]) {
+            alert('Please fill in all required fields and select a file.');
+            return;
+        }
+        
+        const formData = new FormData();
+        formData.append('pgs_id', pgsId);
+        formData.append('trait', trait);
+        formData.append('score_file', fileInput.files[0]);
+        
+        // Show loading state
+        $('#uploadTempScoreBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Uploading...');
+        
+        $.ajax({
+            url: '/api/temporary_scores/upload',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(response) {
+                $('#addTempScoreModal').modal('hide');
+                alert(`Temporary score data uploaded successfully! PGS ID: ${response.pgs_id}, Records: ${response.records_count}`);
+                
+                // Clear form
+                $('#tempScoreForm')[0].reset();
+                
+                // Refresh PGS list if function exists
+                if (typeof fetchPgsList === 'function') {
+                    fetchPgsList();
+                }
+            },
+            error: function(xhr) {
+                const error = xhr.responseJSON?.detail || 'Error uploading temporary score data';
+                alert(`Upload failed: ${error}`);
+            },
+            complete: function() {
+                $('#uploadTempScoreBtn').prop('disabled', false).html('<i class="fas fa-upload me-1"></i>Upload Temporary Data');
+            }
+        });
+    });
+
+    // Load session info when modal opens
+    $('#sessionInfoModal').on('show.bs.modal', function() {
+        loadSessionInfo();
+    });
 
     // Add CSS for status dots
     $('head').append(`
