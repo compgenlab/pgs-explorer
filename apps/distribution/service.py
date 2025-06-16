@@ -42,6 +42,8 @@ def process_distribution(request_data: Dict[str, Any]) -> str:
         
     except Exception as e:
         print(f"Error in process_distribution: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise e
 
 def generate_score_visualization(request_data: Dict[str, Any], html_path: str, json_path: str) -> None:
@@ -73,7 +75,8 @@ def extract_score_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
         "pgs_ids": pgs_comparison.get("pgs_ids", []),
         "sample_ids": pgs_comparison.get("sample_ids", []),
         "colors": pgs_comparison.get("colors", []),
-        "display_names": pgs_comparison.get("names", [])
+        "display_names": pgs_comparison.get("names", []),
+        "user_id": request_data.get("user_id", "")
     }
 
 def validate_score_parameters(params: Dict[str, Any]) -> None:
@@ -86,12 +89,13 @@ def validate_score_parameters(params: Dict[str, Any]) -> None:
 def fetch_pgs_comparison_data(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Fetch score data for PGS comparison."""
     result = []
-    
+    print(params.keys())
     for pgs_id in params["pgs_ids"]:
         scores_dict = db.get_scores_for_pgs(
             pgs_id, 
             params["score_type"], 
-            params["sample_ids"] if params["sample_ids"] else None
+            params["sample_ids"] if params["sample_ids"] else None,
+            user_id=params["user_id"]
         )
         
         if not scores_dict:
@@ -353,7 +357,8 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
     cohort_data = db.get_score_by_cohorts(
         pgs_id=params["pgs_id"],
         score_type=params["score_type"],
-        cohorts=prepared_cohorts
+        cohorts=prepared_cohorts,
+        user_id = params["user_id"]
     )
     
     print(f"DEBUG: Cohort data count: {len(cohort_data)}")
@@ -405,7 +410,8 @@ def extract_cohort_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
         "score_type": request_data.get("score_type", ""),
         "cohorts": request_data.get("cohorts", []),
         "chart_type": request_data.get("chart_type", ""),
-        "plot_title": request_data.get("plot_title", "")
+        "plot_title": request_data.get("plot_title", ""),
+        "user_id": request_data.get("user_id", "")
     }
 
 def validate_cohort_parameters(params: Dict[str, Any]) -> None:

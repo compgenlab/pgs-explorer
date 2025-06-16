@@ -28,3 +28,6 @@ class DistributionRequest(BaseModel):
 
     # Job name
     name: Optional[str] = None
+
+    # User info
+    user_id: Optional[str] = None

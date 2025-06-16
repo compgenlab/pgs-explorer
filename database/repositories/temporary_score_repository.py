@@ -4,8 +4,7 @@ import numpy as np
 from typing import List, Dict, Any, Optional
 from ..base_repository import BaseRepository
 
-class TemporaryScoreRepository(BaseRepository):
-    
+class TemporaryScoreRepository(BaseRepository): 
     def create_temporary_score(self, user_id: str, pgs_id: str, trait: str, scores_data: List[Dict]) -> int:
         """Bulk insert temporary score records."""
         query = """
@@ -60,6 +59,56 @@ class TemporaryScoreRepository(BaseRepository):
             conn.commit()
             return deleted_count
 
+    def fetch_pgs_ids(self, user_id: str, specific_pgs_ids=None, score_type=None):
+        """
+        Fetch PGS IDs based on criteria for temporary scores.
+        
+        Parameters:
+        -----------
+        user_id : str
+            User ID to filter by
+        specific_pgs_ids : list, optional
+            Specific PGS IDs to filter by
+        score_type : str, optional
+            Type of score to filter by
+            
+        Returns:
+        --------
+        list
+            List of PGS IDs
+        """
+        if specific_pgs_ids and score_type:
+            placeholders = ','.join(['?'] * len(specific_pgs_ids))
+            query = f"""
+                SELECT DISTINCT PGS_ID 
+                FROM user_temporary_scores 
+                WHERE user_id = ?
+                AND SCORE_TYPE = ?
+                AND PGS_ID IN ({placeholders})
+                ORDER BY PGS_ID
+            """
+            params = [user_id, score_type] + specific_pgs_ids
+        elif score_type:
+            query = """
+                SELECT DISTINCT PGS_ID 
+                FROM user_temporary_scores 
+                WHERE user_id = ?
+                AND SCORE_TYPE = ?
+                ORDER BY PGS_ID
+            """
+            params = [user_id, score_type]
+        else:
+            query = """
+                SELECT DISTINCT PGS_ID 
+                FROM user_temporary_scores
+                WHERE user_id = ?
+                ORDER BY PGS_ID
+            """
+            params = [user_id]
+        
+        rows = self.execute_query(query, params)
+        return [row[0] for row in rows]
+        
     def get_all_pgs_ids(self, user_id: str) -> List[str]:
         """Get all PGS IDs for user's temporary scores."""
         query = """
@@ -91,6 +140,7 @@ class TemporaryScoreRepository(BaseRepository):
             ORDER BY SCORE_TYPE
         """
         rows = self.execute_query(query, [pgs_id, user_id])
+        print(f"Retrieved {len(rows)} score types for PGS {pgs_id} and user {user_id}.")
         return [row[0] for row in rows]
 
     def get_scores_for_pgs(self, pgs_ids, score_type, sample_ids=None, user_id=None):
@@ -122,6 +172,8 @@ class TemporaryScoreRepository(BaseRepository):
             params = pgs_ids + [score_type, user_id]
         
         rows = self.execute_query(query, params)
+        print(f"Retrieved {len(rows)} records for PGS {pgs_ids} and user {user_id}.")
+
         return {row["SAMPLE_ID"]: row["SCORE"] for row in rows}
 
     def get_all_scores_for_pgs(self, pgs_id: str, user_id: str) -> List[Dict[str, Any]]:
@@ -252,108 +304,138 @@ class TemporaryScoreRepository(BaseRepository):
         else:
             return data_dict, list(data_dict.keys())
 
-def get_score_by_cohorts(self, pgs_id, score_type, cohorts, user_id):
-    """Get scores for a PGS ID, grouped by cohorts."""
-    score_dict = self.get_scores_for_pgs(pgs_id, score_type, user_id=user_id)
-    
-    cohort_data = []
-    for cohort in cohorts:
-        if "name" not in cohort:
-            continue
-            
-        if cohort["name"] != "ALL":
-            if "sample_ids" not in cohort:
-                print(f"Warning: cohort '{cohort['name']}' missing sample_ids")
+    def get_score_by_cohorts(self, pgs_id, score_type, cohorts, user_id):
+        """Get scores for a PGS ID, grouped by cohorts."""
+        score_dict = self.get_scores_for_pgs(pgs_id, score_type, user_id=user_id)
+        
+        cohort_data = []
+        for cohort in cohorts:
+            if "name" not in cohort:
                 continue
                 
-            valid_samples = [
-                {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
-                for sample_id in cohort["sample_ids"]
-                if sample_id in score_dict
-            ]
-        else:
-            valid_samples = [
-                {"SAMPLE_ID": sample_id, "SCORE": score}
-                for sample_id, score in score_dict.items()
-            ]
+            if cohort["name"] != "ALL":
+                if "sample_ids" not in cohort:
+                    print(f"Warning: cohort '{cohort['name']}' missing sample_ids")
+                    continue
+                    
+                valid_samples = [
+                    {"SAMPLE_ID": sample_id, "SCORE": score_dict[sample_id]}
+                    for sample_id in cohort["sample_ids"]
+                    if sample_id in score_dict
+                ]
+            else:
+                valid_samples = [
+                    {"SAMPLE_ID": sample_id, "SCORE": score}
+                    for sample_id, score in score_dict.items()
+                ]
+                
+            cohort_scores = [sample["SCORE"] for sample in valid_samples]
             
-        cohort_scores = [sample["SCORE"] for sample in valid_samples]
+            cohort_data.append({
+                "color": cohort.get("color", "#000000"),
+                "values": cohort_scores,
+                "samples": valid_samples,
+                "name": cohort["name"]
+            })
+
+        return cohort_data
+
+    def get_sample_ids_with_scores(self, score_type, pgs_ids, user_id):
+        """Get all sample IDs that have scores for the given PGS IDs and score type."""
+        if not isinstance(pgs_ids, list):
+            pgs_ids = [pgs_ids]
         
-        cohort_data.append({
-            "color": cohort.get("color", "#000000"),
-            "values": cohort_scores,
-            "samples": valid_samples,
-            "name": cohort["name"]
-        })
+        pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+        query = f"""
+            SELECT DISTINCT SAMPLE_ID 
+            FROM user_temporary_scores 
+            WHERE SCORE_TYPE = ? 
+            AND user_id = ?
+            AND PGS_ID IN ({pgs_placeholders})
+            ORDER BY SAMPLE_ID
+        """
+        params = [score_type, user_id] + pgs_ids
+        rows = self.execute_query(query, params)
+        return [row[0] for row in rows]
 
-    return cohort_data
-
-def get_sample_ids_with_scores(self, score_type, pgs_ids, user_id):
-    """Get all sample IDs that have scores for the given PGS IDs and score type."""
-    if not isinstance(pgs_ids, list):
-        pgs_ids = [pgs_ids]
-    
-    pgs_placeholders = ','.join(['?'] * len(pgs_ids))
-    query = f"""
-        SELECT DISTINCT SAMPLE_ID 
-        FROM user_temporary_scores 
-        WHERE SCORE_TYPE = ? 
-        AND user_id = ?
-        AND PGS_ID IN ({pgs_placeholders})
-        ORDER BY SAMPLE_ID
-    """
-    params = [score_type, user_id] + pgs_ids
-    rows = self.execute_query(query, params)
-    return [row[0] for row in rows]
-
-def get_score_statistics_with_outliers(self, score_type, pgs_ids, user_id, std_dev_threshold=None):
-    """Calculate comprehensive statistics for scores including outlier counts."""
-    if not isinstance(pgs_ids, list):
-        pgs_ids = [pgs_ids]
-    
-    pgs_placeholders = ','.join(['?'] * len(pgs_ids))
-    
-    # Get basic statistics
-    query = f"""
-        SELECT 
-            AVG(SCORE) as avg, 
-            MIN(SCORE) as min, 
-            MAX(SCORE) as max, 
-            SQRT(AVG(SCORE * SCORE) - AVG(SCORE) * AVG(SCORE)) AS stdev,
-            COUNT(*) as count
-        FROM user_temporary_scores
-        WHERE SCORE_TYPE = ? 
-        AND user_id = ?
-        AND PGS_ID IN ({pgs_placeholders})
-    """
-    params = [score_type, user_id] + pgs_ids
-    row = self.execute_query_single(query, params)
-    
-    if not row or row['count'] == 0:
-        return {
-            'avg': 0,
-            'min': 0,
-            'max': 0,
-            'stdev': 1.0,
-            'count': 0,
-            'outlier_count': 0
+    def get_score_statistics_with_outliers(self, score_type, pgs_ids, user_id, std_dev_threshold=None):
+        """Calculate comprehensive statistics for scores including outlier counts."""
+        if not isinstance(pgs_ids, list):
+            pgs_ids = [pgs_ids]
+        
+        pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+        
+        # Get basic statistics
+        query = f"""
+            SELECT 
+                AVG(SCORE) as avg, 
+                MIN(SCORE) as min, 
+                MAX(SCORE) as max, 
+                SQRT(AVG(SCORE * SCORE) - AVG(SCORE) * AVG(SCORE)) AS stdev,
+                COUNT(*) as count
+            FROM user_temporary_scores
+            WHERE SCORE_TYPE = ? 
+            AND user_id = ?
+            AND PGS_ID IN ({pgs_placeholders})
+        """
+        params = [score_type, user_id] + pgs_ids
+        row = self.execute_query_single(query, params)
+        
+        if not row or row['count'] == 0:
+            return {
+                'avg': 0,
+                'min': 0,
+                'max': 0,
+                'stdev': 1.0,
+                'count': 0,
+                'outlier_count': 0
+            }
+        
+        stats = {
+            'avg': row['avg'],
+            'min': row['min'],
+            'max': row['max'],
+            'stdev': row['stdev'] if row['stdev'] is not None else 1.0,
+            'count': row['count']
         }
-    
-    stats = {
-        'avg': row['avg'],
-        'min': row['min'],
-        'max': row['max'],
-        'stdev': row['stdev'] if row['stdev'] is not None else 1.0,
-        'count': row['count']
-    }
-    
-    # Calculate outliers if threshold provided
-    if std_dev_threshold is not None:
-        upper_threshold = stats['avg'] + (std_dev_threshold * stats['stdev'])
-        lower_threshold = stats['avg'] - (std_dev_threshold * stats['stdev'])
         
-        # Count outliers
-        outlier_query = f"""
+        # Calculate outliers if threshold provided
+        if std_dev_threshold is not None:
+            upper_threshold = stats['avg'] + (std_dev_threshold * stats['stdev'])
+            lower_threshold = stats['avg'] - (std_dev_threshold * stats['stdev'])
+            
+            # Count outliers
+            outlier_query = f"""
+                SELECT COUNT(*)
+                FROM user_temporary_scores
+                WHERE SCORE_TYPE = ? 
+                AND user_id = ?
+                AND PGS_ID IN ({pgs_placeholders})
+                AND (SCORE > ? OR SCORE < ?)
+            """
+            outlier_params = [score_type, user_id] + pgs_ids + [upper_threshold, lower_threshold]
+            outlier_count = self.execute_query_scalar(outlier_query, outlier_params) or 0
+            
+            stats.update({
+                'outlier_count': outlier_count,
+                'upper_threshold': upper_threshold,
+                'lower_threshold': lower_threshold
+            })
+        
+        return stats
+
+    def get_score_statistics(self, score_type, pgs_ids, user_id):
+        """Calculate basic statistics for scores (backward compatibility)."""
+        stats = self.get_score_statistics_with_outliers(score_type, pgs_ids, user_id)
+        return (stats['avg'], stats['min'], stats['max'], stats['stdev'])
+
+    def count_outliers(self, score_type, pgs_ids, upper_threshold, lower_threshold, user_id):
+        """Count outliers in the dataset (backward compatibility)."""
+        if not isinstance(pgs_ids, list):
+            pgs_ids = [pgs_ids]
+        
+        pgs_placeholders = ','.join(['?'] * len(pgs_ids))
+        query = f"""
             SELECT COUNT(*)
             FROM user_temporary_scores
             WHERE SCORE_TYPE = ? 
@@ -361,35 +443,5 @@ def get_score_statistics_with_outliers(self, score_type, pgs_ids, user_id, std_d
             AND PGS_ID IN ({pgs_placeholders})
             AND (SCORE > ? OR SCORE < ?)
         """
-        outlier_params = [score_type, user_id] + pgs_ids + [upper_threshold, lower_threshold]
-        outlier_count = self.execute_query_scalar(outlier_query, outlier_params) or 0
-        
-        stats.update({
-            'outlier_count': outlier_count,
-            'upper_threshold': upper_threshold,
-            'lower_threshold': lower_threshold
-        })
-    
-    return stats
-
-def get_score_statistics(self, score_type, pgs_ids, user_id):
-    """Calculate basic statistics for scores (backward compatibility)."""
-    stats = self.get_score_statistics_with_outliers(score_type, pgs_ids, user_id)
-    return (stats['avg'], stats['min'], stats['max'], stats['stdev'])
-
-def count_outliers(self, score_type, pgs_ids, upper_threshold, lower_threshold, user_id):
-    """Count outliers in the dataset (backward compatibility)."""
-    if not isinstance(pgs_ids, list):
-        pgs_ids = [pgs_ids]
-    
-    pgs_placeholders = ','.join(['?'] * len(pgs_ids))
-    query = f"""
-        SELECT COUNT(*)
-        FROM user_temporary_scores
-        WHERE SCORE_TYPE = ? 
-        AND user_id = ?
-        AND PGS_ID IN ({pgs_placeholders})
-        AND (SCORE > ? OR SCORE < ?)
-    """
-    params = [score_type, user_id] + pgs_ids + [upper_threshold, lower_threshold]
-    return self.execute_query_scalar(query, params) or 0
+        params = [score_type, user_id] + pgs_ids + [upper_threshold, lower_threshold]
+        return self.execute_query_scalar(query, params) or 0

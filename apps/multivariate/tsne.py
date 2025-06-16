@@ -48,10 +48,11 @@ def extract_tsne_parameters(request_data):
         'perspective': request_data.get("perspective", "sample"),
         'perplexity': request_data["perplexity"],
         'n_iter': request_data["iterations"],
-        'learning_rate': request_data["learning_rate"]
+        'learning_rate': request_data["learning_rate"],
+        'user_id': request_data.get("user_id", None)
     }
 
-def generate_tsne_hash(score_type, specific_pgs_ids, cohort, perspective, perplexity, n_iter, learning_rate):
+def generate_tsne_hash(score_type, specific_pgs_ids, cohort, perspective, perplexity, n_iter, learning_rate, user_id):
     """Generate a hash for the t-SNE request parameters for caching."""
     hash_input = json.dumps({
         "score_type": score_type,
@@ -60,7 +61,8 @@ def generate_tsne_hash(score_type, specific_pgs_ids, cohort, perspective, perple
         "perspective": perspective,
         "perplexity": perplexity,
         "iterations": n_iter,
-        "learning_rate": learning_rate
+        "learning_rate": learning_rate,
+        "user_id": user_id
     }, sort_keys=True)
     
     return hashlib.md5(hash_input.encode()).hexdigest()
@@ -110,7 +112,7 @@ def save_tsne_visualization(fig, params, request_hash):
     
     return f"/temp/{filename}"
 
-def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, perplexity, n_iter, learning_rate):
+def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, perplexity, n_iter, learning_rate, user_id):
     """
     Perform t-SNE analysis on the score matrix.
     
@@ -123,13 +125,14 @@ def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, per
         - sample_ids: List of sample IDs
     """
     # Fetch required data
-    data = fetch_tsne_data(score_type, specific_pgs_ids, cohort)
+    data = fetch_tsne_data(score_type, specific_pgs_ids, cohort, user_id)
     
     # Get the score matrix
     matrix = fetch_tsne_matrix(
         data['sample_ids'],
         data['pgs_ids'],
-        score_type
+        score_type,
+        user_id
     )
     
     # Prepare matrix based on perspective
@@ -149,12 +152,13 @@ def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, per
         'sample_ids': data['sample_ids']
     }
 
-def fetch_tsne_data(score_type, specific_pgs_ids, cohort):
+def fetch_tsne_data(score_type, specific_pgs_ids, cohort, user_id):
     """Fetch PGS IDs and sample IDs for t-SNE analysis."""
     # Get PGS IDs
-    pgs_ids = db.scores.fetch_pgs_ids(
+    pgs_ids = db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
-        score_type=score_type
+        score_type=score_type,
+        user_id=user_id
     )
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
     
@@ -175,14 +179,15 @@ def fetch_tsne_data(score_type, specific_pgs_ids, cohort):
         'sample_ids': sample_ids
     }
 
-def fetch_tsne_matrix(sample_ids, pgs_ids, score_type):
+def fetch_tsne_matrix(sample_ids, pgs_ids, score_type, user_id):
     """Fetch the score matrix for t-SNE analysis."""
-    matrix, _ = db.scores.get_score_matrix(
+    matrix, _ = db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
         output_format="numpy",
-        handle_missing=True
+        handle_missing=True,
+        user_id=user_id
     )
     
     print(f"Matrix shape: {matrix.shape}")
