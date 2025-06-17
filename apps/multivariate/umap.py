@@ -44,10 +44,11 @@ def extract_umap_parameters(request_data):
         'min_dist': request_data["min_dist"],
         'specific_pgs_ids': request_data.get("pgs_ids"),
         'cohort': request_data["cohort"],
-        'view_type': request_data["view_type"]
+        'view_type': request_data["view_type"],
+        'user_id': request_data['user_id']
     }
 
-def generate_umap_hash(score_type, n_neighbors, min_dist, specific_pgs_ids, cohort, view_type):
+def generate_umap_hash(score_type, n_neighbors, min_dist, specific_pgs_ids, cohort, view_type, user_id):
     """Generate a hash for the UMAP request parameters."""
     hash_input = json.dumps({
         "score_type": score_type,
@@ -55,7 +56,8 @@ def generate_umap_hash(score_type, n_neighbors, min_dist, specific_pgs_ids, coho
         "cohort": cohort if cohort else "ALL",
         "view_type": view_type,
         "n_neighbors": n_neighbors,
-        "min_dist": min_dist
+        "min_dist": min_dist,
+        "user_id": user_id
     }, sort_keys=True)
     
     return hashlib.md5(hash_input.encode()).hexdigest()
@@ -93,7 +95,7 @@ def save_umap_visualization(fig, params, request_hash):
     
     return f"/temp/{filename}"
 
-def generate_umap_visualization(score_type, n_neighbors, min_dist, specific_pgs_ids, cohort, view_type):
+def generate_umap_visualization(score_type, n_neighbors, min_dist, specific_pgs_ids, cohort, view_type, user_id=None):
     """
     Generate a UMAP visualization for PGS score data.
     
@@ -107,13 +109,14 @@ def generate_umap_visualization(score_type, n_neighbors, min_dist, specific_pgs_
     print(f"Score Type: {score_type}")
     
     # Fetch required data
-    data = fetch_umap_data(score_type, specific_pgs_ids, cohort)
+    data = fetch_umap_data(score_type, specific_pgs_ids, cohort, user_id=user_id)
     
     # Get the score matrix as dictionary
     data_dict = fetch_score_dictionary(
         data['sample_ids'],
         data['pgs_ids'],
-        score_type
+        score_type,
+        user_id
     )
     
     # Route to appropriate visualization based on view type
@@ -139,10 +142,10 @@ def generate_umap_visualization(score_type, n_neighbors, min_dist, specific_pgs_
             data['pgs_metadata']
         )
 
-def fetch_umap_data(score_type, specific_pgs_ids, cohort):
+def fetch_umap_data(score_type, specific_pgs_ids, cohort, user_id=None):
     """Fetch all required data for UMAP visualization."""
     # Get PGS IDs
-    pgs_ids = db.scores.fetch_pgs_ids(specific_pgs_ids, score_type)
+    pgs_ids = db.fetch_pgs_ids(specific_pgs_ids, score_type, user_id)
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
     
     # Get metadata for PGS IDs
@@ -161,13 +164,14 @@ def fetch_umap_data(score_type, specific_pgs_ids, cohort):
         'sample_ids': sample_ids
     }
 
-def fetch_score_dictionary(sample_ids, pgs_ids, score_type):
+def fetch_score_dictionary(sample_ids, pgs_ids, score_type, user_id):
     """Fetch score data as a dictionary."""
-    data_dict, _ = db.scores.get_score_matrix(
+    data_dict, _ = db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
-        output_format="dict"
+        output_format="dict",
+        user_id=user_id
     )
     return data_dict
 

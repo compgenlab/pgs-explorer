@@ -30,7 +30,9 @@ async def generate_heatmap(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_pass=heatmap_request.dict()
+    request_to_pass["user_id"] = user_id
+
     # Track this activity
     SessionManager.track_user_activity(
         request,
@@ -41,12 +43,12 @@ async def generate_heatmap(
             "cohort": getattr(heatmap_request, 'cohort', 'unknown')
         }
     )
-    
+
     print(f"Submitting job for task: {heatmap_request.name} - User: {user_id[:8]}...")
     
     return await process_image_request(
         request=request,
-        request_data=heatmap_request.dict(),
+        request_data=request_to_pass,
         task_type="heatmap",
         task_name=heatmap_request.name,
         processing_function=process_heatmap,
@@ -63,7 +65,9 @@ async def generate_umap(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_pass=umap_request.dict()
+    request_to_pass["user_id"] = user_id
+
     # Track this activity
     SessionManager.track_user_activity(
         request,
@@ -74,12 +78,12 @@ async def generate_umap(
             "cohort": getattr(umap_request, 'cohort', 'unknown')
         }
     )
-    
+
     print(f"Submitting job for task: {umap_request.name} - User: {user_id[:8]}...")
     
     return await process_image_request(
         request=request,
-        request_data=umap_request.dict(),
+        request_data=request_to_pass,
         task_type="umap",
         task_name=umap_request.name,
         processing_function=process_umap,
@@ -96,7 +100,8 @@ async def generate_svd_image(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_pass=svd_request.dict()
+    request_to_pass["user_id"] = user_id
     # Track this activity
     SessionManager.track_user_activity(
         request,
@@ -112,7 +117,7 @@ async def generate_svd_image(
     
     return await process_image_request(
         request=request,
-        request_data=svd_request.dict(),
+        request_data=request_to_pass,
         task_type="svd",
         task_name=svd_request.name,
         processing_function=process_svd,
@@ -129,7 +134,9 @@ async def generate_pca(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_pass=pca_request.dict()
+    request_to_pass["user_id"] = user_id
+
     # Track this activity
     SessionManager.track_user_activity(
         request,
@@ -145,7 +152,7 @@ async def generate_pca(
     
     return await process_image_request(
         request=request,
-        request_data=pca_request.dict(),
+        request_data=request_to_pass,
         task_type="pca",
         task_name=pca_request.name,
         processing_function=process_pca,
@@ -162,7 +169,9 @@ async def generate_tsne(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_pass=tsne_request.dict()
+    request_to_pass["user_id"] = user_id
+
     # Track this activity
     SessionManager.track_user_activity(
         request,
@@ -178,7 +187,7 @@ async def generate_tsne(
     
     return await process_image_request(
         request=request,
-        request_data=tsne_request.dict(),
+        request_data=request_to_pass,
         task_type="tsne",
         task_name=tsne_request.name,
         processing_function=process_tsne,
@@ -194,7 +203,9 @@ def interactive_filter_router(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_pass=interactive_request.dict()
+    request_to_pass["user_id"] = user_id
+
     # Track this activity
     SessionManager.track_user_activity(
         request,

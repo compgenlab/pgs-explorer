@@ -8,6 +8,7 @@ from .repositories.session_repository import SessionRepository
 from .repositories.cohort_repository import CohortRepository
 from .repositories.temporary_score_repository import TemporaryScoreRepository
 from apps.core.config import DB_PATH, TASK_DB_PATH
+import numpy as np
 
 class Database:
     """Master database object that provides access to all repositories"""
@@ -137,11 +138,10 @@ class Database:
         for pgs_id in pgs_ids:
             # Try permanent scores first
             pgs_scores = self.scores.get_scores_for_pgs([pgs_id], score_type, sample_ids)
-            
             # If no permanent scores and user_id provided, try temporary
             if not pgs_scores and user_id:
+                print(f"Detected temporary score")
                 pgs_scores = self.temporary_scores.get_scores_for_pgs([pgs_id], score_type, sample_ids, user_id)
-            
             all_scores.update(pgs_scores)
         
         return all_scores
@@ -169,12 +169,10 @@ class Database:
         
         # Separate permanent vs temporary PGS IDs
         for pgs_id in pgs_ids:
-            # Check if it exists in permanent data
             perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
             if perm_score_types:
                 permanent_pgs.append(pgs_id)
-            elif user_id:
-                # Check if it's in temporary data
+            if user_id:
                 temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
                 if temp_score_types:
                     temporary_pgs.append(pgs_id)
@@ -187,6 +185,8 @@ class Database:
                 sample_ids, permanent_pgs, score_type, "dict", 
                 handle_missing, upper_threshold, lower_threshold
             )
+            if perm_dict:
+                sample_pgs = list(list(perm_dict.values())[0].keys())
             combined_dict.update(perm_dict)
         
         if temporary_pgs and user_id:
@@ -194,11 +194,17 @@ class Database:
                 sample_ids, temporary_pgs, score_type, user_id, "dict",
                 handle_missing, upper_threshold, lower_threshold
             )
+            if temp_dict:
+                sample_pgs = list(list(temp_dict.values())[0].keys())
+            
             # Merge temporary data into combined dict
             for sample_id, pgs_scores in temp_dict.items():
                 if sample_id not in combined_dict:
                     combined_dict[sample_id] = {}
                 combined_dict[sample_id].update(pgs_scores)
+        
+        if combined_dict:
+            sample_pgs = list(list(combined_dict.values())[0].keys())
         
         if output_format == "numpy":
             # Convert combined dict to numpy matrix
@@ -214,7 +220,6 @@ class Database:
                 final_samples = available_samples
             
             final_pgs = [p for p in pgs_ids if p in available_pgs]
-            
             sample_to_index = {sample_id: i for i, sample_id in enumerate(final_samples)}
             pgs_to_index = {pgs_id: j for j, pgs_id in enumerate(final_pgs)}
                 
@@ -247,10 +252,12 @@ class Database:
         # Try permanent scores first
         perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
         if perm_score_types:
+            print(f"Score {pgs_id} is a permanent score.")
             return self.scores.get_score_by_cohorts(pgs_id, score_type, cohorts)
         
         # If not permanent and user_id provided, try temporary
         if user_id:
+            print(f"Score {pgs_id} is a temporary score.")
             temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
             if temp_score_types:
                 return self.temporary_scores.get_score_by_cohorts(pgs_id, score_type, cohorts, user_id)
@@ -301,21 +308,75 @@ class Database:
             perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
             if perm_score_types:
                 permanent_pgs.append(pgs_id)
-            elif user_id:
+            if user_id:
                 temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
                 if temp_score_types:
                     temporary_pgs.append(pgs_id)
         
-        # For now, return stats from whichever source has data
-        # (could be enhanced to combine statistics if needed)
-        if permanent_pgs:
-            return self.scores.get_score_statistics_with_outliers(score_type, permanent_pgs, std_dev_threshold)
-        elif temporary_pgs and user_id:
-            return self.temporary_scores.get_score_statistics_with_outliers(score_type, temporary_pgs, user_id, std_dev_threshold)
+        print(f"DEBUG: permanent scores: {permanent_pgs}\n temporary: {temporary_pgs}")
+
+        # Collect all scores from both sources
+        all_scores = []
         
-        return {
-            'avg': 0, 'min': 0, 'max': 0, 'stdev': 1.0, 'count': 0, 'outlier_count': 0
+        # Get scores from permanent data
+        if permanent_pgs:
+            perm_dict = self.scores.get_score_matrix(
+                sample_ids=None, pgs_ids=permanent_pgs, score_type=score_type, 
+                output_format="dict"
+            )[0]
+            for sample_scores in perm_dict.values():
+                all_scores.extend(sample_scores.values())
+        
+        # Get scores from temporary data
+        if temporary_pgs and user_id:
+            temp_dict = self.temporary_scores.get_score_matrix(
+                sample_ids=None, pgs_ids=temporary_pgs, score_type=score_type, user_id=user_id,
+                output_format="dict"
+            )[0]
+            for sample_scores in temp_dict.values():
+                all_scores.extend(sample_scores.values())
+        
+        # Return default if no scores found
+        if not all_scores:
+            default_stats = {
+                'avg': 0, 'min': 0, 'max': 0, 'stdev': 1.0, 'count': 0, 'outlier_count': 0
+            }
+            if std_dev_threshold is not None:
+                default_stats.update({
+                    'upper_threshold': 0,
+                    'lower_threshold': 0
+                })
+            return default_stats
+        
+        avg = np.mean(all_scores)
+        min_score = np.min(all_scores)
+        max_score = np.max(all_scores)
+        stdev = np.std(all_scores)
+        count = len(all_scores)
+        
+        stats = {
+            'avg': avg,
+            'min': min_score,
+            'max': max_score,
+            'stdev': stdev,
+            'count': count
         }
+        
+        # Calculate outliers if threshold provided
+        if std_dev_threshold:
+            print(std_dev_threshold)
+            upper_threshold = avg + (std_dev_threshold * stdev)
+            lower_threshold = avg - (std_dev_threshold * stdev)
+            
+            outlier_count = sum(1 for score in all_scores if score > upper_threshold or score < lower_threshold)
+            
+            stats.update({
+                'outlier_count': outlier_count,
+                'upper_threshold': upper_threshold,
+                'lower_threshold': lower_threshold
+            })
+        print(stats)
+        return stats
 
     def get_score_statistics(self, score_type, pgs_ids, user_id=None):
         """Calculate basic statistics for scores (backward compatibility)."""
@@ -350,6 +411,17 @@ class Database:
         
         return total_outliers
 
+    def fetch_pgs_ids(self, specific_pgs_ids=None, score_type=None, user_id=None):
+        """Fetch PGS IDs from both permanent and temporary sources."""
+        permanent_ids = self.scores.fetch_pgs_ids(specific_pgs_ids, score_type)
+        
+        if user_id:
+            temp_ids = self.temporary_scores.fetch_pgs_ids(user_id, specific_pgs_ids, score_type)
+            # Combine and deduplicate
+            all_ids = list(set(permanent_ids + temp_ids))
+            return sorted(all_ids)
+        
+        return permanent_ids
 # Create a default instance
 db = Database()
 

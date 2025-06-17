@@ -28,7 +28,8 @@ def process_pca(request_data):
         pca_result = perform_pca_analysis(
             score_type=params['score_type'],
             specific_pgs_ids=params['pgs_ids'],
-            cohort=params['cohort']
+            cohort=params['cohort'],
+            user_id=params['user_id']
         )
         
         # Generate visualization
@@ -51,10 +52,11 @@ def extract_pca_parameters(request_data):
         'perspective': request_data.get("perspective", "sample"),
         'x_axis': request_data.get("x_axis", "1"),
         'y_axis': request_data.get("y_axis", "2"),
-        'include_variance': request_data.get("include_variance", True)
+        'include_variance': request_data.get("include_variance", True),
+        'user_id': request_data.get("user_id", None)
     }
 
-def generate_pca_hash(score_type, pgs_ids, cohort, perspective, x_axis, y_axis, include_variance):
+def generate_pca_hash(score_type, pgs_ids, cohort, perspective, x_axis, y_axis, include_variance, user_id):
     """Generate a hash for the PCA request parameters for caching."""
     params = {
         "score_type": score_type,
@@ -63,7 +65,8 @@ def generate_pca_hash(score_type, pgs_ids, cohort, perspective, x_axis, y_axis, 
         "perspective": perspective,
         "x_axis": x_axis,
         "y_axis": y_axis,
-        "include_variance": include_variance
+        "include_variance": include_variance,
+        "user_id": user_id
     }
     param_str = json.dumps(params, sort_keys=True)
     hash_obj = hashlib.md5(param_str.encode())
@@ -129,7 +132,7 @@ def save_pca_visualization(fig, params, request_hash):
     
     return f"/temp/{filename}"
 
-def perform_pca_analysis(score_type, specific_pgs_ids=None, cohort=None):
+def perform_pca_analysis(score_type, specific_pgs_ids=None, cohort=None, user_id=None):
     """
     Build a matrix of PGS scores x samples and perform SVD on it.
     """
@@ -137,10 +140,10 @@ def perform_pca_analysis(score_type, specific_pgs_ids=None, cohort=None):
     print(f"Score Type: {score_type}")
     
     # Fetch required data
-    data = fetch_pca_data(score_type, specific_pgs_ids, cohort)
+    data = fetch_pca_data(score_type, specific_pgs_ids, cohort, user_id)
     
     # Get the score matrix
-    matrix = fetch_pca_matrix(data['sample_ids'], data['pgs_ids'], score_type)
+    matrix = fetch_pca_matrix(data['sample_ids'], data['pgs_ids'], score_type, user_id)
     
     # Perform SVD
     svd_result = perform_svd(matrix)
@@ -163,12 +166,13 @@ def perform_pca_analysis(score_type, specific_pgs_ids=None, cohort=None):
         'stats': stats
     }
 
-def fetch_pca_data(score_type, specific_pgs_ids, cohort):
+def fetch_pca_data(score_type, specific_pgs_ids, cohort, user_id):
     """Fetch PGS IDs and sample IDs for PCA analysis."""
     # Get PGS IDs
-    pgs_ids = db.scores.fetch_pgs_ids(
+    pgs_ids = db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
-        score_type=score_type
+        score_type=score_type,
+        user_id=user_id
     )
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
     
@@ -189,17 +193,18 @@ def fetch_pca_data(score_type, specific_pgs_ids, cohort):
         'sample_ids': sample_ids
     }
 
-def fetch_pca_matrix(sample_ids, pgs_ids, score_type):
+def fetch_pca_matrix(sample_ids, pgs_ids, score_type, user_id):
     """Fetch and prepare the score matrix for PCA."""
     start_time = time.time()
     print("Starting data processing...")
     
-    matrix, _ = db.scores.get_score_matrix(
+    matrix, _ = db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
         output_format="numpy",
-        handle_missing=True
+        handle_missing=True,
+        user_id=user_id
     )
     
     total_time = time.time() - start_time

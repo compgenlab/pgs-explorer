@@ -12,6 +12,7 @@ $(document).ready(function() {
     }
 
     // 2. Set variables to store cohorts and data
+    cohorts = []
     let subcohorts = [];
     let baseData = null;
     let tableData = [];
@@ -20,6 +21,17 @@ $(document).ready(function() {
     let currentXScale = null;
     let currentMargin = null;
     let currentHeight = null;
+    const PRESET_COLORS = [
+        "#e41a1c",  // Red
+        "#377eb8",  // Blue
+        "#4daf4a",  // Green
+        "#984ea3",  // Purple
+        "#ff7f00",  // Orange
+        "#FFD700",  // Gold
+        "#a65628",  // Brown
+        "#f781bf",  // Pink
+        "#999999"   // Gray
+    ];
 
     // 3. Populate data on page load
     fetchPgsList()
@@ -202,32 +214,129 @@ $(document).ready(function() {
             url: '/api/permanent_cohorts',
             type: 'GET',
             success: function(data) {
+                console.log("DEBUG: Full cohorts response:", data);
+                console.log("DEBUG: Cohorts array:", data.cohorts);
+                console.log("DEBUG: Cohorts length:", data.cohorts ? data.cohorts.length : 'undefined');
+                
                 if (data.cohorts && data.cohorts.length > 0) {
+                    // Debug each cohort
+                    data.cohorts.forEach(function(cohort, index) {
+                        console.log(`DEBUG: Cohort ${index}:`, cohort);
+                        console.log(`DEBUG: Cohort name: ${cohort.name}, samples: ${cohort.sample_ids ? cohort.sample_ids.length : 'no sample_ids'}`);
+                    });
+                    
                     // Populate cohorts for regular cohort management
                     data.cohorts.forEach(function(cohort, index) {
                         const color = PRESET_COLORS[index % PRESET_COLORS.length];
                         addPermanentCohort(cohort.name, cohort.sample_ids, color);
                     });
                     
-                    // Populate cohort dropdown for PGS comparison mode
-                    const cohortSelect = $('#cohortForConfig');
-                    cohortSelect.empty();
-                    cohortSelect.append('<option value="" selected disabled>Select Cohort</option>');
+                    // NOW ADD DEBUGGING FOR THE DROPDOWN POPULATION:
+                    console.log("DEBUG: Looking for base cohort dropdown...");
                     
-                    data.cohorts.forEach(function(cohort) {
-                        cohortSelect.append(`<option value="${cohort.name}" data-samples="${cohort.sample_ids.length}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`);
+                    // Check if the dropdown exists
+                    const baseCohortSelect = $('#baseCohort');
+                    console.log("DEBUG: Base cohort dropdown found:", baseCohortSelect.length > 0);
+                    console.log("DEBUG: Base cohort dropdown element:", baseCohortSelect);
+                    
+                    if (baseCohortSelect.length === 0) {
+                        console.log("ERROR: #baseCohort dropdown not found in DOM!");
+                        return;
+                    }
+                    
+                    // Clear and populate the dropdown
+                    baseCohortSelect.empty();
+                    baseCohortSelect.append('<option value="" selected disabled>Select Base Cohort</option>');
+                    console.log("DEBUG: Dropdown cleared and default option added");
+                    
+                    data.cohorts.forEach(function(cohort, index) {
+                        console.log(`DEBUG: Adding cohort ${index} to dropdown: ${cohort.name} (${cohort.sample_ids.length} samples)`);
+                        const option = `<option value="${cohort.name}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`;
+                        console.log("DEBUG: Option HTML:", option);
+                        baseCohortSelect.append(option);
                     });
+                    
+                    console.log("DEBUG: Final dropdown HTML:", baseCohortSelect.html());
+                    console.log("DEBUG: Final dropdown children count:", baseCohortSelect.children().length);
                     
                     // Hide "no cohorts" message since we have permanent cohorts
                     $('#noCohorts').hide();
+                } else {
+                    console.log("DEBUG: No cohorts found or cohorts array is empty");
                 }
             },
             error: function(xhr) {
-                console.log('No permanent cohorts available or error loading them:', xhr.status);
+                console.log('DEBUG: Error loading cohorts:', xhr.status, xhr.responseText);
             }
         });
     }
+    
+    // Adds permanent cohort items
+    function addPermanentCohort(name, sampleIds, color) {
+        const cohortId = cohorts.length + 1;
+        
+        // Create cohort entry
+        const cohortItem = createCohortItem(cohortId, name, color, sampleIds, true);
+        $('#cohortsList').append(cohortItem);
+        
+        // Add to cohorts array
+        cohorts.push({
+            id: cohortId,
+            name: name,
+            color: color,
+            sampleIds: sampleIds,
+            active: true,
+            permanent: true
+        });
+    }
 
+    // Stores page-specific cohort information
+    function createCohortItem(id, name, color, sampleIds, isPermanent) {
+        const cohortDiv = document.createElement('div');
+        cohortDiv.className = 'cohort-row';
+        cohortDiv.dataset.cohortId = id;
+        
+        let html = `
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <div>
+                    <span class="badge rounded-pill me-2" style="background-color: ${color};">&nbsp;</span>
+                    <strong>${name}</strong>
+                </div>
+                <div>
+        `;
+        
+        if (!isPermanent) {
+            html += `<i class="fas fa-times delete-cohort" data-cohort-id="${id}"></i>`;
+        }
+        
+        html += `
+                </div>
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+                <small class="text-muted">${sampleIds.length} samples</small>
+                <div class="form-check form-switch">
+                    <input class="form-check-input cohort-toggle" type="checkbox" id="cohortActive${id}" data-cohort-id="${id}" checked>
+                    <label class="form-check-label" for="cohortActive${id}">Active</label>
+                </div>
+            </div>
+        `;
+        
+        cohortDiv.innerHTML = html;
+        
+        // Add event listeners
+        $(cohortDiv).find('.delete-cohort').on('click', function() {
+            const cohortId = parseInt($(this).data('cohort-id'));
+            deleteCohort(cohortId);
+        });
+        
+        $(cohortDiv).find('.cohort-toggle').on('change', function() {
+            const cohortId = parseInt($(this).data('cohort-id'));
+            const isActive = $(this).prop('checked');
+            toggleCohort(cohortId, isActive);
+        });
+        
+        return cohortDiv;
+    }
     ////////// SUBCOHORT FUNCTIONS //////////
     // Function to add a subcohort
     function addSubcohort() {

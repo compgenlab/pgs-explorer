@@ -22,7 +22,9 @@ async def generate_subcohort_plot(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_send = subcohort_request.dict()
+    request_to_send["user_id"] = user_id
+
     # Track this activity
     SessionManager.track_user_activity(
         request,
@@ -39,7 +41,7 @@ async def generate_subcohort_plot(
     
     return await process_image_request(
         request=request,
-        request_data=subcohort_request.dict(),
+        request_data=request_to_send,
         task_type="subcohort_plot",
         task_name=subcohort_request.name,
         processing_function=process_subcohort_plot,

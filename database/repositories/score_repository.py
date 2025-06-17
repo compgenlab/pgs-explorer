@@ -118,7 +118,9 @@ class ScoreRepository(BaseRepository):
         
         # Build query with placeholders for PGS IDs
         pgs_placeholders = ','.join(['?'] * len(pgs_ids))
-        
+        print("here")
+        print(sample_ids)
+        print(type(sample_ids))
         if sample_ids:
             sample_placeholders = ','.join(['?'] * len(sample_ids))
             query = f"""

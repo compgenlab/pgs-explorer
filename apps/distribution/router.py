@@ -22,7 +22,10 @@ async def generate_distribution(
     
     # Get user ID for tracking
     user_id = SessionManager.get_or_create_user_id(request)
-    
+    request_to_pass = distribution_request.dict()
+    request_to_pass["user_id"] = user_id
+    print(f"User id: {user_id}")
+
     # Track this activity
     SessionManager.track_user_activity(
         request,
@@ -38,7 +41,7 @@ async def generate_distribution(
     
     return await process_image_request(
         request=request,  # Pass the FastAPI Request object
-        request_data=distribution_request.dict(),
+        request_data=request_to_pass,
         task_type="distribution", 
         task_name=distribution_request.name,
         processing_function=process_distribution,

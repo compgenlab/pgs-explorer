@@ -31,7 +31,8 @@ def process_subcohort_plot(request_data: Dict[str, Any]) -> str:
             plot_params["pgs_id"], 
             plot_params["score_type"], 
             plot_params["base_cohort"], 
-            plot_params["subcohorts"]
+            plot_params["subcohorts"],
+            plot_params["user_id"]
         )
         
         # Generate the plot
@@ -68,7 +69,8 @@ def extract_required_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
         "pgs_id": request_data.get("pgs_id"),
         "score_type": request_data.get("score_type"),
         "base_cohort": request_data.get("base_cohort"),
-        "subcohorts": request_data.get("subcohorts", [])
+        "subcohorts": request_data.get("subcohorts", []),
+        "user_id": request_data.get("user_id", None)
     }
 
 def extract_optional_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -99,11 +101,12 @@ def get_cohort_data(
     pgs_id: str, 
     score_type: str, 
     base_cohort: str, 
-    subcohorts: List[Dict[str, Any]]
+    subcohorts: List[Dict[str, Any]],
+    user_id: str
 ) -> Tuple[List[float], List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Retrieve score data for base cohort and subcohorts."""
     # Get all scores for this PGS ID
-    score_dict = fetch_pgs_scores(pgs_id, score_type)
+    score_dict = fetch_pgs_scores(pgs_id, score_type, user_id)
     
     # Get base cohort data
     base_scores = fetch_base_cohort_scores(base_cohort, score_dict)
@@ -115,9 +118,9 @@ def get_cohort_data(
     
     return base_scores, subcohort_data, table_data
 
-def fetch_pgs_scores(pgs_id: str, score_type: str) -> Dict[str, float]:
+def fetch_pgs_scores(pgs_id: str, score_type: str, user_id: str) -> Dict[str, float]:
     """Fetch scores for a PGS ID."""
-    score_dict = db.scores.get_scores_for_pgs(pgs_id, score_type)
+    score_dict = db.get_scores_for_pgs(pgs_id, score_type, user_id=user_id)
     
     if not score_dict:
         raise ValueError(f"No data found for PGS '{pgs_id}' and Score Type '{score_type}'")
