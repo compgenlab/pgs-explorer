@@ -178,7 +178,7 @@ async def generate_tsne(
         "generate_tsne",
         {
             "name": tsne_request.name,
-            "pgs_ids_count": len(getattr(tsne_request, 'pgs_ids', [])),
+            "pgs_ids_count": len(getattr(tsne_request, 'pgs_ids', []) or []),
             "cohort": getattr(tsne_request, 'cohort', 'unknown')
         }
     )

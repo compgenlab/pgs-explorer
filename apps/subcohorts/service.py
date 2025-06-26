@@ -239,14 +239,17 @@ def generate_subcohort_plot(
     # Configure layout
     configure_plot_layout(fig, plot_params)
     
-    # Add visualizations
-    add_base_cohort_curve(fig, base_scores, plot_params["base_cohort"])
+    # Add visualizations in the correct order for proper layering
+    # 1. First add subcohort histograms (background layer)
     add_subcohort_histograms(
         fig, base_scores, subcohort_data, 
         plot_params["bin_size"], plot_params["normalize_bins"]
     )
     
-    # Add odds ratio if requested
+    # 2. Then add base cohort curve (foreground layer)
+    add_base_cohort_curve(fig, base_scores, plot_params["base_cohort"])
+    
+    # 3. Add odds ratio if requested (top layer)
     if plot_params["display_or"] and len(subcohort_data) == 2:
         add_odds_ratio_analysis(fig, subcohort_data, plot_params)
     
@@ -268,7 +271,12 @@ def configure_plot_layout(fig: go.Figure, plot_params: Dict[str, Any]) -> None:
         height=600,
         margin=dict(l=60, r=160, t=50, b=50),
         legend=dict(x=1.05, y=0.5),
-        template="plotly_white"
+        template="plotly_white",
+        # Ensure proper layering
+        plot_bgcolor='white',
+        # Add grid for better readability
+        xaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
+        yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray')
     )
 
 def add_base_cohort_curve(fig: go.Figure, base_scores: List[float], base_cohort: str) -> None:
@@ -276,14 +284,16 @@ def add_base_cohort_curve(fig: go.Figure, base_scores: List[float], base_cohort:
     # Calculate KDE
     kde_data = calculate_kde(base_scores)
     
-    # Add trace
+    # Add trace with higher z-order to ensure it's on top
     fig.add_trace(
         go.Scatter(
             x=kde_data["x"],
             y=kde_data["y"],
             mode="lines",
-            line=dict(color="#1f77b4", width=2),
-            name=f"{base_cohort} ({len(base_scores)} samples, density)"
+            line=dict(color="#1f77b4", width=3),  # Slightly thicker line for better visibility
+            name=f"{base_cohort} ({len(base_scores)} samples, density)",
+            # Ensure this trace appears on top
+            hovertemplate="<b>%{fullData.name}</b><br>Score: %{x:.4f}<br>Density: %{y:.4f}<extra></extra>"
         )
     )
 
@@ -342,12 +352,14 @@ def add_single_histogram(
         go.Bar(
             x=bin_centers,
             y=hist,
-            opacity=0.6,
+            opacity=0.5,  # Reduced opacity for better transparency
             width=bins[1]-bins[0],
             name=f"{subcohort['name']} ({len(subcohort['values'])} samples)",
             marker_color=subcohort["color"],
             marker_line_color="black",
-            marker_line_width=0.5
+            marker_line_width=0.5,
+            # Better hover template
+            hovertemplate="<b>%{fullData.name}</b><br>Score: %{x:.4f}<br>Count: %{y}<extra></extra>"
         )
     )
 
@@ -423,39 +435,31 @@ def add_or_line(fig: go.Figure, x_values: List[float], or_values: List[float],
         go.Scatter(
             x=x_values,
             y=or_values,
-            mode="lines",
-            line=dict(color="red", width=2),
+            mode="lines+markers",  # Add markers for better visibility
+            line=dict(color="red", width=3),  # Thicker line
+            marker=dict(color="red", size=4),
             name=f"OR: {name1} vs {name2}",
-            yaxis="y2"
+            yaxis="y2",
+            # Better hover template
+            hovertemplate="<b>OR: %{fullData.name}</b><br>Score: %{x:.4f}<br>OR: %{y:.3f}<extra></extra>"
         )
     )
 
 def add_confidence_interval(fig: go.Figure, x_values: List[float], 
                           ci_lower: List[float], ci_upper: List[float]) -> None:
     """Add confidence interval band to plot."""
-    # Lower bound
+    # Add confidence interval as a filled area
     fig.add_trace(
         go.Scatter(
-            x=x_values,
-            y=ci_upper,
-            mode="lines",
-            line=dict(width=0),
-            showlegend=False,
-            yaxis="y2"
-        )
-    )
-    
-    # Upper bound with fill
-    fig.add_trace(
-        go.Scatter(
-            x=x_values,
-            y=ci_lower,
-            mode="lines",
-            line=dict(width=0),
-            fillcolor="rgba(255, 0, 0, 0.2)",
-            fill="tonexty",
+            x=x_values + x_values[::-1],  # x, then x reversed
+            y=ci_upper + ci_lower[::-1],  # upper, then lower reversed
+            fill='toself',
+            fillcolor="rgba(255, 0, 0, 0.15)",  # More transparent
+            line=dict(color="rgba(255,255,255,0)"),  # Invisible line
             name="95% CI",
-            yaxis="y2"
+            yaxis="y2",
+            showlegend=True,
+            hoverinfo='skip'  # Skip hover for CI band
         )
     )
 

@@ -6,6 +6,7 @@ from datetime import datetime
 import plotly.graph_objects as go
 from sklearn.manifold import TSNE
 from database import db
+import apps.core.utils as utils
 
 def process_tsne(request_data):
     """Main entry point for t-SNE visualization generation."""
@@ -15,15 +16,11 @@ def process_tsne(request_data):
         
         # Extract and validate parameters
         params = extract_tsne_parameters(request_data)
-        
-        # Generate hash for caching
-        request_hash = generate_tsne_hash(**params)
-        print(f"Request hash: {request_hash}")
 
         # Check for cached result
-        cached_file = check_tsne_cache(request_hash)
-        if cached_file:
-            return cached_file
+        existing, html_file, _ = utils.process_cache_request(params, "tsne")
+        if existing:
+            return html_file
         
         # Perform t-SNE analysis
         tsne_result = perform_tsne_analysis(**params)
@@ -32,11 +29,13 @@ def process_tsne(request_data):
         fig = generate_tsne_visualization(tsne_result, params)
         
         # Save and return file path
-        filepath = save_tsne_visualization(fig, params, request_hash)
+        filepath = save_tsne_visualization(fig, params, html_file)
         return filepath
         
     except Exception as e:
+        import traceback
         print(f"Error generating t-SNE visualization: {str(e)}")
+        traceback.print_exc()  # Prints full stack trace
         raise e
 
 def extract_tsne_parameters(request_data):
@@ -67,15 +66,15 @@ def generate_tsne_hash(score_type, specific_pgs_ids, cohort, perspective, perple
     
     return hashlib.md5(hash_input.encode()).hexdigest()
 
-def check_tsne_cache(request_hash):
-    """Check if t-SNE visualization is already cached."""
-    for filename in os.listdir("temp"):
-        if filename.endswith(".html") and request_hash in filename and "tsne" in filename:
-            cached_filepath = os.path.join("temp", filename)
-            os.utime(cached_filepath)
-            print(f"Using cached t-SNE visualization: {filename}")
-            return f"/temp/{filename}"
-    return None
+# def check_tsne_cache(request_hash):
+#     """Check if t-SNE visualization is already cached."""
+#     for filename in os.listdir("temp"):
+#         if filename.endswith(".html") and request_hash in filename and "tsne" in filename:
+#             cached_filepath = os.path.join("temp", filename)
+#             os.utime(cached_filepath)
+#             print(f"Using cached t-SNE visualization: {filename}")
+#             return f"/temp/{filename}"
+#     return None
 
 def generate_tsne_visualization(tsne_result, params):
     """Route to appropriate visualization function based on perspective."""
@@ -90,18 +89,17 @@ def generate_tsne_visualization(tsne_result, params):
             tsne_result['sample_ids']
         )
 
-def save_tsne_visualization(fig, params, request_hash):
+def save_tsne_visualization(fig, params, filename):
     """Save t-SNE visualization to HTML file."""
     # Generate filename
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    score_type_safe = params['score_type'].replace("/", "_").replace("\\", "_")
-    cohort_indicator = f"{params['cohort']}_" if params['cohort'] and params['cohort'] != "ALL" else ""
-    filename = f"tsne_{cohort_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
-    filepath = os.path.join("temp", filename)
+    # timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    # score_type_safe = params['score_type'].replace("/", "_").replace("\\", "_")
+    # cohort_indicator = f"{params['cohort']}_" if params['cohort'] and params['cohort'] != "ALL" else ""
+    # filename = f"tsne_{cohort_indicator}{score_type_safe}_{request_hash}_{timestamp}.html"
     
     # Save figure
     fig.write_html(
-        filepath,
+        filename,
         include_plotlyjs='cdn',
         include_mathjax=False,
         config={
@@ -110,7 +108,7 @@ def save_tsne_visualization(fig, params, request_hash):
         }
     )
     
-    return f"/temp/{filename}"
+    return f"{filename}"
 
 def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, perplexity, n_iter, learning_rate, user_id):
     """
@@ -160,7 +158,7 @@ def fetch_tsne_data(score_type, specific_pgs_ids, cohort, user_id):
         score_type=score_type,
         user_id=user_id
     )
-    print(f"Selected {len(pgs_ids)} PGS_IDs.")
+    # print(f"Selected {len(pgs_ids)} PGS_IDs.")
     
     # Get sample IDs
     if cohort and cohort != "ALL":
@@ -271,8 +269,9 @@ def generate_tsne_score(tsne_result, pgs_ids):
     pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids)
     
     # Create hover text
-    hover_text = create_score_hover_text_tsne(pgs_ids, pgs_metadata)
-    
+    # hover_text = create_score_hover_text_tsne(pgs_ids, pgs_metadata)
+    hover_text = utils.generate_score_hover_texts(pgs_ids, pgs_metadata)
+
     # Create figure
     fig = go.Figure()
     
@@ -319,25 +318,6 @@ def add_score_scatter_tsne(fig, tsne_result, hover_text):
             name="PGS Scores"
         )
     )
-
-def create_score_hover_text_tsne(pgs_ids, pgs_metadata):
-    """Create hover text for PGS score points in t-SNE."""
-    hover_text = []
-    
-    for pgs_id in pgs_ids:
-        meta = pgs_metadata.get(pgs_id, {})
-        if not meta:
-            print(f"Missing metadata for {pgs_id}")
-        
-        hover_info = (
-            f"PGS ID: {pgs_id}<br>"
-            f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
-            f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
-            f"Publication: {meta.get('Publication_ID', 'N/A')}"
-        )
-        hover_text.append(hover_info)
-    
-    return hover_text
 
 def configure_sample_tsne_layout(fig):
     """Configure layout for sample t-SNE plot."""

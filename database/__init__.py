@@ -48,13 +48,6 @@ class Database:
         # Get ancestry cohorts
         ancestry_cohorts = self.ancestry.get_all_cohorts()
         all_cohorts.extend(ancestry_cohorts)
-        # for cohort in ancestry_cohorts:
-        #     all_cohorts.append({
-        #         "cohort_id": cohort["name"],
-        #         "cohort_name": cohort["name"],
-        #         "type": "ancestry",
-        #         "sample_count": len(cohort["sample_ids"])
-        #     })
         
         if user_id:
             print(f"Getting cohorts for {user_id}")
@@ -119,14 +112,18 @@ class Database:
 
     def get_score_types_for_pgs(self, pgs_id: str, user_id: str = None):
         """Get distinct score types for a given PGS_ID from both permanent and temporary sources."""
-        # Try main database first
-        score_types = self.scores.get_score_types_for_pgs(pgs_id)
+        # Check permanent scores first
+        permanent_valid = self.scores.get_valid_pgs_ids([pgs_id])
+        if permanent_valid:
+            return self.scores.get_score_types_for_pgs(pgs_id)
         
-        # If not found, try temporary scores
-        if not score_types and user_id:
-            score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
+        # If not found in permanent and user_id provided, try temporary
+        if user_id:
+            temporary_valid = self.temporary_scores.get_valid_pgs_ids([pgs_id], user_id)
+            if temporary_valid:
+                return self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
         
-        return score_types
+        return []
 
     def get_scores_for_pgs(self, pgs_ids, score_type, sample_ids=None, user_id=None):
         """Get scores for one or more PGS IDs from both permanent and temporary sources."""
@@ -135,27 +132,40 @@ class Database:
         
         all_scores = {}
         
-        for pgs_id in pgs_ids:
-            # Try permanent scores first
-            pgs_scores = self.scores.get_scores_for_pgs([pgs_id], score_type, sample_ids)
-            # If no permanent scores and user_id provided, try temporary
-            if not pgs_scores and user_id:
-                print(f"Detected temporary score")
-                pgs_scores = self.temporary_scores.get_scores_for_pgs([pgs_id], score_type, sample_ids, user_id)
+        # Split into valid permanent and temporary IDs
+        permanent_pgs = self.scores.get_valid_pgs_ids(pgs_ids)
+        temporary_pgs = []
+        
+        if user_id:
+            temporary_pgs = self.temporary_scores.get_valid_pgs_ids(pgs_ids, user_id)
+        
+        # Get scores from permanent repository
+        if permanent_pgs:
+            pgs_scores = self.scores.get_scores_for_pgs(permanent_pgs, score_type, sample_ids)
             all_scores.update(pgs_scores)
+        
+        # Get scores from temporary repository
+        if temporary_pgs and user_id:
+            print(f"Detected temporary scores for: {temporary_pgs}")
+            temp_scores = self.temporary_scores.get_scores_for_pgs(temporary_pgs, score_type, sample_ids, user_id)
+            all_scores.update(temp_scores)
         
         return all_scores
 
     def get_all_scores_for_pgs(self, pgs_id: str, user_id: str = None):
         """Get all scores for a PGS ID across all score types and samples from both sources."""
-        # Try permanent scores first
-        scores = self.scores.get_all_scores_for_pgs(pgs_id)
+        # Check permanent scores first
+        permanent_valid = self.scores.get_valid_pgs_ids([pgs_id])
+        if permanent_valid:
+            return self.scores.get_all_scores_for_pgs(pgs_id)
         
-        # If no permanent scores and user_id provided, try temporary
-        if not scores and user_id:
-            scores = self.temporary_scores.get_all_scores_for_pgs(pgs_id, user_id)
+        # If not found in permanent and user_id provided, try temporary
+        if user_id:
+            temporary_valid = self.temporary_scores.get_valid_pgs_ids([pgs_id], user_id)
+            if temporary_valid:
+                return self.temporary_scores.get_all_scores_for_pgs(pgs_id, user_id)
         
-        return scores
+        return []
 
     def get_score_matrix(self, sample_ids, pgs_ids, score_type, user_id=None,
                         output_format="dict", handle_missing=False,
@@ -164,21 +174,16 @@ class Database:
         if not isinstance(pgs_ids, list):
             pgs_ids = [pgs_ids]
         
-        permanent_pgs = []
+        # Split into valid permanent and temporary IDs
+        permanent_pgs = self.scores.get_valid_pgs_ids(pgs_ids)
         temporary_pgs = []
         
-        # Separate permanent vs temporary PGS IDs
-        for pgs_id in pgs_ids:
-            perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
-            if perm_score_types:
-                permanent_pgs.append(pgs_id)
-            if user_id:
-                temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
-                if temp_score_types:
-                    temporary_pgs.append(pgs_id)
+        if user_id:
+            temporary_pgs = self.temporary_scores.get_valid_pgs_ids(pgs_ids, user_id)
         
         # Get data from both sources
         combined_dict = {}
+        sample_pgs = []
         
         if permanent_pgs:
             perm_dict, _ = self.scores.get_score_matrix(
@@ -249,17 +254,17 @@ class Database:
 
     def get_score_by_cohorts(self, pgs_id, score_type, cohorts, user_id=None):
         """Get scores for a PGS ID, grouped by cohorts from both sources."""
-        # Try permanent scores first
-        perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
-        if perm_score_types:
+        # Check permanent scores first
+        permanent_valid = self.scores.get_valid_pgs_ids([pgs_id])
+        if permanent_valid:
             print(f"Score {pgs_id} is a permanent score.")
             return self.scores.get_score_by_cohorts(pgs_id, score_type, cohorts)
         
         # If not permanent and user_id provided, try temporary
         if user_id:
-            print(f"Score {pgs_id} is a temporary score.")
-            temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
-            if temp_score_types:
+            temporary_valid = self.temporary_scores.get_valid_pgs_ids([pgs_id], user_id)
+            if temporary_valid:
+                print(f"Score {pgs_id} is a temporary score.")
                 return self.temporary_scores.get_score_by_cohorts(pgs_id, score_type, cohorts, user_id)
         
         return []
@@ -271,20 +276,14 @@ class Database:
         
         all_sample_ids = set()
         
-        permanent_pgs = []
+        # Split into valid permanent and temporary IDs
+        permanent_pgs = self.scores.get_valid_pgs_ids(pgs_ids)
         temporary_pgs = []
         
-        # Separate permanent vs temporary PGS IDs
-        for pgs_id in pgs_ids:
-            perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
-            if perm_score_types:
-                permanent_pgs.append(pgs_id)
-            elif user_id:
-                temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
-                if temp_score_types:
-                    temporary_pgs.append(pgs_id)
+        if user_id:
+            temporary_pgs = self.temporary_scores.get_valid_pgs_ids(pgs_ids, user_id)
         
-        # Get sample IDs from both sources
+        # Get sample IDs from both sources (only if we have valid IDs)
         if permanent_pgs:
             perm_samples = self.scores.get_sample_ids_with_scores(score_type, permanent_pgs)
             all_sample_ids.update(perm_samples)
@@ -300,18 +299,12 @@ class Database:
         if not isinstance(pgs_ids, list):
             pgs_ids = [pgs_ids]
         
-        permanent_pgs = []
+        # Split into valid permanent and temporary IDs
+        permanent_pgs = self.scores.get_valid_pgs_ids(pgs_ids)
         temporary_pgs = []
         
-        # Separate permanent vs temporary PGS IDs
-        for pgs_id in pgs_ids:
-            perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
-            if perm_score_types:
-                permanent_pgs.append(pgs_id)
-            if user_id:
-                temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
-                if temp_score_types:
-                    temporary_pgs.append(pgs_id)
+        if user_id:
+            temporary_pgs = self.temporary_scores.get_valid_pgs_ids(pgs_ids, user_id)
         
         print(f"DEBUG: permanent scores: {permanent_pgs}\n temporary: {temporary_pgs}")
 
@@ -388,18 +381,12 @@ class Database:
         if not isinstance(pgs_ids, list):
             pgs_ids = [pgs_ids]
         
-        permanent_pgs = []
+        # Split into valid permanent and temporary IDs
+        permanent_pgs = self.scores.get_valid_pgs_ids(pgs_ids)
         temporary_pgs = []
         
-        # Separate permanent vs temporary PGS IDs
-        for pgs_id in pgs_ids:
-            perm_score_types = self.scores.get_score_types_for_pgs(pgs_id)
-            if perm_score_types:
-                permanent_pgs.append(pgs_id)
-            elif user_id:
-                temp_score_types = self.temporary_scores.get_score_types_for_pgs(pgs_id, user_id)
-                if temp_score_types:
-                    temporary_pgs.append(pgs_id)
+        if user_id:
+            temporary_pgs = self.temporary_scores.get_valid_pgs_ids(pgs_ids, user_id)
         
         total_outliers = 0
         
@@ -422,6 +409,7 @@ class Database:
             return sorted(all_ids)
         
         return permanent_ids
+
 # Create a default instance
 db = Database()
 

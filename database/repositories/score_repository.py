@@ -48,6 +48,35 @@ class ScoreRepository(BaseRepository):
         rows = self.execute_query(query, params)
         return [row[0] for row in rows]
 
+    def get_valid_pgs_ids(self, pgs_ids: List[str]) -> List[str]:
+        """
+        Get valid PGS IDs that exist in the permanent scores database.
+        Uses lookup table or main scores table to validate existence.
+        
+        Parameters:
+        -----------
+        pgs_ids : List[str]
+            List of PGS IDs to validate
+            
+        Returns:
+        --------
+        List[str]
+            List of PGS IDs that exist in permanent scores
+        """
+        if not pgs_ids:
+            return []
+        
+        placeholders = ','.join(['?'] * len(pgs_ids))
+        
+        query = f"""
+            SELECT DISTINCT PGS_ID 
+            FROM pgs_id_lookup 
+            WHERE PGS_ID IN ({placeholders})
+            ORDER BY PGS_ID
+        """
+        
+        rows = self.execute_query(query, pgs_ids)
+        return [row[0] for row in rows]
     # TODO get rid of 
     def fetch_pgs_ids(self, specific_pgs_ids=None, score_type=None):
         """

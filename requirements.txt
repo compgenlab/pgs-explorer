@@ -11,3 +11,5 @@ umap-learn>=0.5.3
 python-dateutil>=2.8.2
 aiofiles>=23.1.0
 pyyaml
+bs4
+itsdangerous
