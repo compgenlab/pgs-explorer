@@ -10,6 +10,28 @@ from .repositories.temporary_score_repository import TemporaryScoreRepository
 from apps.core.config import DB_PATH, TASK_DB_PATH
 import numpy as np
 
+class DatabaseManager:
+    def __init__(self):
+        self._current_db = None
+        self._db_cache = {}  
+    
+    def set_database(self, db_path):
+        """Switch to a different database"""
+        if db_path not in self._db_cache:
+            self._db_cache[db_path] = YourDatabaseClass(db_path)
+        self._current_db = self._db_cache[db_path]
+    
+    def get_all_scores(self):
+        if not self._current_db:
+            raise RuntimeError("No database selected")
+        return self._current_db.get_all_scores()
+    
+    # Proxy all your existing methods
+    def __getattr__(self, name):
+        if not self._current_db:
+            raise RuntimeError("No database selected")
+        return getattr(self._current_db, name)
+
 class Database:
     """Master database object that provides access to all repositories"""
     
@@ -412,6 +434,7 @@ class Database:
 
 # Create a default instance
 db = Database()
+db_manager = DatabaseManager()
 
 # FastAPI dependency functions
 async def get_db():

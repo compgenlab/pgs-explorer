@@ -3,6 +3,6 @@ database:
   tasks_db_path: "/data/dev/db/tasks.db"
 
 session:
-  secret_key: "your-default-secret-key"
+  secret_key: "default-secret-key"
   cookie_name: "pgs_explorer_session"
   max_age: 604800  # 7 days in seconds
