@@ -1,9 +1,10 @@
-from fastapi import APIRouter, HTTPException, Form, File, UploadFile, Request
+from fastapi import APIRouter, HTTPException, Form, File, UploadFile, Request, Depends
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 import os
 import uuid
 from .connection import create_database_from_upload, discover_existing_databases
+from database import get_database_manager 
 
 router = APIRouter(prefix="/api")
 
@@ -11,22 +12,29 @@ router = APIRouter(prefix="/api")
 async def list_databases():
     """Get all available databases"""
     try:
-        databases = discover_existing_databases("/data/dev/db/")
+        databases = discover_existing_databases()
         return databases
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/database/current")
-async def get_current_database(request: Request):
+async def get_current_database(db_manager=Depends(get_database_manager)):
     """Get currently selected database"""
-    current_db = request.session.get('current_database')
-    if current_db:
-        return {"database": current_db}
-    else:
+    try:
+        current_info = db_manager.get_current_dataset_info()
+        if current_info:
+            return {"database": current_info}
+        else:
+            return {"database": None}
+    except Exception as e:
         return {"database": None}
 
 @router.post("/database/select")
-async def select_database(request: Request, database_path: str = Form(...)):
+async def select_database(
+    request: Request, 
+    database_path: str = Form(...),
+    db_manager=Depends(get_database_manager)
+):
     """Select a database for the current session"""
     try:
         # Validate the database exists
@@ -36,11 +44,12 @@ async def select_database(request: Request, database_path: str = Form(...)):
         if not selected_db:
             raise HTTPException(status_code=404, detail="Database not found")
         
-        # Store in session
-        request.session['current_database'] = selected_db
+        # Update the DatabaseManager
+        db_manager.set_dataset(database_path)
         
-        # TODO: Update your DatabaseManager here when you implement it
-        # db_manager.set_dataset(database_path)
+        # Store in session for persistence across requests
+        request.session['current_database_path'] = database_path
+        request.session['current_database'] = selected_db
         
         return {"success": True, "database": selected_db}
     except Exception as e:
@@ -50,7 +59,8 @@ async def select_database(request: Request, database_path: str = Form(...)):
 async def create_database(
     name: str = Form(...),
     description: str = Form(""),
-    score_files: List[UploadFile] = File(...)
+    score_files: List[UploadFile] = File(...),
+    db_manager=Depends(get_database_manager)
 ):
     """Create a new database from uploaded files"""
     task_id = str(uuid.uuid4())
@@ -69,6 +79,9 @@ async def create_database(
         result = create_database_from_upload(name, temp_files)
         
         if result['success']:
+            # Clear the database cache so new database is recognized
+            db_manager.clear_cache()
+            
             return {
                 "task_id": task_id,
                 "database_name": result['name'],
@@ -89,8 +102,6 @@ async def create_database(
 @router.get("/databases/create/status/{task_id}")
 async def get_database_creation_status(task_id: str):
     """Get status of database creation"""
-    # Since we're doing synchronous creation for now, just return completed
-    # Later you can implement actual async task tracking
     return {
         "status": "completed",
         "progress": 1.0,
@@ -98,3 +109,20 @@ async def get_database_creation_status(task_id: str):
         "database_name": "New Database",
         "database_path": "db/new_database"
     }
+
+# Helper endpoint to restore database selection from session
+@router.post("/database/restore-session")
+async def restore_database_from_session(
+    request: Request,
+    db_manager=Depends(get_database_manager)
+):
+    """Restore database selection from session"""
+    try:
+        stored_path = request.session.get('current_database_path')
+        if stored_path and os.path.exists(stored_path):
+            db_manager.set_dataset(stored_path)
+            return {"success": True, "restored": stored_path}
+        else:
+            return {"success": False, "message": "No valid session database found"}
+    except Exception as e:
+        return {"success": False, "message": str(e)}

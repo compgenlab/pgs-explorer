@@ -3,7 +3,7 @@ from fastapi.responses import HTMLResponse
 from typing import Optional
 from apps.core.config import templates
 from apps.session.service import SessionManager
-from database import db
+from database import db_manager
 
 router = APIRouter(tags=["tasks"])
 
@@ -17,7 +17,7 @@ async def get_task_status(request: Request, task_id: str):
     # Get the user's session ID
     user_id = SessionManager.get_or_create_user_id(request)
     
-    task = db.tasks.get_task(task_id)
+    task = db_manager.active_db.tasks.get_task(task_id)
     
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
@@ -50,10 +50,10 @@ async def list_tasks(
     
     if task_type:
         # Get tasks by type AND user with pagination
-        tasks = db.tasks.get_user_tasks_by_type_paginated(user_id, task_type, limit, offset)
+        tasks = db_manager.active_db.tasks.get_user_tasks_by_type_paginated(user_id, task_type, limit, offset)
     else:
         # Get all tasks for this user with pagination
-        tasks = db.tasks.get_user_tasks_paginated(user_id, limit, offset)
+        tasks = db_manager.active_db.tasks.get_user_tasks_paginated(user_id, limit, offset)
     
     # Format response
     return [

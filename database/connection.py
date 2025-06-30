@@ -17,8 +17,6 @@ class DatabaseConnection:
             if is_task_db:
                 self._init_task_db()
             else:
-                # For main PGS database, don't auto-initialize with hardcoded path
-                # This will be called explicitly when creating from uploads
                 self._create_empty_tables()
     
     def _init_task_db(self):
@@ -395,7 +393,7 @@ def create_database_from_upload(dataset_name: str, uploaded_file_paths: List[str
             'error': str(e)
         }
 
-def discover_existing_databases(base_dir: str = "db") -> List[dict]:
+def discover_existing_databases(base_dir: str = "/data/dev/db") -> List[dict]:
     """
     Discover existing database directories
     
@@ -412,7 +410,7 @@ def discover_existing_databases(base_dir: str = "db") -> List[dict]:
         if os.path.isdir(dataset_path):
             pgs_db = os.path.join(dataset_path, 'pgs_data.db')
             tasks_db = os.path.join(dataset_path, 'tasks.db')
-            
+            print("Found database...")
             if os.path.exists(pgs_db):
                 # Get some basic info about the database
                 try:
