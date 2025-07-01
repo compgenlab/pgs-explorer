@@ -412,118 +412,305 @@ class Database:
         return permanent_ids
 
 class DatabaseManager:
-    """Enhanced DatabaseManager with .active_db property for cleaner access"""
+    """Simplified DatabaseManager that reinitializes repositories when switching databases"""
     
     def __init__(self):
-        self._current_dataset_path = None
-        self._db_cache = {}  # Cache Database instances by dataset path
-        self._default_db = None  # Fallback to original behavior
-    
-    @property
-    def active_db(self) -> Database:
-        """Get the currently active Database instance"""
-        if self._current_dataset_path and self._current_dataset_path in self._db_cache:
-            return self._db_cache[self._current_dataset_path]
-        elif self._default_db:
-            return self._default_db
-        else:
-            raise RuntimeError("No database selected. Please select a dataset first.")
-    
-    @property
-    def has_active_database(self) -> bool:
-        """Check if there's an active database"""
-        try:
-            _ = self.active_db
-            return True
-        except RuntimeError:
-            return False
-    
-    def set_dataset(self, dataset_path: str):
-        """Switch to a different dataset"""
-        if not os.path.exists(dataset_path):
-            raise RuntimeError(f"Dataset directory '{dataset_path}' does not exist")
+        self.all_dbs = {}  # Dictionary of {name: path} for all discovered databases
+        self.active_db_path = None
+        self.active_db_name = None
         
+        # Initialize repositories (will be updated when database changes)
+        self.scores = None
+        self.ancestry = None
+        self.metadata = None
+        self.tasks = None
+        self.sessions = None
+        self.cohorts = None
+        self.temporary_scores = None
+        
+        # Database connections
+        self.connection = None
+        self.tasks_connection = None
+        
+        # Set up default database initially
+        self._initialize_default()
+    
+    def _initialize_default(self):
+        """Initialize with default database paths"""
+        try:
+            self.set_database_by_path(DB_PATH, TASK_DB_PATH)
+            self.active_db_name = "Default Database"
+        except Exception as e:
+            print(f"Could not initialize default database: {e}")
+    
+    def discover_databases(self, base_dir="db"):
+        """Discover all available databases and populate all_dbs"""
+        self.all_dbs = {}
+        
+        print(f"\n🔍 Searching for databases in: {os.path.abspath(base_dir)}")
+        
+        if not os.path.exists(base_dir):
+            print(f"❌ Database directory {base_dir} does not exist")
+            return
+        
+        items = os.listdir(base_dir)
+        print(f"📁 Found {len(items)} items in directory: {items}")
+        
+        for item in items:
+            dataset_path = os.path.join(base_dir, item)
+            print(f"\n  Checking: {item}")
+            
+            if not os.path.isdir(dataset_path):
+                print(f"    ❌ Not a directory, skipping")
+                continue
+            
+            # Look for required database files
+            pgs_db = os.path.join(dataset_path, 'pgs_data.db')
+            tasks_db = os.path.join(dataset_path, 'tasks.db')
+            
+            print(f"    Looking for: pgs_data.db")
+            print(f"      Path: {pgs_db}")
+            print(f"      Exists: {os.path.exists(pgs_db)}")
+            
+            print(f"    Looking for: tasks.db")
+            print(f"      Path: {tasks_db}")
+            print(f"      Exists: {os.path.exists(tasks_db)}")
+            
+            if os.path.exists(pgs_db):
+                if os.path.exists(tasks_db):
+                    print(f"    ✅ Valid database found (both files present)")
+                else:
+                    print(f"    ⚠️  PGS database found but tasks.db missing - will create tasks.db")
+                
+                name = item.replace('_', ' ').title()
+                self.all_dbs[name] = dataset_path
+                print(f"    ✅ Added database: '{name}' -> {dataset_path}")
+            else:
+                print(f"    ❌ No pgs_data.db found, skipping")
+        
+        print(f"\n📊 Discovery complete! Found {len(self.all_dbs)} valid databases:")
+        for name, path in self.all_dbs.items():
+            print(f"  - {name}: {path}")
+        
+        return self.all_dbs
+    
+    def set_database_by_path(self, pgs_db_path, tasks_db_path):
+        """Set active database by providing direct paths"""
+        try:
+            # Create new connections
+            self.connection = DatabaseConnection(pgs_db_path)
+            self.tasks_connection = DatabaseConnection(tasks_db_path, is_task_db=True)
+            
+            # Reinitialize all repositories with new connections
+            self.scores = ScoreRepository(self.connection)
+            self.ancestry = AncestryRepository(self.connection)
+            self.metadata = MetadataRepository(self.connection)
+            self.tasks = TaskRepository(self.tasks_connection)
+            self.sessions = SessionRepository(self.tasks_connection)
+            self.cohorts = CohortRepository(self.tasks_connection)
+            self.temporary_scores = TemporaryScoreRepository(self.tasks_connection)
+            
+            print(f"Successfully switched to database: {pgs_db_path}")
+            
+        except Exception as e:
+            print(f"Error setting database: {e}")
+            raise
+    
+    def set_active_database(self, db_name):
+        """Set active database by name from discovered databases"""
+        if db_name not in self.all_dbs:
+            raise ValueError(f"Database '{db_name}' not found. Available: {list(self.all_dbs.keys())}")
+        
+        dataset_path = self.all_dbs[db_name]
         pgs_db_path = os.path.join(dataset_path, 'pgs_data.db')
         tasks_db_path = os.path.join(dataset_path, 'tasks.db')
         
         if not os.path.exists(pgs_db_path):
-            raise RuntimeError(f"PGS database not found at '{pgs_db_path}'")
+            raise FileNotFoundError(f"PGS database not found at {pgs_db_path}")
         
-        # Cache the Database instance
-        if dataset_path not in self._db_cache:
-            self._db_cache[dataset_path] = Database(pgs_db_path, tasks_db_path)
+        self.set_database_by_path(pgs_db_path, tasks_db_path)
+        self.active_db_path = dataset_path
+        self.active_db_name = db_name
         
-        self._current_dataset_path = dataset_path
-        print(f"Switched to dataset: {dataset_path}")
+        print(f"Active database set to: {db_name}")
+    
+    def set_dataset(self, dataset_path):
+        """Set active database by dataset directory path (for compatibility)"""
+        pgs_db_path = os.path.join(dataset_path, 'pgs_data.db')
+        tasks_db_path = os.path.join(dataset_path, 'tasks.db')
+        
+        self.set_database_by_path(pgs_db_path, tasks_db_path)
+        self.active_db_path = dataset_path
+        self.active_db_name = os.path.basename(dataset_path).replace('_', ' ').title()
+    
+    @property
+    def has_active_database(self):
+        """Check if repositories are initialized"""
+        return (self.scores is not None and 
+                self.ancestry is not None and 
+                self.tasks is not None)
     
     def get_current_dataset_info(self):
-        """Get info about the currently selected dataset"""
-        if not self._current_dataset_path:
+        """Get info about currently active database"""
+        if not self.has_active_database:
             return None
         
         try:
-            db = self.active_db
-            pgs_count = len(db.get_all_pgs_ids())
+            # Get basic stats from the active database
+            pgs_count = len(self.get_all_pgs_ids())
             return {
-                'path': self._current_dataset_path,
-                'name': os.path.basename(self._current_dataset_path).replace('_', ' ').title(),
+                'path': self.active_db_path or "default",
+                'name': self.active_db_name or "Default Database", 
                 'pgs_count': pgs_count
             }
         except:
             return {
-                'path': self._current_dataset_path,
-                'name': os.path.basename(self._current_dataset_path).replace('_', ' ').title(),
+                'path': self.active_db_path or "default",
+                'name': self.active_db_name or "Default Database",
                 'pgs_count': 0
             }
     
-    def set_default_database(self, db_instance: Database):
-        """Set a fallback database (for backward compatibility)"""
-        self._default_db = db_instance
+    def list_available_databases(self):
+        """Get list of available database names"""
+        return list(self.all_dbs.keys())
     
-    def clear_cache(self):
-        """Clear the database cache"""
-        self._db_cache.clear()
+    def refresh_database_list(self, base_dir="db"):
+        """Refresh the list of available databases"""
+        self.discover_databases(base_dir)
     
-    def get_available_datasets(self):
-        """Get list of cached datasets"""
-        return list(self._db_cache.keys())
-    
-    def remove_dataset(self, dataset_path: str):
-        """Remove a dataset from cache"""
-        if dataset_path in self._db_cache:
-            del self._db_cache[dataset_path]
+    # Proxy all Database methods to the repositories
+    def get_all_cohorts(self, user_id: str = None):
+        """Get all cohorts available (ancestry + custom), formatted consistently."""
+        if not self.has_active_database:
+            raise RuntimeError("No database selected")
         
-        if self._current_dataset_path == dataset_path:
-            self._current_dataset_path = None
+        all_cohorts = []
+        
+        # Get ancestry cohorts
+        ancestry_cohorts = self.ancestry.get_all_cohorts()
+        all_cohorts.extend(ancestry_cohorts)
+        
+        if user_id:
+            print(f"Getting cohorts for {user_id}")
+            custom_cohorts = self.cohorts.get_user_cohorts(user_id)
+            
+            # Format to match ancestry cohort structure
+            formatted_custom = [
+                {
+                    "name": cohort["cohort_name"],
+                    "sample_ids": cohort["sample_ids"]
+                }
+                for cohort in custom_cohorts
+            ]
+            
+            all_cohorts.extend(formatted_custom)
+        
+        return all_cohorts
+    
+    def get_all_pgs_with_traits(self, user_id: str = None):
+        """Get all PGS IDs with traits (permanent + temporary), formatted consistently."""
+        if not self.has_active_database:
+            raise RuntimeError("No database selected")
+        
+        all_pgs = []
+        
+        # Get permanent PGS from main database
+        permanent_pgs = self.scores.get_all_pgs_with_traits()  
+        all_pgs.extend(permanent_pgs)
+        print(f"Fetched {len(permanent_pgs)} permanent PGS from the lookup table.")
+
+        # Get temporary PGS for this user
+        if user_id:
+            temp_pgs = self.temporary_scores.get_all_pgs_with_traits(user_id)
+            print(f"Fetched {len(temp_pgs)} temporary PGS from the user session.")
+            all_pgs.extend(temp_pgs)
+        
+        return all_pgs
+
+    def get_all_pgs_ids(self, user_id: str = None):
+        """Get all PGS IDs (permanent + temporary)."""
+        all_pgs_with_traits = self.get_all_pgs_with_traits(user_id)
+        return [pgs["id"] for pgs in all_pgs_with_traits]
+    
+    # Add other Database methods as needed, or use __getattr__ for convenience
+    def __getattr__(self, name):
+        """Proxy method calls to Database functionality"""
+        if not self.has_active_database:
+            raise RuntimeError(f"No database selected. Cannot access '{name}'")
+        
+        # Create a temporary Database object for complex operations
+        if hasattr(Database, name):
+            temp_db = Database(self.connection.db_path, self.tasks_connection.db_path)
+            return getattr(temp_db, name)
+        
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
 
 
-# Create instances
+# Create the global database manager instance
 db_manager = DatabaseManager()
 
-# For backward compatibility, create a default Database instance
-default_db = Database()
-db_manager.set_default_database(default_db)
+# For backward compatibility, create a Database instance that uses default paths
+db = Database()
 
-# Legacy global db instance (for backward compatibility)
-db = default_db
+# Test functions - simplified now
+def test_database_manager():
+    """Simple test - just create a DatabaseManager and see what happens"""
+    print("🧪 TESTING DATABASE MANAGER")
+    print("=" * 60)
+    
+    # Create new DatabaseManager - this will run all startup logic
+    print("Creating DatabaseManager...")
+    manager = DatabaseManager()
+    
+    print(f"\nFinal state:")
+    print(f"  Discovered databases: {manager.all_dbs}")
+    print(f"  Active database: {manager.active_db_name}")
+    print(f"  Active path: {manager.active_db_path}")
+    print(f"  Has active database: {manager.has_active_database}")
+    
+    if manager.has_active_database:
+        try:
+            info = manager.get_current_dataset_info()
+            print(f"  Current info: {info}")
+        except Exception as e:
+            print(f"  Error getting info: {e}")
+    
+    return manager
+
+def test_with_custom_path(path):
+    """Test DatabaseManager with a specific path"""
+    print(f"🧪 TESTING WITH CUSTOM PATH: {path}")
+    print("=" * 60)
+    
+    manager = DatabaseManager(base_dir=path)
+    
+    print(f"\nResults for {path}:")
+    print(f"  Found databases: {manager.all_dbs}")
+    
+    return manager
+
+if __name__ == "__main__":
+    # Run tests if script is executed directly
+    quick_test()
 
 # FastAPI dependency functions
 async def get_db():
     """FastAPI dependency for database connection"""
-    try:
-        with db_manager.active_db.connection.get_connection() as conn:
+    if db_manager.has_active_database:
+        with db_manager.connection.get_connection() as conn:
             yield conn
-    except RuntimeError:
-        # Fallback to default db if no dataset selected
-        with default_db.connection.get_connection() as conn:
+    else:
+        # Fallback to default db
+        with db.connection.get_connection() as conn:
             yield conn
 
 def get_database():
     """Get the active Database instance for FastAPI"""
-    try:
-        return db_manager.active_db
-    except RuntimeError:
-        return default_db
+    if db_manager.has_active_database:
+        # Return a Database object using current connections
+        return Database(db_manager.connection.db_path, db_manager.tasks_connection.db_path)
+    else:
+        return db
 
 def get_database_manager():
     """Get the DatabaseManager instance"""
@@ -531,41 +718,24 @@ def get_database_manager():
 
 def get_score_repository():
     """Get ScoreRepository instance from active database"""
-    try:
-        return db_manager.active_db.scores
-    except RuntimeError:
-        return default_db.scores
+    if db_manager.has_active_database:
+        return db_manager.scores
+    return db.scores
 
 def get_ancestry_repository():
     """Get AncestryRepository instance from active database"""
-    try:
-        return db_manager.active_db.ancestry
-    except RuntimeError:
-        return default_db.ancestry
+    if db_manager.has_active_database:
+        return db_manager.ancestry
+    return db.ancestry
 
 def get_metadata_repository():
     """Get MetadataRepository instance from active database"""
-    try:
-        return db_manager.active_db.metadata
-    except RuntimeError:
-        return default_db.metadata
+    if db_manager.has_active_database:
+        return db_manager.metadata
+    return db.metadata
 
 def get_task_repository():
     """Get TaskRepository instance from active database"""
-    try:
-        return db_manager.active_db.tasks
-    except RuntimeError:
-        return default_db.tasks
-
-# Convenience functions that work with the active database
-def get_all_cohorts(user_id: str = None):
-    """Convenience function to get cohorts from active database"""
-    return db_manager.active_db.get_all_cohorts(user_id)
-
-def get_all_pgs_with_traits(user_id: str = None):
-    """Convenience function to get PGS with traits from active database"""
-    return db_manager.active_db.get_all_pgs_with_traits(user_id)
-
-def get_scores_for_pgs(pgs_ids, score_type, sample_ids=None, user_id=None):
-    """Convenience function to get scores from active database"""
-    return db_manager.active_db.get_scores_for_pgs(pgs_ids, score_type, sample_ids, user_id)
+    if db_manager.has_active_database:
+        return db_manager.tasks
+    return db.tasks
