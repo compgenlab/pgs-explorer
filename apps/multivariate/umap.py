@@ -145,14 +145,14 @@ def generate_umap_visualization(score_type, n_neighbors, min_dist, specific_pgs_
 def fetch_umap_data(score_type, specific_pgs_ids, cohort, user_id=None):
     """Fetch all required data for UMAP visualization."""
     # Get PGS IDs
-    pgs_ids = db.fetch_pgs_ids(specific_pgs_ids, score_type, user_id)
+    pgs_ids = db.active_db.fetch_pgs_ids(specific_pgs_ids, score_type, user_id)
     print(f"Selected {len(pgs_ids)} PGS_IDs.")
     
     # Get metadata for PGS IDs
-    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids)
+    pgs_metadata = db.active_db.metadata.fetch_pgs_metadata(pgs_ids)
     
     # Get sample IDs
-    sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
+    sample_ids = db.active_db.ancestry.get_sample_ids_by_cohort(cohort)
     print(f"Found {len(sample_ids)} unique SAMPLE_IDs.")
     
     if cohort and cohort != "ALL":
@@ -166,7 +166,7 @@ def fetch_umap_data(score_type, specific_pgs_ids, cohort, user_id=None):
 
 def fetch_score_dictionary(sample_ids, pgs_ids, score_type, user_id):
     """Fetch score data as a dictionary."""
-    data_dict, _ = db.get_score_matrix(
+    data_dict, _ = db.active_db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
@@ -330,7 +330,7 @@ def create_sample_hover_text(sample_ids, pgs_ids, data_dict):
             avg_score = np.nan
         
         # Get ancestry information
-        ancestry = db.ancestry.get_sample_ancestry(sample_id=sample_id)
+        ancestry = db.active_db.ancestry.get_sample_ancestry(sample_id=sample_id)
         
         hover_info = (
             f"Sample: {sample_id}<br>"

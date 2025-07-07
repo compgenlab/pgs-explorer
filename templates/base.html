@@ -1,4 +1,3 @@
-<!-- base.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -53,26 +52,58 @@
                         </a>
                     </li>
                 </ul>
+                
+                <!-- Database Selector -->
+                <div class="ms-auto me-3">
+                    <div class="dropdown">
+                        <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="databaseDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                            <i class="fas fa-database me-1"></i>
+                            <span id="currentDbName">Loading...</span>
+                        </button>
+                        <ul class="dropdown-menu" aria-labelledby="databaseDropdown" id="databaseList">
+                            <li><span class="dropdown-item text-muted">Loading databases...</span></li>
+                        </ul>
+                    </div>
+                </div>
             </div>
+            
+            <!-- Right side buttons -->
             <div class="d-flex">
-                <div class="dropdown">
-                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
-                      Recent Requests
-                      <span class="badge bg-info text-dark ms-1" id="pendingRequestsCount">0</span>
+                <!-- Tools Dropdown -->
+                <div class="dropdown me-2">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="toolsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-tools me-1"></i>Tools
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="recentRequestsDropdown" id="recentRequestsList" style="width: 300px;">
-                      <li><p class="dropdown-item text-center text-muted">No recent requests</p></li>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="toolsDropdown">
+                        <li>
+                            <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#createNewDatabaseModal">
+                                <i class="fas fa-plus me-2"></i>Create New Database
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#addTempScoreModal">
+                                <i class="fas fa-plus-circle me-2"></i>Add Temporary Data
+                            </a>
+                        </li>
+                        <li><hr class="dropdown-divider"></li>
+                        <li>
+                            <a class="dropdown-item" href="#" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">
+                                <i class="fas fa-user-circle me-2"></i>Session Info
+                            </a>
+                        </li>
                     </ul>
                 </div>
-                <div class="ms-2">
-                    <button class="btn btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#addTempScoreModal">
-                        <i class="fas fa-plus-circle me-1"></i>Add Temporary Data
+                
+                <!-- Recent Requests -->
+                <div class="dropdown">
+                    <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
+                        <i class="fas fa-history me-1"></i>Recent
+                        <span class="badge bg-info text-dark ms-1" id="pendingRequestsCount" style="display: none;">0</span>
                     </button>
-                </div>
-                <div class="ms-2">
-                    <button class="btn btn-outline-light" type="button" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">
-                        <i class="fas fa-user-circle me-1"></i>Session Info
-                    </button>
+                    <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="recentRequestsDropdown" id="recentRequestsList" style="width: 300px;">
+                        <li><p class="dropdown-item text-center text-muted">No recent requests</p></li>
+                    </ul>
                 </div>
             </div>
         </div>
@@ -89,6 +120,66 @@
             <p class="mb-0">PGS Visualizer - A tool for exploring Polygenic Score data</p>
         </div>
     </footer>
+
+    <!-- Create New Database Modal -->
+    <div class="modal fade" id="createNewDatabaseModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="fas fa-plus me-2"></i>Create New Database
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="createDatabaseForm">
+                        <div class="mb-3">
+                            <label for="databaseName" class="form-label">Database Name</label>
+                            <input type="text" class="form-control" id="databaseName" placeholder="e.g., my_new_database" required>
+                            <div class="form-text">Enter a unique name for your database (will be used as folder name)</div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="scoresFile" class="form-label">Scores File <span class="text-danger">*</span></label>
+                            <input type="file" class="form-control" id="scoresFile" accept=".tsv,.txt,.gz,.tsv.gz,.txt.gz" required>
+                            <div class="form-text">
+                                Upload a tab-separated scores file (plain text or gzipped). 
+                                Expected format: First column = PGS_ID, Second column = SCORE_TYPE, remaining columns = sample scores with headers as sample IDs.
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="metadataFile" class="form-label">Metadata File <span class="text-muted">(Optional)</span></label>
+                            <input type="file" class="form-control" id="metadataFile" accept=".csv">
+                            <div class="form-text">
+                                Optional CSV file with PGS metadata. Should include columns like PGS_ID, PGS_Name, Reported_Trait, etc.
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info">
+                            <i class="fas fa-info-circle me-2"></i>
+                            <strong>Scores File Format:</strong><br>
+                            • First row should contain headers: PGS, SCORE_TYPE, then sample IDs<br>
+                            • Each subsequent row: PGS_ID, score_type, then numeric scores for each sample<br>
+                            • Files can be plain text (.tsv, .txt) or gzipped (.gz)<br><br>
+                            <strong>Processing Time:</strong> Large files may take several minutes to process. You'll receive a notification when complete.
+                        </div>
+                        
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle me-2"></i>
+                            <strong>Note:</strong> This will create a permanent database that will be available across all sessions until manually deleted.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="createDatabaseBtn">
+                        <i class="fas fa-plus me-1"></i>Create Database
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Add Temporary Score Data Modal -->
     <div class="modal fade" id="addTempScoreModal" tabindex="-1">
@@ -162,6 +253,7 @@
             </div>
         </div>
     </div>
+    
     <!-- Bootstrap JS Bundle with Popper -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
     
@@ -171,330 +263,606 @@
     <!-- Custom JavaScript -->
     <script src="/static/js/main.js"></script>
     
-    {% block scripts %}{% endblock %}
-</body>
-</html>
-<script>
-    // Function to update the recent requests dropdown
-    function updateRecentRequestsDropdown() {
-        $.ajax({
-            url: '/api/list_tasks',
-            type: 'GET',
-            data: { limit: 5 },
-            success: function(response) {
-                const $dropdown = $('#recentRequestsList');
-                $dropdown.empty();
-                
-                if (response.length === 0) {
-                    $dropdown.append('<li><p class="dropdown-item text-center text-muted">No recent requests</p></li>');
-                    $('#pendingRequestsCount').text('0').hide();
-                    return;
+    <script>
+        // Database management functions
+        let currentActiveDb = null;
+        
+        function loadDatabaseList() {
+            $.ajax({
+                url: '/api/db_list',
+                type: 'GET',
+                success: function(databases) {
+                    const $dropdown = $('#databaseList');
+                    $dropdown.empty();
+                    
+                    if (databases.length === 0) {
+                        $dropdown.append('<li><span class="dropdown-item text-muted">No databases found</span></li>');
+                        return;
+                    }
+                    
+                    // Get stored database preference
+                    const storedDb = localStorage.getItem('selectedDatabase');
+                    
+                    databases.forEach(dbPath => {
+                        const dbName = dbPath.split('/').pop(); // Keep full name
+                        const $item = $(`
+                            <li>
+                                <a class="dropdown-item database-item" href="#" data-db-path="${dbPath}">
+                                    <i class="fas fa-database me-2"></i>${dbName}
+                                    <span class="active-indicator" style="display: none;">
+                                        <i class="fas fa-check text-success ms-2"></i>
+                                    </span>
+                                </a>
+                            </li>
+                        `);
+                        $dropdown.append($item);
+                    });
+                    
+                    // Set database preference
+                    if (storedDb && databases.includes(storedDb)) {
+                        switchDatabase(storedDb, false); // false = don't reload page data on init
+                    } else if (databases.length > 0) {
+                        switchDatabase(databases[0], false); // false = don't reload page data on init
+                    }
+                },
+                error: function(error) {
+                    console.error('Error loading database list:', error);
+                    $('#databaseList').html('<li><span class="dropdown-item text-danger">Error loading databases</span></li>');
                 }
-                
-                // Count pending requests
-                const pendingCount = response.filter(task => task.status === 'processing' || task.status === 'queued').length;
-                if (pendingCount > 0) {
-                    $('#pendingRequestsCount').text(pendingCount).show();
-                } else {
-                    $('#pendingRequestsCount').hide();
-                }
-                
-                // Add each task to the dropdown
-                response.forEach(task => {
-                    // Get status icon
-                    let statusIcon = '';
-                    if (task.status === 'completed') {
-                        statusIcon = '<span class="status-dot status-completed"></span>';
-                    } else if (task.status === 'processing' || task.status === 'queued') {
-                        statusIcon = '<span class="status-dot status-processing"></span>';
+            });
+        }
+        
+        function switchDatabase(dbPath, reloadData = true) {
+            $.ajax({
+                url: '/api/switch_active_db',
+                type: 'GET',
+                data: { db_path: dbPath },
+                success: function(success) {
+                    if (success) {
+                        currentActiveDb = dbPath;
+                        const dbName = dbPath.split('/').pop(); // Keep full name
+                        $('#currentDbName').text(dbName);
+                        
+                        // Store preference in localStorage
+                        localStorage.setItem('selectedDatabase', dbPath);
+                        
+                        // Update active indicators
+                        $('.active-indicator').hide();
+                        $(`.database-item[data-db-path="${dbPath}"] .active-indicator`).show();
+                        
+                        // Show success message only if user manually switched
+                        if (reloadData) {
+                            showNotification(`Switched to database: ${dbName}`, 'success');
+                            
+                            // Reload all page data
+                            reloadPageData();
+                        }
                     } else {
-                        statusIcon = '<span class="status-dot status-failed"></span>';
+                        showNotification('Failed to switch database', 'error');
+                    }
+                },
+                error: function(error) {
+                    console.error('Error switching database:', error);
+                    showNotification('Error switching database', 'error');
+                }
+            });
+        }
+        
+        function reloadPageData() {
+            // Reload PGS list if function exists
+            if (typeof fetchPgsList === 'function') {
+                fetchPgsList();
+            }
+            
+            // Reload PGS and trait list if function exists
+            if (typeof fetchPgsAndTraitList === 'function') {
+                fetchPgsAndTraitList();
+            }
+            
+            // Reload score types if function exists
+            if (typeof fetchScoreTypes === 'function') {
+                fetchScoreTypes();
+            }
+            
+            // Reload cohorts if function exists
+            if (typeof fetchCohorts === 'function') {
+                fetchCohorts();
+            }
+            
+            // Call generic refresh function if it exists
+            if (typeof refreshPageData === 'function') {
+                refreshPageData();
+            }
+            
+            // Reload any page-specific data functions
+            if (typeof loadPageData === 'function') {
+                loadPageData();
+            }
+            
+            // Clear any existing plots/data displays
+            if (typeof clearCurrentData === 'function') {
+                clearCurrentData();
+            }
+        }
+        
+        function showNotification(message, type = 'info') {
+            const alertClass = type === 'success' ? 'alert-success' : type === 'error' ? 'alert-danger' : 'alert-info';
+            const notification = $(`
+                <div class="alert ${alertClass} alert-dismissible fade show position-fixed" style="top: 20px; right: 20px; z-index: 9999;">
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            `);
+            $('body').append(notification);
+            
+            // Auto-dismiss after 3 seconds
+            setTimeout(() => {
+                notification.alert('close');
+            }, 3000);
+        }
+        
+        // Handle database selection
+        $(document).on('click', '.database-item', function(e) {
+            e.preventDefault();
+            const dbPath = $(this).data('db-path');
+            switchDatabase(dbPath);
+        });
+        
+        // Function to update the recent requests dropdown
+        function updateRecentRequestsDropdown() {
+            $.ajax({
+                url: '/api/list_tasks',
+                type: 'GET',
+                data: { limit: 5 },
+                success: function(response) {
+                    const $dropdown = $('#recentRequestsList');
+                    $dropdown.empty();
+                    
+                    if (response.length === 0) {
+                        $dropdown.append('<li><p class="dropdown-item text-center text-muted">No recent requests</p></li>');
+                        $('#pendingRequestsCount').hide();
+                        return;
                     }
                     
-                    // Format date
-                    const createdDate = new Date(task.created_at);
-                    const formattedDate = createdDate.toLocaleString();
+                    // Count pending requests
+                    const pendingCount = response.filter(task => task.status === 'processing' || task.status === 'queued').length;
+                    if (pendingCount > 0) {
+                        $('#pendingRequestsCount').text(pendingCount).show();
+                    } else {
+                        $('#pendingRequestsCount').hide();
+                    }
                     
-                    // Create item
-                    const taskName = task.name || `${task.task_type.charAt(0).toUpperCase() + task.task_type.slice(1)} - ${task.task_id.substring(0, 6)}`;
-                    
-                    const $item = $(`
-                    <li>
-                        <a class="dropdown-item" href="${getTaskPageUrl(task.task_type, task.task_id)}">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <span class="text-truncate" style="max-width: 200px;">${statusIcon} ${taskName}</span>
-                            <small class="text-muted">${task.status}</small>
-                        </div>
-                        <small class="text-muted d-block">${formattedDate}</small>
-                        </a>
-                    </li>
-                    `);
-                    
-                    $dropdown.append($item);
-                });
-                
-                // Add link to all tasks
-                $dropdown.append('<li><hr class="dropdown-divider"></li>');
-                $dropdown.append('<li><a class="dropdown-item text-center" href="/tasks">View All Tasks</a></li>');
-            },
-            error: function(error) {
-                console.error('Error fetching recent tasks:', error);
-            }
-        });
-    }
-
-    // Session Info Modal Functions
-    function loadSessionInfo() {
-        $.ajax({
-            url: '/api/session/info',
-            type: 'GET',
-            success: function(data) {
-                const content = `
-                    <div class="row">
-                        <div class="col-md-12">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0"><i class="fas fa-id-card me-2"></i>Session Details</h6>
-                                </div>
-                                <div class="card-body">
-                                    <p><strong>User ID:</strong><br><code>${data.user_id}</code></p>
-                                    <p><strong>Created:</strong><br>${new Date(data.created_at).toLocaleString()}</p>
-                                    ${data.last_activity ? `<p><strong>Last Activity:</strong><br>${new Date(data.last_activity).toLocaleString()}</p>` : ''}
-                                </div>
+                    // Add each task to the dropdown
+                    response.forEach(task => {
+                        // Get status icon
+                        let statusIcon = '';
+                        if (task.status === 'completed') {
+                            statusIcon = '<span class="status-dot status-completed"></span>';
+                        } else if (task.status === 'processing' || task.status === 'queued') {
+                            statusIcon = '<span class="status-dot status-processing"></span>';
+                        } else {
+                            statusIcon = '<span class="status-dot status-failed"></span>';
+                        }
+                        
+                        // Format date
+                        const createdDate = new Date(task.created_at);
+                        const formattedDate = createdDate.toLocaleString();
+                        
+                        // Create item
+                        const taskName = task.name || `${task.task_type.charAt(0).toUpperCase() + task.task_type.slice(1)} - ${task.task_id.substring(0, 6)}`;
+                        
+                        const $item = $(`
+                        <li>
+                            <a class="dropdown-item" href="${getTaskPageUrl(task.task_type, task.task_id)}">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-truncate" style="max-width: 200px;">${statusIcon} ${taskName}</span>
+                                <small class="text-muted">${task.status}</small>
                             </div>
-                        </div>
-                    </div>
-                    <div class="row mt-3">
-                        <div class="col-12">
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>Session Statistics</h6>
-                                </div>
-                                <div class="card-body" id="sessionStats">
-                                    <div class="text-center">
-                                        <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                            <small class="text-muted d-block">${formattedDate}</small>
+                            </a>
+                        </li>
+                        `);
+                        
+                        $dropdown.append($item);
+                    });
+                    
+                    // Add link to all tasks
+                    $dropdown.append('<li><hr class="dropdown-divider"></li>');
+                    $dropdown.append('<li><a class="dropdown-item text-center" href="/tasks">View All Tasks</a></li>');
+                },
+                error: function(error) {
+                    console.error('Error fetching recent tasks:', error);
+                }
+            });
+        }
+
+        // Session Info Modal Functions
+        function loadSessionInfo() {
+            $.ajax({
+                url: '/api/session/info',
+                type: 'GET',
+                success: function(data) {
+                    const content = `
+                        <div class="row">
+                            <div class="col-md-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h6 class="mb-0"><i class="fas fa-id-card me-2"></i>Session Details</h6>
+                                    </div>
+                                    <div class="card-body">
+                                        <p><strong>User ID:</strong><br><code>${data.user_id}</code></p>
+                                        <p><strong>Created:</strong><br>${new Date(data.created_at).toLocaleString()}</p>
+                                        ${data.last_activity ? `<p><strong>Last Activity:</strong><br>${new Date(data.last_activity).toLocaleString()}</p>` : ''}
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                `;
-                $('#sessionInfoContent').html(content);
-                loadSessionStats();
-            },
-            error: function() {
-                $('#sessionInfoContent').html('<div class="alert alert-danger">Error loading session information</div>');
-            }
-        });
-    }
-    
-    function loadSessionStats() {
-        // Get recent activities
-        $.ajax({
-            url: '/api/session/recent-activities',
-            type: 'GET',
-            success: function(data) {
-                // Get task counts
-                $.ajax({
-                    url: '/api/list_tasks',
-                    type: 'GET',
-                    success: function(tasks) {
-                        // Get cohort counts
-                        $.ajax({
-                            url: '/api/cohorts',
-                            type: 'GET',
-                            success: function(cohorts) {
-                                const statsContent = `
-                                    <div class="row text-center">
-                                        <div class="col-md-3">
-                                            <div class="border-end">
-                                                <h4 class="text-primary">${tasks.length || 0}</h4>
-                                                <p class="mb-0">Total Tasks</p>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <div class="border-end">
-                                                <h4 class="text-success">${cohorts.cohorts ? cohorts.cohorts.length : 0}</h4>
-                                                <p class="mb-0">Custom Cohorts</p>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <div class="border-end">
-                                                <h4 class="text-info">${data.activities ? data.activities.length : 0}</h4>
-                                                <p class="mb-0">Recent Activities</p>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-3">
-                                            <h4 class="text-warning">${tasks.filter(t => t.status === 'completed').length || 0}</h4>
-                                            <p class="mb-0">Completed Tasks</p>
+                        <div class="row mt-3">
+                            <div class="col-12">
+                                <div class="card">
+                                    <div class="card-header">
+                                        <h6 class="mb-0"><i class="fas fa-chart-line me-2"></i>Session Statistics</h6>
+                                    </div>
+                                    <div class="card-body" id="sessionStats">
+                                        <div class="text-center">
+                                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
                                         </div>
                                     </div>
-                                `;
-                                $('#sessionStats').html(statsContent);
-                            },
-                            error: function() {
-                                $('#sessionStats').html('<p class="text-muted">Could not load statistics</p>');
-                            }
-                        });
-                    }
-                });
-            }
-        });
-    }
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    $('#sessionInfoContent').html(content);
+                    loadSessionStats();
+                },
+                error: function() {
+                    $('#sessionInfoContent').html('<div class="alert alert-danger">Error loading session information</div>');
+                }
+            });
+        }
+        
+        function loadSessionStats() {
+            // Get recent activities
+            $.ajax({
+                url: '/api/session/recent-activities',
+                type: 'GET',
+                success: function(data) {
+                    // Get task counts
+                    $.ajax({
+                        url: '/api/list_tasks',
+                        type: 'GET',
+                        success: function(tasks) {
+                            // Get cohort counts
+                            $.ajax({
+                                url: '/api/cohorts',
+                                type: 'GET',
+                                success: function(cohorts) {
+                                    const statsContent = `
+                                        <div class="row text-center">
+                                            <div class="col-md-3">
+                                                <div class="border-end">
+                                                    <h4 class="text-primary">${tasks.length || 0}</h4>
+                                                    <p class="mb-0">Total Tasks</p>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="border-end">
+                                                    <h4 class="text-success">${cohorts.cohorts ? cohorts.cohorts.length : 0}</h4>
+                                                    <p class="mb-0">Custom Cohorts</p>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <div class="border-end">
+                                                    <h4 class="text-info">${data.activities ? data.activities.length : 0}</h4>
+                                                    <p class="mb-0">Recent Activities</p>
+                                                </div>
+                                            </div>
+                                            <div class="col-md-3">
+                                                <h4 class="text-warning">${tasks.filter(t => t.status === 'completed').length || 0}</h4>
+                                                <p class="mb-0">Completed Tasks</p>
+                                            </div>
+                                        </div>
+                                    `;
+                                    $('#sessionStats').html(statsContent);
+                                },
+                                error: function() {
+                                    $('#sessionStats').html('<p class="text-muted">Could not load statistics</p>');
+                                }
+                            });
+                        }
+                    });
+                }
+            });
+        }
 
-    // Clear session function with confirmation
-    $('#clearSessionBtn').click(function() {
-        const confirmModal = `
-            <div class="modal fade" id="confirmClearModal" tabindex="-1">
-                <div class="modal-dialog">
-                    <div class="modal-content">
-                        <div class="modal-header bg-danger text-white">
-                            <h5 class="modal-title">
-                                <i class="fas fa-exclamation-triangle me-2"></i>Confirm Clear Session
-                            </h5>
-                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-                        </div>
-                        <div class="modal-body">
-                            <p><strong>This will permanently delete:</strong></p>
-                            <ul>
-                                <li>Your session preferences</li>
-                                <li>All custom cohorts you've created</li>
-                                <li>Your activity history</li>
-                                <li>Association with your completed tasks</li>
-                                <li>Any temporary score data you've uploaded</li>
-                            </ul>
-                            <p class="text-danger"><strong>This action cannot be undone!</strong></p>
-                            <p>Are you sure you want to clear your session data?</p>
-                        </div>
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="button" class="btn btn-danger" id="confirmClearBtn">
-                                <i class="fas fa-trash me-1"></i>Yes, Clear Everything
-                            </button>
+        // Clear session function with confirmation
+        $('#clearSessionBtn').click(function() {
+            const confirmModal = `
+                <div class="modal fade" id="confirmClearModal" tabindex="-1">
+                    <div class="modal-dialog">
+                        <div class="modal-content">
+                            <div class="modal-header bg-danger text-white">
+                                <h5 class="modal-title">
+                                    <i class="fas fa-exclamation-triangle me-2"></i>Confirm Clear Session
+                                </h5>
+                                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p><strong>This will permanently delete:</strong></p>
+                                <ul>
+                                    <li>Your session preferences</li>
+                                    <li>All custom cohorts you've created</li>
+                                    <li>Your activity history</li>
+                                    <li>Association with your completed tasks</li>
+                                    <li>Any temporary score data you've uploaded</li>
+                                </ul>
+                                <p class="text-danger"><strong>This action cannot be undone!</strong></p>
+                                <p>Are you sure you want to clear your session data?</p>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                <button type="button" class="btn btn-danger" id="confirmClearBtn">
+                                    <i class="fas fa-trash me-1"></i>Yes, Clear Everything
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        `;
-        
-        $('body').append(confirmModal);
-        $('#confirmClearModal').modal('show');
-        
-        $('#confirmClearBtn').click(function() {
+            `;
+            
+            $('body').append(confirmModal);
+            $('#confirmClearModal').modal('show');
+            
+            $('#confirmClearBtn').click(function() {
+                $.ajax({
+                    url: '/api/session/clear-all',
+                    type: 'POST',
+                    success: function() {
+                        $('#confirmClearModal').modal('hide');
+                        $('#sessionInfoModal').modal('hide');
+                        showNotification('Session cleared successfully. The page will reload.', 'success');
+                        setTimeout(() => window.location.reload(), 1500);
+                    },
+                    error: function() {
+                        showNotification('Error clearing session. Please try again.', 'error');
+                    }
+                });
+            });
+            
+            $('#confirmClearModal').on('hidden.bs.modal', function() {
+                $(this).remove();
+            });
+        });
+
+        // Create New Database Function
+        $('#createDatabaseBtn').click(function() {
+            const databaseName = $('#databaseName').val().trim();
+            const scoresFileInput = $('#scoresFile')[0];
+            const metadataFileInput = $('#metadataFile')[0];
+            
+            if (!databaseName || !scoresFileInput.files[0]) {
+                showNotification('Please provide a database name and select a scores file.', 'error');
+                return;
+            }
+            
+            // Validate database name (no special characters, spaces, etc.)
+            if (!/^[a-zA-Z0-9_-]+$/.test(databaseName)) {
+                showNotification('Database name can only contain letters, numbers, hyphens, and underscores.', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('database_name', databaseName);
+            formData.append('scores_file', scoresFileInput.files[0]);
+            
+            if (metadataFileInput.files[0]) {
+                formData.append('metadata_file', metadataFileInput.files[0]);
+            }
+            
+            // Show loading state
+            $('#createDatabaseBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Creating Database...');
+            
+            // Show processing notification
+            showNotification('Database creation started. This may take several minutes for large files...', 'info');
+            
             $.ajax({
-                url: '/api/session/clear-all',
+                url: '/api/create_database',
                 type: 'POST',
-                success: function() {
-                    $('#confirmClearModal').modal('hide');
-                    $('#sessionInfoModal').modal('hide');
-                    alert('Session cleared successfully. The page will reload.');
-                    window.location.reload();
+                data: formData,
+                processData: false,
+                contentType: false,
+                timeout: 600000, // 10 minutes timeout for large files
+                success: function(response) {
+                    $('#createNewDatabaseModal').modal('hide');
+                    showNotification(`Database "${response.database_name}" created successfully! It has been added to your database list.`, 'success');
+                    
+                    // Clear form
+                    $('#createDatabaseForm')[0].reset();
+                    
+                    // Reload database list to include the new database
+                    loadDatabaseList();
                 },
-                error: function() {
-                    alert('Error clearing session. Please try again.');
+                error: function(xhr) {
+                    let error = 'Error creating database';
+                    if (xhr.responseJSON?.detail) {
+                        error = xhr.responseJSON.detail;
+                    } else if (xhr.status === 413) {
+                        error = 'File too large. Please use a smaller file.';
+                    } else if (xhr.status === 0) {
+                        error = 'Request timeout. File may be too large or server may be busy.';
+                    }
+                    showNotification(`Database creation failed: ${error}`, 'error');
+                },
+                complete: function() {
+                    $('#createDatabaseBtn').prop('disabled', false).html('<i class="fas fa-plus me-1"></i>Create Database');
                 }
             });
         });
-        
-        $('#confirmClearModal').on('hidden.bs.modal', function() {
-            $(this).remove();
-        });
-    });
 
-    // Temporary Score Data Upload Function
-    $('#uploadTempScoreBtn').click(function() {
-        const pgsId = $('#tempPgsId').val();
-        const trait = $('#tempTrait').val();
-        const fileInput = $('#tempScoreFile')[0];
-        
-        if (!pgsId || !trait || !fileInput.files[0]) {
-            alert('Please fill in all required fields and select a file.');
-            return;
-        }
-        
-        const formData = new FormData();
-        formData.append('pgs_id', pgsId);
-        formData.append('trait', trait);
-        formData.append('score_file', fileInput.files[0]);
-        
-        // Show loading state
-        $('#uploadTempScoreBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Uploading...');
-        
-        $.ajax({
-            url: '/api/temporary_scores/upload',
-            type: 'POST',
-            data: formData,
-            processData: false,
-            contentType: false,
-            success: function(response) {
-                $('#addTempScoreModal').modal('hide');
-                alert(`Temporary score data uploaded successfully! PGS ID: ${response.pgs_id}, Records: ${response.records_count}`);
-                
-                // Clear form
-                $('#tempScoreForm')[0].reset();
-                
-                // Refresh PGS list if function exists
-                if (typeof fetchPgsList === 'function') {
-                    fetchPgsList();
+        // Create New Database Function
+        $('#createDatabaseBtn').click(function() {
+            const databaseName = $('#databaseName').val().trim();
+            const scoresFileInput = $('#scoresFile')[0];
+            const metadataFileInput = $('#metadataFile')[0];
+            
+            if (!databaseName || !scoresFileInput.files[0]) {
+                showNotification('Please provide a database name and select a scores file.', 'error');
+                return;
+            }
+            
+            // Validate database name (no special characters, spaces, etc.)
+            if (!/^[a-zA-Z0-9_-]+$/.test(databaseName)) {
+                showNotification('Database name can only contain letters, numbers, hyphens, and underscores.', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('database_name', databaseName);
+            formData.append('scores_file', scoresFileInput.files[0]);
+            
+            if (metadataFileInput.files[0]) {
+                formData.append('metadata_file', metadataFileInput.files[0]);
+            }
+            
+            // Show loading state
+            $('#createDatabaseBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Creating Database...');
+            
+            // Show processing notification
+            showNotification('Database creation started. This may take several minutes for large files...', 'info');
+            
+            $.ajax({
+                url: '/api/create_database',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                timeout: 600000, // 10 minutes timeout for large files
+                success: function(response) {
+                    $('#createNewDatabaseModal').modal('hide');
+                    showNotification(`Database "${response.database_name}" created successfully! It has been added to your database list.`, 'success');
+                    
+                    // Clear form
+                    $('#createDatabaseForm')[0].reset();
+                    
+                    // Reload database list to include the new database
+                    loadDatabaseList();
+                },
+                error: function(xhr) {
+                    let error = 'Error creating database';
+                    if (xhr.responseJSON?.detail) {
+                        error = xhr.responseJSON.detail;
+                    } else if (xhr.status === 413) {
+                        error = 'File too large. Please use a smaller file.';
+                    } else if (xhr.status === 0) {
+                        error = 'Request timeout. File may be too large or server may be busy.';
+                    }
+                    showNotification(`Database creation failed: ${error}`, 'error');
+                },
+                complete: function() {
+                    $('#createDatabaseBtn').prop('disabled', false).html('<i class="fas fa-plus me-1"></i>Create Database');
                 }
-            },
-            error: function(xhr) {
-                const error = xhr.responseJSON?.detail || 'Error uploading temporary score data';
-                alert(`Upload failed: ${error}`);
-            },
-            complete: function() {
-                $('#uploadTempScoreBtn').prop('disabled', false).html('<i class="fas fa-upload me-1"></i>Upload Temporary Data');
-            }
+            });
         });
-    });
 
-    // Load session info when modal opens
-    $('#sessionInfoModal').on('show.bs.modal', function() {
-        loadSessionInfo();
-    });
+        // Temporary Score Data Upload Function
+        $('#uploadTempScoreBtn').click(function() {
+            const pgsId = $('#tempPgsId').val();
+            const trait = $('#tempTrait').val();
+            const fileInput = $('#tempScoreFile')[0];
+            
+            if (!pgsId || !trait || !fileInput.files[0]) {
+                showNotification('Please fill in all required fields and select a file.', 'error');
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('pgs_id', pgsId);
+            formData.append('trait', trait);
+            formData.append('score_file', fileInput.files[0]);
+            
+            // Show loading state
+            $('#uploadTempScoreBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Uploading...');
+            
+            $.ajax({
+                url: '/api/temporary_scores/upload',
+                type: 'POST',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function(response) {
+                    $('#addTempScoreModal').modal('hide');
+                    showNotification(`Temporary score data uploaded successfully! PGS ID: ${response.pgs_id}, Records: ${response.records_count}`, 'success');
+                    
+                    // Clear form
+                    $('#tempScoreForm')[0].reset();
+                    
+                    // Refresh PGS list if function exists
+                    if (typeof fetchPgsList === 'function') {
+                        fetchPgsList();
+                    }
+                },
+                error: function(xhr) {
+                    const error = xhr.responseJSON?.detail || 'Error uploading temporary score data';
+                    showNotification(`Upload failed: ${error}`, 'error');
+                },
+                complete: function() {
+                    $('#uploadTempScoreBtn').prop('disabled', false).html('<i class="fas fa-upload me-1"></i>Upload Temporary Data');
+                }
+            });
+        });
 
-    // Add CSS for status dots
-    $('head').append(`
-        <style>
-            .status-dot {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 6px;
-            }
-            .status-completed {
-            background-color: #28a745;
-            }
-            .status-processing {
-            background-color: #ffc107;
-            }
-            .status-failed {
-            background-color: #dc3545;
-            }
-        </style>
-    `);
+        // Load session info when modal opens
+        $('#sessionInfoModal').on('show.bs.modal', function() {
+            loadSessionInfo();
+        });
 
-    // Helper function to get the correct page URL for a task
-    function getTaskPageUrl(taskType, taskId) {
-        switch (taskType) {
-            case 'heatmap':
-            case 'umap':
-            case 'svd':
-            return `/multivariate?task_id=${taskId}`;
-            case 'distribution':
-            return `/distribution?task_id=${taskId}`;
-            case 'subcohort_plot':
-            return `/subcohorts?task_id=${taskId}`;
-            default:
-            return `/tasks?task_id=${taskId}`;
+        // Add CSS for status dots
+        $('head').append(`
+            <style>
+                .status-dot {
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border-radius: 50%;
+                margin-right: 6px;
+                }
+                .status-completed {
+                background-color: #28a745;
+                }
+                .status-processing {
+                background-color: #ffc107;
+                }
+                .status-failed {
+                background-color: #dc3545;
+                }
+            </style>
+        `);
+
+        // Helper function to get the correct page URL for a task
+        function getTaskPageUrl(taskType, taskId) {
+            switch (taskType) {
+                case 'heatmap':
+                case 'umap':
+                case 'svd':
+                return `/multivariate?task_id=${taskId}`;
+                case 'distribution':
+                return `/distribution?task_id=${taskId}`;
+                case 'subcohort_plot':
+                return `/subcohorts?task_id=${taskId}`;
+                default:
+                return `/tasks?task_id=${taskId}`;
+            }
         }
-    }
 
-    // Update dropdown on load and every 10 seconds
-    $(document).ready(function() {
-        updateRecentRequestsDropdown();
-        setInterval(updateRecentRequestsDropdown, 10000);
-    });
+        // Initialize on page load
+        $(document).ready(function() {
+            loadDatabaseList();
+            updateRecentRequestsDropdown();
+            setInterval(updateRecentRequestsDropdown, 10000);
+        });
 
-</script>
+    </script>
+    
+    {% block scripts %}{% endblock %}
+</body>
+</html>

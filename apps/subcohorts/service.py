@@ -120,7 +120,7 @@ def get_cohort_data(
 
 def fetch_pgs_scores(pgs_id: str, score_type: str, user_id: str) -> Dict[str, float]:
     """Fetch scores for a PGS ID."""
-    score_dict = db.get_scores_for_pgs(pgs_id, score_type, user_id=user_id)
+    score_dict = db.active_db.get_scores_for_pgs(pgs_id, score_type, user_id=user_id)
     
     if not score_dict:
         raise ValueError(f"No data found for PGS '{pgs_id}' and Score Type '{score_type}'")
@@ -130,7 +130,7 @@ def fetch_pgs_scores(pgs_id: str, score_type: str, user_id: str) -> Dict[str, fl
 def fetch_base_cohort_scores(base_cohort: str, score_dict: Dict[str, float]) -> List[float]:
     """Fetch and filter scores for the base cohort."""
     # Get base cohort sample IDs
-    base_sample_ids = db.ancestry.get_sample_ids_by_cohort(base_cohort)
+    base_sample_ids = db.active_db.ancestry.get_sample_ids_by_cohort(base_cohort)
     
     # Filter to include only samples that exist in our data
     base_valid_samples = filter_valid_samples(base_sample_ids, score_dict)
@@ -205,7 +205,7 @@ def process_single_subcohort(
 def get_subcohort_sample_ids(subcohort: Dict[str, Any]) -> List[str]:
     """Get sample IDs for a subcohort."""
     if "sample_ids" not in subcohort:
-        return db.ancestry.sample_ids_by_cohort(subcohort["name"])
+        return db.active_db.ancestry.sample_ids_by_cohort(subcohort["name"])
     return subcohort["sample_ids"]
 
 def create_table_entries(

@@ -60,7 +60,7 @@ async def upload_temporary_scores(
             scores_data.extend(score_types_data)
         
         # Insert all scores into database
-        records_count = db.temporary_scores.create_temporary_score(user_id, pgs_id, trait, scores_data)
+        records_count = db.active_db.temporary_scores.create_temporary_score(user_id, pgs_id, trait, scores_data)
         
         # Track activity
         SessionManager.track_user_activity(request, "upload_temporary_scores", {
@@ -82,14 +82,14 @@ async def upload_temporary_scores(
 async def list_temporary_scores(request: Request):
     """List user's temporary scores."""
     user_id = SessionManager.get_or_create_user_id(request)
-    temp_scores = db.temporary_scores.get_user_temporary_scores(user_id)
+    temp_scores = db.active_db.temporary_scores.get_user_temporary_scores(user_id)
     return {"temporary_scores": temp_scores}
 
 @router.delete("/api/temporary_scores/{temp_score_id}")
 async def delete_temporary_score(request: Request, temp_score_id: str):
     """Delete a temporary score."""
     user_id = SessionManager.get_or_create_user_id(request)
-    deleted = db.temporary_scores.delete_temporary_score(temp_score_id, user_id)
+    deleted = db.active_db.temporary_scores.delete_temporary_score(temp_score_id, user_id)
     
     if not deleted:
         raise HTTPException(status_code=404, detail="Temporary score not found")

@@ -5,7 +5,7 @@ import numpy as np
 from typing import List, Dict, Any
 from scipy import stats
 import plotly.graph_objects as go
-from apps.core.utils import generate_request_hash
+from apps.core.utils import process_cache_request
 from database import db
 
 def process_distribution(request_data: Dict[str, Any]) -> str:
@@ -24,7 +24,7 @@ def process_distribution(request_data: Dict[str, Any]) -> str:
     """
     try:
         # Check cache
-        existing, html_path, json_path = generate_request_hash(request_data)
+        existing, html_path, json_path = process_cache_request(request_data)
         if existing:
             return f"/{html_path}"
         
@@ -91,7 +91,7 @@ def fetch_pgs_comparison_data(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     result = []
     print(params.keys())
     for pgs_id in params["pgs_ids"]:
-        scores_dict = db.get_scores_for_pgs(
+        scores_dict = db.active_db.get_scores_for_pgs(
             pgs_id, 
             params["score_type"], 
             params["sample_ids"] if params["sample_ids"] else None,
@@ -354,7 +354,7 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
         print(f"DEBUG: Cohort '{cohort['name']}' has {len(cohort.get('sample_ids', []))} samples")
     
     # Get cohort data with sample_ids already populated
-    cohort_data = db.get_score_by_cohorts(
+    cohort_data = db.active_db.get_score_by_cohorts(
         pgs_id=params["pgs_id"],
         score_type=params["score_type"],
         cohorts=prepared_cohorts,
@@ -397,7 +397,7 @@ def prepare_cohorts_with_sample_ids(cohorts: List[Dict[str, Any]]) -> List[Dict[
         
         # If sample_ids not provided and it's not the "ALL" cohort, fetch them
         if "sample_ids" not in cohort_copy and cohort_copy["name"] != "ALL":
-            cohort_copy["sample_ids"] = db.sample_ids_by_cohort(cohort_copy["name"])
+            cohort_copy["sample_ids"] = db.active_db.sample_ids_by_cohort(cohort_copy["name"])
         
         prepared_cohorts.append(cohort_copy)
     

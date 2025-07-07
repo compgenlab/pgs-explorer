@@ -21,13 +21,13 @@ def process_background_task(task_id: str, request_data: dict, processing_functio
     """
     try:
         # Update status to "processing"
-        db.tasks.update_task_status(task_id, "processing")
+        db.active_db.tasks.update_task_status(task_id, "processing")
         
         # Call the actual processing function
         result_path = processing_function(request_data)
         
         # Update task with success status and result path
-        db.tasks.update_task_status(
+        db.active_db.tasks.update_task_status(
             task_id=task_id,
             status="completed",
             result_path=result_path
@@ -35,7 +35,7 @@ def process_background_task(task_id: str, request_data: dict, processing_functio
         
     except Exception as e:
         # Update task with error status
-        db.tasks.update_task_status(
+        db.active_db.tasks.update_task_status(
             task_id=task_id,
             status="failed",
             error=str(e)
@@ -80,7 +80,7 @@ async def process_image_request(
     created_at = datetime.now().isoformat()
     
     # Store task in database with user_id
-    db.tasks.create_task(
+    db.active_db.tasks.create_task(
         task_id=task_id,
         task_type=task_type,
         name=task_name or f"{task_type} task",

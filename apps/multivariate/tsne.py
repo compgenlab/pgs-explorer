@@ -153,7 +153,7 @@ def perform_tsne_analysis(score_type, specific_pgs_ids, cohort, perspective, per
 def fetch_tsne_data(score_type, specific_pgs_ids, cohort, user_id):
     """Fetch PGS IDs and sample IDs for t-SNE analysis."""
     # Get PGS IDs
-    pgs_ids = db.fetch_pgs_ids(
+    pgs_ids = db.active_db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
         score_type=score_type,
         user_id=user_id
@@ -162,11 +162,11 @@ def fetch_tsne_data(score_type, specific_pgs_ids, cohort, user_id):
     
     # Get sample IDs
     if cohort and cohort != "ALL":
-        sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
+        sample_ids = db.active_db.ancestry.get_sample_ids_by_cohort(cohort)
         print(f"Filtering to {len(sample_ids)} samples from {cohort} cohort")
     else:
         # Get all sample IDs that have scores for these PGS IDs
-        sample_ids = db.scores.get_sample_ids_with_scores(
+        sample_ids = db.active_db.scores.get_sample_ids_with_scores(
             score_type=score_type,
             pgs_ids=pgs_ids
         )
@@ -179,7 +179,7 @@ def fetch_tsne_data(score_type, specific_pgs_ids, cohort, user_id):
 
 def fetch_tsne_matrix(sample_ids, pgs_ids, score_type, user_id):
     """Fetch the score matrix for t-SNE analysis."""
-    matrix, _ = db.get_score_matrix(
+    matrix, _ = db.active_db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
@@ -266,7 +266,7 @@ def generate_tsne_sample(tsne_result, sample_ids):
 def generate_tsne_score(tsne_result, pgs_ids):
     """Generate t-SNE visualization for PGS scores."""
     # Fetch metadata
-    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids)
+    pgs_metadata = db.active_db.metadata.fetch_pgs_metadata(pgs_ids)
     
     # Create hover text
     # hover_text = create_score_hover_text_tsne(pgs_ids, pgs_metadata)
