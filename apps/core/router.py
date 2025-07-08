@@ -16,6 +16,18 @@ def get_metadata(pgs_id: str, database: Database = Depends(get_database)):
     
     return {"metadata": metadata_list[pgs_id]}
 
+# for my (ava) purposes
+@router.get("/api/metadataEx/{pgs_id}")
+def get_metadata_extras(pgs_id: str, database: Database = Depends(get_database)):
+    """Fetches metadata for a given PGS_ID from the `pgs_metadata` table."""
+    # Use the metadata repository method
+    metadata_list = database.metadata.fetch_pgs_metadata_extras([pgs_id])
+    
+    if not metadata_list or pgs_id not in metadata_list:
+        raise HTTPException(status_code=404, detail=f"Metadata not found for PGS_ID '{pgs_id}'")
+    
+    return {"metadata": metadata_list[pgs_id]}
+
 @router.get("/api/pgs_list")
 def get_pgs_list(request: Request, database: Database = Depends(get_database)):
     """Fetches PGS IDs from both permanent and temporary sources."""

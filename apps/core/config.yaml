@@ -1,6 +1,6 @@
 database:
-  pgs_db_path: "/data/dev/db/pgs_data.db"
-  tasks_db_path: "/data/dev/db/tasks.db"
+  pgs_db_path: "/data/dev/db/database1/pgs_data.db"
+  tasks_db_path: "/data/dev/db/database1/tasks.db"
 
 session:
   secret_key: "your-default-secret-key"

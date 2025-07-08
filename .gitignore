@@ -8,3 +8,4 @@ __pycache__/
 *$py.class
 server.log
 __pycache__
+venv/
