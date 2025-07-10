@@ -79,6 +79,7 @@ class Database:
         
         # Try custom cohort first (if user_id provided)
         if user_id:
+            print(f"Looking for custom cohort... {cohort}")
             custom_cohort = self.cohorts.get_cohort(cohort, user_id)
             if custom_cohort:
                 return custom_cohort["sample_ids"]
@@ -601,56 +602,6 @@ class DatabaseManager:
         except Exception as e:
             print(f"Error creating PGS database from file: {e}")
             return False
-
-    # def _create_additional_tables(self, cursor):
-    #     """Create additional tables like ancestry, lookup tables, etc."""
-    #     # Create ancestry table
-    #     cursor.execute('''
-    #         CREATE TABLE IF NOT EXISTS ancestry (
-    #             sample_id TEXT PRIMARY KEY,
-    #             population TEXT NOT NULL
-    #         )
-    #     ''')
-        
-    #     # Create ancestry_groups table
-    #     cursor.execute('''
-    #         CREATE TABLE IF NOT EXISTS ancestry_groups (
-    #             population TEXT PRIMARY KEY,
-    #             sample_ids JSON
-    #         )
-    #     ''')
-        
-    #     # Create lookup tables
-    #     cursor.execute('''
-    #         CREATE TABLE IF NOT EXISTS pgs_id_lookup (
-    #             pgs_id TEXT PRIMARY KEY
-    #         )
-    #     ''')
-        
-    #     cursor.execute('''
-    #         CREATE TABLE IF NOT EXISTS score_type_lookup (
-    #             score_type TEXT PRIMARY KEY
-    #         )
-    #     ''')
-        
-    #     cursor.execute('''
-    #         CREATE TABLE IF NOT EXISTS sample_id_lookup (
-    #             sample_id TEXT PRIMARY KEY
-    #         )
-    #     ''')
-        
-    #     cursor.execute('''
-    #         CREATE TABLE IF NOT EXISTS pgs_trait_lookup (
-    #             pgs_id TEXT PRIMARY KEY,
-    #             trait TEXT NOT NULL
-    #         )
-    #     ''')
-        
-    #     # Create additional indexes
-    #     cursor.execute('CREATE INDEX IF NOT EXISTS idx_scores_sample_id ON scores(SAMPLE_ID)')
-    #     cursor.execute('CREATE INDEX IF NOT EXISTS idx_scores_value_type ON scores(SCORE, SCORE_TYPE)')
-        
-    #     print("  Created additional tables and indexes")
 
     def _search_directory_for_db(self, db_directory):
         """Search directory for valid database pairs."""

@@ -45,13 +45,21 @@
                 </div>
                 
                 <div class="mb-3">
-                    <label for="baseCohort" class="form-label">Base Cohort</label>
-                    <select class="form-select" id="baseCohort" required>
-                        <option value="" selected disabled>Select Base Cohort</option>
+                    <label for="cohort1" class="form-label">Cohort 1</label>
+                    <select class="form-select" id="cohort1" required>
+                        <option value="" selected disabled>Select Cohort 1</option>
                         <!-- <option value="ALL">All Samples</option> -->
                     </select>
                 </div>
                 
+                <div class="mb-3">
+                    <label for="cohort2" class="form-label">Cohort 2</label>
+                    <select class="form-select" id="cohort2" required>
+                        <option value="" selected disabled>Select Cohort 2</option>
+                        <!-- <option value="ALL">All Samples</option> -->
+                    </select>
+                </div>
+
                 <div class="mb-3">
                     <label for="plotTitle" class="form-label">Plot Title</label>
                     <input type="text" class="form-control" id="plotTitle" placeholder="Enter plot title">
@@ -372,46 +380,6 @@
             </div>
         </div>
         
-        <!-- Subcohort Management panel -->
-        <div class="card shadow">
-            <div class="card-header">
-                <h5 class="mb-0">Subcohort Management</h5>
-            </div>
-            <div class="card-body">
-                <div class="mb-3">
-                    <label for="subcohortName" class="form-label">Subcohort Name</label>
-                    <input type="text" class="form-control" id="subcohortName" placeholder="e.g., Cases">
-                </div>
-                
-                <div class="mb-3">
-                    <label for="subcohortColor" class="form-label">Subcohort Color</label>
-                    <div class="input-group">
-                        <input type="color" class="form-control form-control-color" id="subcohortColor" value="#e41a1c">
-                        <span id="colorPreview" style="background-color: #e41a1c; width: 30px; border: 1px solid #dee2e6; border-radius: 0.25rem;"></span>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="sampleIdsInput" class="form-label">Sample IDs</label>
-                    <textarea class="form-control" id="sampleIdsInput" rows="6" placeholder="Enter sample IDs, one per line"></textarea>
-                </div>
-                
-                <div class="d-grid">
-                    <button type="button" class="btn btn-success" id="addSubcohortBtn">
-                        <i class="fas fa-plus me-1"></i> Add Subcohort
-                    </button>
-                </div>
-                
-                <hr>
-                
-                <h6 class="mb-3">Active Subcohorts</h6>
-                <div id="subcohortsList" class="mb-3">
-                    <div class="text-center text-muted py-3" id="noSubcohorts">
-                        No subcohorts added yet
-                    </div>
-                </div>
-            </div>
-        </div>
     </div>
     
     <div class="col-md-9">
@@ -437,7 +405,7 @@
                     <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
                         <div class="text-center p-4">
                             <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
-                            <p class="text-muted">Select a PGS ID, score type, and base cohort, then add subcohorts to generate visualizations.</p>
+                            <p class="text-muted">Select a PGS ID, score type, and two cohorts to generate visualizations.</p>
                         </div>
                     </div>
                     <!-- We'll replace this SVG with an iframe to show the Plotly visualization -->

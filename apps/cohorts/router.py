@@ -18,7 +18,7 @@ class CreateCohortRequest(BaseModel):
 async def cohorts_page(request: Request):
     """Render the cohorts management page."""
     user_id = SessionManager.get_or_create_user_id(request)
-    cohorts = db.cohorts.get_user_cohorts(user_id)
+    cohorts = db.active_db.cohorts.get_user_cohorts(user_id)
     
     return templates.TemplateResponse("cohorts.html", {
         "request": request,
@@ -31,13 +31,13 @@ async def create_cohort(request: Request, cohort_request: CreateCohortRequest):
     user_id = SessionManager.get_or_create_user_id(request)
     
     # Validate sample IDs exist in your database
-    valid_sample_ids = db.ancestry.get_valid_sample_ids(cohort_request.sample_ids)
+    valid_sample_ids = db.active_db.ancestry.get_valid_sample_ids(cohort_request.sample_ids)
     if not valid_sample_ids:
         raise HTTPException(status_code=400, detail="No valid sample IDs provided")
     
     # Create cohort
     cohort_id = str(uuid.uuid4())
-    db.cohorts.create_cohort(cohort_id, user_id, cohort_request.cohort_name, valid_sample_ids)
+    db.active_db.cohorts.create_cohort(cohort_id, user_id, cohort_request.cohort_name, valid_sample_ids)
     
     # Track activity
     SessionManager.track_user_activity(request, "create_cohort", {
@@ -56,14 +56,14 @@ async def create_cohort(request: Request, cohort_request: CreateCohortRequest):
 async def list_cohorts(request: Request):
     """List user's cohorts."""
     user_id = SessionManager.get_or_create_user_id(request)
-    cohorts = db.cohorts.get_user_cohorts(user_id)
+    cohorts = db.active_db.cohorts.get_user_cohorts(user_id)
     return {"cohorts": cohorts}
 
 @router.delete("/api/cohorts/{cohort_id}")
 async def delete_cohort(request: Request, cohort_id: str):
     """Delete a cohort."""
     user_id = SessionManager.get_or_create_user_id(request)
-    deleted = db.cohorts.delete_cohort(cohort_id, user_id)
+    deleted = db.active_db.cohorts.delete_cohort(cohort_id, user_id)
     
     if not deleted:
         raise HTTPException(status_code=404, detail="Cohort not found")
