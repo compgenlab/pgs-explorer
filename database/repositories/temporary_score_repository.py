@@ -120,6 +120,38 @@ class TemporaryScoreRepository(BaseRepository):
         rows = self.execute_query(query, [user_id])
         return [row[0] for row in rows]
 
+    def get_valid_pgs_ids(self, pgs_ids: List[str], user_id: str) -> List[str]:
+        """
+        Get valid PGS IDs that exist in temporary scores for the given user.
+        Uses the user_temporary_scores table to validate PGS_ID existence.
+        
+        Parameters:
+        -----------
+        pgs_ids : List[str]
+            List of PGS IDs to validate
+        user_id : str
+            User ID to filter by
+            
+        Returns:
+        --------
+        List[str]
+            List of PGS IDs that exist in user_temporary_scores for this user
+        """
+        if not pgs_ids:
+            return []
+            
+        placeholders = ','.join(['?'] * len(pgs_ids))
+        query = f"""
+            SELECT DISTINCT PGS_ID 
+            FROM user_temporary_scores 
+            WHERE user_id = ?
+            AND PGS_ID IN ({placeholders})
+            ORDER BY PGS_ID
+        """
+        params = [user_id] + pgs_ids
+        rows = self.execute_query(query, params)
+        return [row[0] for row in rows]
+        
     def get_all_pgs_with_traits(self, user_id: str) -> List[Dict[str, str]]:
         """Get all PGS IDs with traits for user's temporary scores."""
         query = """

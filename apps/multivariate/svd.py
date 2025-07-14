@@ -193,7 +193,7 @@ def perform_svd_analysis(score_type, specific_pgs_ids=None, cohort=None, user_id
 def fetch_svd_data(score_type, specific_pgs_ids, cohort, user_id=None):
     """Fetch PGS IDs and sample IDs for SVD analysis."""
     # Get PGS IDs
-    pgs_ids = db.fetch_pgs_ids(
+    pgs_ids = db.active_db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
         score_type=score_type,
         user_id=user_id
@@ -202,11 +202,11 @@ def fetch_svd_data(score_type, specific_pgs_ids, cohort, user_id=None):
     
     # Get sample IDs
     if cohort and cohort != "ALL":
-        sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
+        sample_ids = db.active_db.ancestry.get_sample_ids_by_cohort(cohort)
         print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
     else:
         # Get all sample IDs that have scores for these PGS IDs
-        sample_ids = db.scores.get_sample_ids_with_scores(
+        sample_ids = db.active_db.scores.get_sample_ids_with_scores(
             score_type=score_type,
             pgs_ids=pgs_ids
         )
@@ -222,7 +222,7 @@ def fetch_svd_matrix(sample_ids, pgs_ids, score_type, user_id=None):
     start_time = time.time()
     print("Starting data processing...")
     
-    matrix, _ = db.get_score_matrix(
+    matrix, _ = db.active_db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
@@ -379,7 +379,7 @@ def generate_svd_biplot_sample(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors
     scale_factor = calculate_biplot_scale_factor(U_scaled, Vt, n_components)
     
     # Fetch metadata and add PGS vectors
-    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
+    pgs_metadata = db.active_db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
     add_pgs_vectors(fig, Vt, pgs_ids, top_indices, scale_factor, pgs_metadata, n_components)
     
     # Update layout
@@ -406,7 +406,7 @@ def generate_svd_biplot_score(U, S, Vt, pgs_ids, sample_ids, stats, max_vectors=
     fig = go.Figure()
     
     # Fetch metadata and create hover text
-    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
+    pgs_metadata = db.active_db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
     hover_text = create_score_hover_text(pgs_ids, pgs_metadata, sample_ids)
     
     # Add PGS score scatter plot

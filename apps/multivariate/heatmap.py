@@ -7,7 +7,7 @@ import sqlite3
 from datetime import datetime
 import plotly.graph_objects as go
 from scipy.cluster.hierarchy import linkage, dendrogram
-from apps.core.utils import generate_request_hash
+from apps.core.utils import process_cache_request
 from database import db
 
 def process_heatmap(request_data):
@@ -19,7 +19,7 @@ def process_heatmap(request_data):
         os.makedirs("temp", exist_ok=True)
         
         # Check if already cached
-        existing, html_path, json_path = generate_request_hash(request_data)
+        existing, html_path, json_path = process_cache_request(request_data)
         if existing:
             return f"/{html_path}"
 
@@ -148,13 +148,13 @@ def generate_static_heatmap_for_large_dataset(score_type='Z_norm2', max_pgs_ids=
 
 def fetch_heatmap_data(score_type, specific_pgs_ids, cohort, user_id):
     """Fetch all required data for heatmap generation."""
-    pgs_ids = db.fetch_pgs_ids(
+    pgs_ids = db.active_db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
         score_type=score_type,
         user_id=user_id
     )
-    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
-    sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
+    pgs_metadata = db.active_db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
+    sample_ids = db.active_db.ancestry.get_sample_ids_by_cohort(cohort)
     
     return {
         'pgs_ids': pgs_ids,
@@ -166,7 +166,7 @@ def calculate_statistics_and_thresholds(score_type, pgs_ids, std_dev_threshold, 
     """Calculate statistics and outlier thresholds."""
     print("Calculating overall score distribution...")
     # Get all statistics in one call
-    stats = db.get_score_statistics_with_outliers(
+    stats = db.active_db.get_score_statistics_with_outliers(
         score_type, 
         pgs_ids, 
         std_dev_threshold=std_dev_threshold,
@@ -201,7 +201,7 @@ def fetch_score_matrix(sample_ids, pgs_ids, score_type, upper_threshold, lower_t
     print("Creating matrix data structure...")
     start_time = time.time()
     
-    matrix, pgs_list = db.get_score_matrix(
+    matrix, pgs_list = db.active_db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,

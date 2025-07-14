@@ -23,10 +23,10 @@ class SessionManager:
         session_id = SessionManager._get_session_id_from_request(request)
         
         if session_id:
-            session = db.sessions.get_session(session_id)
+            session = db.active_db.sessions.get_session(session_id)
             if session:
                 # Update last_activity whenever session is accessed
-                db.sessions.update_last_activity(session_id)
+                db.active_db.sessions.update_last_activity(session_id)
                 return session
         
         # Create new session
@@ -38,7 +38,7 @@ class SessionManager:
             "recent_activities": []
         }
         
-        db.sessions.create_session(session_id, user_id, session_data)
+        db.active_db.sessions.create_session(session_id, user_id, session_data)
         
         return {
             "session_id": session_id,
@@ -49,7 +49,7 @@ class SessionManager:
     @staticmethod
     def _update_session(session_id: str, session_data: Dict[str, Any]) -> None:
         """Update session in database."""
-        db.sessions.update_session(session_id, session_data)
+        db.active_db.sessions.update_session(session_id, session_data)
     
     @staticmethod
     def get_session_data(request: Request) -> Dict[str, Any]:
@@ -85,7 +85,7 @@ class SessionManager:
         """Clear all session data."""
         session_id = SessionManager._get_session_id_from_request(request)
         if session_id:
-            db.sessions.delete_session(session_id)
+            db.active_db.sessions.delete_session(session_id)
     
     @staticmethod
     def get_or_create_user_id(request: Request) -> str:
@@ -100,7 +100,7 @@ class SessionManager:
             request.session["session_id"] = session_id
         
         # Look up actual data in database using this session_id
-        session_record = db.sessions.get_session(session_id)
+        session_record = db.active_db.sessions.get_session(session_id)
         
         if not session_record:
             # Create new database record
@@ -110,7 +110,7 @@ class SessionManager:
                 "preferences": {},
                 "recent_activities": []
             }
-            db.sessions.create_session(session_id, user_id, session_data)
+            db.active_db.sessions.create_session(session_id, user_id, session_data)
             return user_id
         
         return session_record["user_id"]

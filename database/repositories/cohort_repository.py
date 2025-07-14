@@ -39,10 +39,10 @@ class CohortRepository(BaseRepository):
         query = """
             SELECT cohort_id, cohort_name, sample_ids, created_at
             FROM user_cohorts 
-            WHERE cohort_id = ? AND user_id = ?
+            WHERE cohort_name = ? AND user_id = ?
         """
         row = self.execute_query_single(query, [cohort_id, user_id])
-        
+        if row: print(row[0])
         if row:
             return {
                 "cohort_id": row[0],

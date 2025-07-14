@@ -13,7 +13,6 @@ $(document).ready(function() {
 
     // 2. Set variables to store cohorts and data
     cohorts = []
-    let subcohorts = [];
     let baseData = null;
     let tableData = [];
     let originalTableData = []; 
@@ -38,32 +37,12 @@ $(document).ready(function() {
     loadPermanentCohorts()
     
     ////////// EVENT LISTENERS //////////
-    // Initialize color picker
-    $('#subcohortColor').on('input', function() {
-        $('#colorPreview').css('background-color', $(this).val());
-    });
-    
     // Handle PGS selection change
     $('#pgsId').on('change', function() {
         const pgsId = $(this).val();
         if (pgsId) {
             fetchScoreTypes(pgsId);
         }
-    });
-    
-    // Initialize threshold type change handler
-    $('#thresholdType').on('change', function() {
-        const thresholdType = $(this).val();
-        if (thresholdType === 'percentile') {
-            $('#thresholdHint').text('Enter percentile (0-100)');
-        } else {
-            $('#thresholdHint').text('Enter score value');
-        }
-    });
-    
-    // Add subcohort button handler
-    $('#addSubcohortBtn').on('click', function() {
-        addSubcohort();
     });
     
     // Generate button handler
@@ -143,7 +122,7 @@ $(document).ready(function() {
             <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
             <div class="text-center p-4">
                 <i class="fas fa-chart-bar fa-3x text-muted mb-3"></i>
-                <p class="text-muted">Select cohorts or PGS IDs, choose a chart type, and generate a distribution plot to visualize the data.</p>
+                <p class="text-muted">Select a PGS ID, score type, and two cohorts to generate comparison visualizations.</p>
             </div>
             </div>
         `);
@@ -208,276 +187,214 @@ $(document).ready(function() {
     }
 
     ////////// COHORT FUNCTIONS //////////
-    // Get permanent cohorts
     function loadPermanentCohorts() {
+        console.log("DEBUG: Starting loadPermanentCohorts function");
+        
+        // First, let's check if the dropdown elements exist
+        console.log("DEBUG: Checking if dropdown elements exist...");
+        const cohort1Check = document.getElementById('cohort1');
+        const cohort2Check = document.getElementById('cohort2');
+        console.log("DEBUG: cohort1 element:", cohort1Check);
+        console.log("DEBUG: cohort2 element:", cohort2Check);
+        
         $.ajax({
             url: '/api/permanent_cohorts',
             type: 'GET',
             success: function(data) {
-                console.log("DEBUG: Full cohorts response:", data);
+                console.log("DEBUG: AJAX SUCCESS - Full cohorts response:", data);
+                console.log("DEBUG: Response type:", typeof data);
+                console.log("DEBUG: Response keys:", Object.keys(data));
+                
+                // Check if data has the expected structure
+                if (!data) {
+                    console.log("ERROR: No data received from API");
+                    showAlert('No data received from cohorts API', 'danger');
+                    return;
+                }
+                
+                if (!data.cohorts) {
+                    console.log("ERROR: No 'cohorts' property in response");
+                    console.log("DEBUG: Available properties:", Object.keys(data));
+                    showAlert('Invalid cohorts data structure', 'danger');
+                    return;
+                }
+                
                 console.log("DEBUG: Cohorts array:", data.cohorts);
-                console.log("DEBUG: Cohorts length:", data.cohorts ? data.cohorts.length : 'undefined');
+                console.log("DEBUG: Cohorts length:", data.cohorts.length);
+                console.log("DEBUG: Cohorts type:", Array.isArray(data.cohorts));
                 
                 if (data.cohorts && data.cohorts.length > 0) {
                     // Debug each cohort
                     data.cohorts.forEach(function(cohort, index) {
                         console.log(`DEBUG: Cohort ${index}:`, cohort);
+                        console.log(`DEBUG: Cohort properties:`, Object.keys(cohort));
                         console.log(`DEBUG: Cohort name: ${cohort.name}, samples: ${cohort.sample_ids ? cohort.sample_ids.length : 'no sample_ids'}`);
                     });
                     
-                    // Populate cohorts for regular cohort management
-                    data.cohorts.forEach(function(cohort, index) {
-                        const color = PRESET_COLORS[index % PRESET_COLORS.length];
-                        addPermanentCohort(cohort.name, cohort.sample_ids, color);
-                    });
+                    // Get both dropdown elements using jQuery
+                    console.log("DEBUG: Getting dropdown elements with jQuery...");
+                    const cohort1Select = $('#cohort1');
+                    const cohort2Select = $('#cohort2');
                     
-                    // NOW ADD DEBUGGING FOR THE DROPDOWN POPULATION:
-                    console.log("DEBUG: Looking for base cohort dropdown...");
+                    console.log("DEBUG: Cohort1 jQuery object:", cohort1Select);
+                    console.log("DEBUG: Cohort1 length:", cohort1Select.length);
+                    console.log("DEBUG: Cohort1 element:", cohort1Select[0]);
                     
-                    // Check if the dropdown exists
-                    const baseCohortSelect = $('#baseCohort');
-                    console.log("DEBUG: Base cohort dropdown found:", baseCohortSelect.length > 0);
-                    console.log("DEBUG: Base cohort dropdown element:", baseCohortSelect);
+                    console.log("DEBUG: Cohort2 jQuery object:", cohort2Select);
+                    console.log("DEBUG: Cohort2 length:", cohort2Select.length);
+                    console.log("DEBUG: Cohort2 element:", cohort2Select[0]);
                     
-                    if (baseCohortSelect.length === 0) {
-                        console.log("ERROR: #baseCohort dropdown not found in DOM!");
+                    if (cohort1Select.length === 0) {
+                        console.log("ERROR: #cohort1 dropdown not found in DOM!");
+                        showAlert('Cohort 1 dropdown element not found', 'danger');
                         return;
                     }
                     
-                    // Clear and populate the dropdown
-                    baseCohortSelect.empty();
-                    baseCohortSelect.append('<option value="" selected disabled>Select Base Cohort</option>');
-                    console.log("DEBUG: Dropdown cleared and default option added");
+                    if (cohort2Select.length === 0) {
+                        console.log("ERROR: #cohort2 dropdown not found in DOM!");
+                        showAlert('Cohort 2 dropdown element not found', 'danger');
+                        return;
+                    }
                     
+                    console.log("DEBUG: Both dropdowns found, proceeding with population...");
+                    
+                    // Clear both dropdowns and add default options
+                    console.log("DEBUG: Clearing dropdowns...");
+                    cohort1Select.empty();
+                    cohort2Select.empty();
+                    
+                    console.log("DEBUG: Adding default options...");
+                    cohort1Select.append('<option value="" selected disabled>Select First Cohort</option>');
+                    cohort2Select.append('<option value="" selected disabled>Select Second Cohort</option>');
+                    
+                    console.log("DEBUG: Default options added. Current HTML:");
+                    console.log("Cohort1:", cohort1Select.html());
+                    console.log("Cohort2:", cohort2Select.html());
+                    
+                    // Populate both dropdowns with cohort data
+                    console.log("DEBUG: Starting to populate dropdowns with cohort data...");
                     data.cohorts.forEach(function(cohort, index) {
-                        console.log(`DEBUG: Adding cohort ${index} to dropdown: ${cohort.name} (${cohort.sample_ids.length} samples)`);
-                        const option = `<option value="${cohort.name}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`;
-                        console.log("DEBUG: Option HTML:", option);
-                        baseCohortSelect.append(option);
+                        console.log(`DEBUG: Processing cohort ${index}: ${cohort.name}`);
+                        
+                        // Validate cohort data
+                        if (!cohort.name) {
+                            console.log(`WARNING: Cohort ${index} has no name, skipping`);
+                            return;
+                        }
+                        
+                        if (!cohort.sample_ids || !Array.isArray(cohort.sample_ids)) {
+                            console.log(`WARNING: Cohort ${index} has invalid sample_ids, using 0 count`);
+                            cohort.sample_ids = [];
+                        }
+                        
+                        const sampleCount = cohort.sample_ids.length;
+                        const optionText = `${cohort.name} (${sampleCount} samples)`;
+                        const optionHtml = `<option value="${cohort.name}">${optionText}</option>`;
+                        
+                        console.log(`DEBUG: Creating option - Value: "${cohort.name}", Text: "${optionText}"`);
+                        console.log(`DEBUG: Option HTML: ${optionHtml}`);
+                        
+                        // Add to both dropdowns
+                        cohort1Select.append(optionHtml);
+                        cohort2Select.append(optionHtml);
+                        
+                        console.log(`DEBUG: Added option ${index} to both dropdowns`);
                     });
                     
-                    console.log("DEBUG: Final dropdown HTML:", baseCohortSelect.html());
-                    console.log("DEBUG: Final dropdown children count:", baseCohortSelect.children().length);
+                    console.log("DEBUG: Finished populating dropdowns");
+                    console.log("DEBUG: Final cohort1 HTML:", cohort1Select.html());
+                    console.log("DEBUG: Final cohort2 HTML:", cohort2Select.html());
+                    console.log("DEBUG: Final cohort1 children count:", cohort1Select.children().length);
+                    console.log("DEBUG: Final cohort2 children count:", cohort2Select.children().length);
                     
-                    // Hide "no cohorts" message since we have permanent cohorts
-                    $('#noCohorts').hide();
+                    // Setup validation
+                    console.log("DEBUG: Setting up cohort validation...");
+                    setupCohortValidation();
+                    
+                    // Store cohorts globally
+                    console.log("DEBUG: Storing cohorts globally...");
+                    cohorts = data.cohorts.map(function(cohort, index) {
+                        const color = PRESET_COLORS[index % PRESET_COLORS.length];
+                        return {
+                            id: index + 1,
+                            name: cohort.name,
+                            color: color,
+                            sampleIds: cohort.sample_ids,
+                            active: true,
+                            permanent: true
+                        };
+                    });
+                    
+                    console.log("DEBUG: Successfully loaded", data.cohorts.length, "cohorts");
+                    showAlert(`Successfully loaded ${data.cohorts.length} cohorts`, 'success');
+                    
                 } else {
                     console.log("DEBUG: No cohorts found or cohorts array is empty");
+                    showAlert('No cohorts available', 'warning');
                 }
             },
-            error: function(xhr) {
-                console.log('DEBUG: Error loading cohorts:', xhr.status, xhr.responseText);
+            error: function(xhr, status, error) {
+                console.log('ERROR: AJAX failed');
+                console.log('Status:', status);
+                console.log('Error:', error);
+                console.log('Response Status:', xhr.status);
+                console.log('Response Text:', xhr.responseText);
+                
+                showAlert(`Failed to load cohorts: ${status} - ${error}`, 'danger');
             }
         });
     }
     
-    // Adds permanent cohort items
-    function addPermanentCohort(name, sampleIds, color) {
-        const cohortId = cohorts.length + 1;
+    // Setup validation to prevent selecting the same cohort in both dropdowns
+    function setupCohortValidation() {
+        console.log("DEBUG: Setting up cohort validation");
         
-        // Create cohort entry
-        const cohortItem = createCohortItem(cohortId, name, color, sampleIds, true);
-        $('#cohortsList').append(cohortItem);
+        // Remove any existing event handlers to prevent duplicates
+        $('#cohort1').off('change.validation');
+        $('#cohort2').off('change.validation');
         
-        // Add to cohorts array
-        cohorts.push({
-            id: cohortId,
-            name: name,
-            color: color,
-            sampleIds: sampleIds,
-            active: true,
-            permanent: true
-        });
-    }
-
-    // Stores page-specific cohort information
-    function createCohortItem(id, name, color, sampleIds, isPermanent) {
-        const cohortDiv = document.createElement('div');
-        cohortDiv.className = 'cohort-row';
-        cohortDiv.dataset.cohortId = id;
-        
-        let html = `
-            <div class="d-flex justify-content-between align-items-center mb-2">
-                <div>
-                    <span class="badge rounded-pill me-2" style="background-color: ${color};">&nbsp;</span>
-                    <strong>${name}</strong>
-                </div>
-                <div>
-        `;
-        
-        if (!isPermanent) {
-            html += `<i class="fas fa-times delete-cohort" data-cohort-id="${id}"></i>`;
-        }
-        
-        html += `
-                </div>
-            </div>
-            <div class="d-flex justify-content-between align-items-center">
-                <small class="text-muted">${sampleIds.length} samples</small>
-                <div class="form-check form-switch">
-                    <input class="form-check-input cohort-toggle" type="checkbox" id="cohortActive${id}" data-cohort-id="${id}" checked>
-                    <label class="form-check-label" for="cohortActive${id}">Active</label>
-                </div>
-            </div>
-        `;
-        
-        cohortDiv.innerHTML = html;
-        
-        // Add event listeners
-        $(cohortDiv).find('.delete-cohort').on('click', function() {
-            const cohortId = parseInt($(this).data('cohort-id'));
-            deleteCohort(cohortId);
-        });
-        
-        $(cohortDiv).find('.cohort-toggle').on('change', function() {
-            const cohortId = parseInt($(this).data('cohort-id'));
-            const isActive = $(this).prop('checked');
-            toggleCohort(cohortId, isActive);
-        });
-        
-        return cohortDiv;
-    }
-    ////////// SUBCOHORT FUNCTIONS //////////
-    // Function to add a subcohort
-    function addSubcohort() {
-        const name = $('#subcohortName').val().trim();
-        const color = $('#subcohortColor').val();
-        const sampleIdsText = $('#sampleIdsInput').val().trim();
-        
-        if (!name) {
-            showAlert('Please enter a name for the subcohort', 'warning');
-            return;
-        }
-        
-        if (!sampleIdsText) {
-            showAlert('Please enter at least one sample ID', 'warning');
-            return;
-        }
-        
-        const sampleIds = sampleIdsText.split('\n').map(id => id.trim()).filter(id => id);
-        
-        if (sampleIds.length === 0) {
-            showAlert('Please enter valid sample IDs', 'warning');
-            return;
-        }
-        
-        // Check for duplicate subcohort name
-        if (subcohorts.some(sc => sc.name === name)) {
-            showAlert(`A subcohort with name "${name}" already exists`, 'warning');
-            return;
-        }
-        
-        // Add to subcohorts array
-        subcohorts.push({
-            name: name,
-            color: color,
-            sampleIds: sampleIds,
-            active: true
-        });
-        
-        // Update UI
-        updateSubcohortsList();
-        
-        // Clear input fields
-        $('#subcohortName').val('');
-        $('#sampleIdsInput').val('');
-        
-        // Pick next color in preset list
-        const presetColors = ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00', '#ffff33', '#a65628', '#f781bf'];
-        $('#subcohortColor').val(presetColors[subcohorts.length % presetColors.length]);
-        $('#colorPreview').css('background-color', $('#subcohortColor').val());
-        
-        showAlert(`Added subcohort "${name}" with ${sampleIds.length} samples`, 'success');
-        updateSubcohortSelects();
-    }
-    
-    // Function to update the subcohorts list UI
-    function updateSubcohortsList() {
-        const subcohortsList = $('#subcohortsList');
-        subcohortsList.empty();
-        
-        if (subcohorts.length === 0) {
-            subcohortsList.html('<div class="text-center text-muted py-3" id="noSubcohorts">No subcohorts added yet</div>');
-            return;
-        }
-        
-        subcohorts.forEach((subcohort, index) => {
-            const subcohortRow = $(`
-                <div class="subcohort-row" data-subcohort-id="${index}">
-                    <div class="d-flex justify-content-between align-items-center mb-2">
-                        <div>
-                            <span class="color-indicator" style="background-color: ${subcohort.color};"></span>
-                            <strong>${subcohort.name}</strong>
-                        </div>
-                        <div>
-                            <div class="form-check form-switch d-inline-block me-2">
-                                <input class="form-check-input subcohort-toggle" type="checkbox" 
-                                    id="subcohort-${index}" data-subcohort-id="${index}" ${subcohort.active ? 'checked' : ''}>
-                            </div>
-                            <i class="fas fa-times delete-subcohort" data-subcohort-id="${index}" 
-                               style="cursor: pointer; color: #dc3545;"></i>
-                        </div>
-                    </div>
-                    <div>
-                        <small class="text-muted">${subcohort.sampleIds.length} samples</small>
-                    </div>
-                </div>
-            `);
+        $('#cohort1').on('change.validation', function() {
+            const cohort1Value = $(this).val();
+            const cohort2Select = $('#cohort2');
             
-            // Add event listeners
-            subcohortRow.find('.subcohort-toggle').on('change', function() {
-                const subcohortId = parseInt($(this).data('subcohort-id'));
-                subcohorts[subcohortId].active = $(this).prop('checked');
-                
-                // // If we have data, regenerate the plot
-                // if (baseData) {
-                //     renderPlot();
-                // }
-            });
+            console.log(`DEBUG: Cohort1 changed to: ${cohort1Value}`);
+            console.log(`DEBUG: Current cohort2 value: ${cohort2Select.val()}`);
             
-            subcohortRow.find('.delete-subcohort').on('click', function() {
-                const subcohortId = parseInt($(this).data('subcohort-id'));
-                deleteSubcohort(subcohortId);
-            });
+            // If cohort2 has the same value, clear it
+            if (cohort2Select.val() === cohort1Value && cohort1Value !== '') {
+                cohort2Select.val('');
+                showAlert('Cannot select the same cohort twice. Please choose a different second cohort.', 'warning');
+                console.log("DEBUG: Cleared cohort2 because it matched cohort1");
+            }
+        });
+        
+        $('#cohort2').on('change.validation', function() {
+            const cohort2Value = $(this).val();
+            const cohort1Select = $('#cohort1');
             
-            subcohortsList.append(subcohortRow);
+            console.log(`DEBUG: Cohort2 changed to: ${cohort2Value}`);
+            console.log(`DEBUG: Current cohort1 value: ${cohort1Select.val()}`);
+            
+            // If cohort1 has the same value, clear it
+            if (cohort1Select.val() === cohort2Value && cohort2Value !== '') {
+                cohort1Select.val('');
+                showAlert('Cannot select the same cohort twice. Please choose a different first cohort.', 'warning');
+                console.log("DEBUG: Cleared cohort1 because it matched cohort2");
+            }
         });
-    }
-    
-    // Function to delete a subcohort
-    function deleteSubcohort(subcohortId) {
-        subcohorts.splice(subcohortId, 1);
-        updateSubcohortsList();
-
-        showAlert('Subcohort removed', 'info');
-        updateSubcohortSelects();
+        
+        console.log("DEBUG: Cohort validation setup complete");
     }
 
-    // Populate subcohort selects when subcohorts are added
-    function updateSubcohortSelects() {
-        const subcohort1Select = $('#subcohort1Select');
-        const subcohort2Select = $('#subcohort2Select');
-        
-        subcohort1Select.empty();
-        subcohort2Select.empty();
-        
-        subcohort1Select.append('<option value="" selected disabled>Select subcohort</option>');
-        subcohort2Select.append('<option value="" selected disabled>Select subcohort</option>');
-        
-        subcohorts.forEach((subcohort, index) => {
-            subcohort1Select.append(`<option value="${index}">${subcohort.name}</option>`);
-            subcohort2Select.append(`<option value="${index}">${subcohort.name}</option>`);
-        });
-    }
-
-    ////////// TASK FUNCTIONS //////////
+    ////////// TASK FUNCTIONS - UPDATED FOR TWO COHORTS //////////
     // Function to generate the plot using the backend
     function generatePlot(taskName = '') {
         const pgsId = $('#pgsId').val();
         const scoreType = $('#scoreType').val();
-        const baseCohort = $('#baseCohort').val();
+        const cohort1 = $('#cohort1').val();  // Changed from baseCohort
+        const cohort2 = $('#cohort2').val();  // New field
         
-        // Validation
+        // Updated validation
         if (!pgsId) {
             showAlert('Please select a PGS ID', 'warning');
             return;
@@ -488,18 +405,20 @@ $(document).ready(function() {
             return;
         }
         
-        if (!baseCohort) {
-            showAlert('Please select a Base Cohort', 'warning');
+        if (!cohort1) {
+            showAlert('Please select the first cohort', 'warning');
             return;
         }
         
-        // Get active subcohorts and format them correctly
-        const formattedSubcohorts = subcohorts.filter(sc => sc.active).map(sc => ({
-            name: sc.name,
-            color: sc.color,
-            sample_ids: sc.sampleIds,  // Convert camelCase to snake_case
-            active: sc.active
-        }));
+        if (!cohort2) {
+            showAlert('Please select the second cohort', 'warning');
+            return;
+        }
+        
+        if (cohort1 === cohort2) {
+            showAlert('Please select two different cohorts for comparison', 'warning');
+            return;
+        }
         
         // Show loading spinner
         $('#plotPlaceholder').remove();
@@ -507,24 +426,24 @@ $(document).ready(function() {
         $('#plotIframe').remove();
         $('#loadingSpinner').show();
         
-        // Prepare request data
+        // Prepare request data with new structure
         const requestData = {
             pgs_id: pgsId,
             score_type: scoreType,
-            base_cohort: baseCohort,
-            plot_title: $('#plotTitle').val().trim() || `Distribution of ${pgsId} - ${scoreType}`,
+            cohort_1: cohort1,  // Changed from base_cohort
+            cohort_2: cohort2,  // New field
+            plot_title: $('#plotTitle').val().trim() || `${cohort1} vs ${cohort2} - ${pgsId}`,
             normalize_bins: $('#normalizeBins').is(':checked'),
-            subcohorts: formattedSubcohorts,
             display_or: $('#displayOR').is(':checked'),
             or_calculation_type: getSelectedORCalculationType(),
             bin_size: parseInt($('#binSize').val()) || 30,
             quantile_count: parseInt($('#quantileCount').val()) || 10,
             threshold_value: parseFloat($('#thresholdValue').val()) || 0,
             decile_count: parseInt($('#decileCount').val()) || 10,
-            name: taskName // Add task name to the request
+            name: taskName
         };
         
-        console.log("Sending request:", JSON.stringify(requestData, null, 2));
+        console.log("Sending cohort comparison request:", JSON.stringify(requestData, null, 2));
         
         // Make API request
         $.ajax({
@@ -539,7 +458,7 @@ $(document).ready(function() {
                     const taskId = response.task_id;
                     
                     // Show task info in the alert
-                    showAlert(`Subcohort plot generation started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
+                    showAlert(`Cohort comparison generation started (Task ID: ${taskId}). You'll be notified when it's ready.`, 'info');
                     
                     // Start polling for task status
                     pollTaskStatus(taskId, 'subcohort_plot');
@@ -574,7 +493,7 @@ $(document).ready(function() {
                     originalTableData = [...tableData]; // Keep a copy for filtering
                     renderPercentileTable(tableData);
                     
-                    showAlert('Subcohort plot generated successfully.', 'success');
+                    showAlert('Cohort comparison generated successfully.', 'success');
                 } else {
                     // Unexpected response format
                     $('#loadingSpinner').hide();
@@ -583,6 +502,7 @@ $(document).ready(function() {
             },
             error: function(xhr, status, error) {
                 $('#loadingSpinner').hide();
+                addPlaceholder();
                 $('#plotPlaceholder').show();
                 
                 console.error("Error details:", xhr.responseText);
@@ -645,7 +565,7 @@ $(document).ready(function() {
                         $('.progress-bar').removeClass('progress-bar-animated').css('width', '100%');
                         
                         // Show success message
-                        showAlert(`${taskType === 'subcohort_plot' ? 'Subcohort plot' : taskType.charAt(0).toUpperCase() + taskType.slice(1)} generated successfully!`, 'success');
+                        showAlert(`Cohort comparison generated successfully!`, 'success');
                         
                         // Hide the loading spinner
                         $('#loadingSpinner').hide();
@@ -698,12 +618,13 @@ $(document).ready(function() {
                         $('#taskStatusLabel').text('Failed');
                         
                         // Show error message
-                        showAlert(`Error generating ${taskType === 'subcohort_plot' ? 'subcohort plot' : taskType}: ${response.error || 'Unknown error'}`, 'danger');
+                        showAlert(`Error generating cohort comparison: ${response.error || 'Unknown error'}`, 'danger');
                         
                         // Hide loading spinner
                         $('#loadingSpinner').hide();
                         
                         // Show placeholder
+                        addPlaceholder();
                         $('#plotPlaceholder').show();
                         
                     } else {
@@ -739,12 +660,16 @@ $(document).ready(function() {
                 $('#plotContainer').html(iframe).show();  
                 
                 // Enable download buttons
-                $('#downloadPngBtn').prop('disabled', false).attr('data-filepath', task.result_path);
-                $('#downloadHtmlBtn').prop('disabled', false).attr('data-filepath', task.result_path);
-                $('#generateInteractive').prop('disabled', false).attr('data-filepath', task.result_path);
+                $('#downloadSvgBtn').prop('disabled', false);
+                $('#downloadTableBtn').prop('disabled', false);
+                
+                // Update download button to open the plot
+                $('#downloadSvgBtn').off('click').on('click', function() {
+                    window.open(task.result_path, '_blank');
+                });
                 
                 // Show success message
-                const taskName = task.name || `${task.task_type.charAt(0).toUpperCase() + task.task_type.slice(1)}`;
+                const taskName = task.name || 'Cohort comparison';
                 showAlert(`${taskName} visualization loaded successfully.`, 'success');
                 
             } else if (task.status === 'processing' || task.status === 'queued') {
@@ -801,5 +726,124 @@ $(document).ready(function() {
             return 'decileCumulative';
         }
         return null;
+    }
+
+    ////////// TABLE FUNCTIONS (placeholders for if you implement them) //////////
+    // Apply percentile filter
+    function applyPercentileFilter() {
+        const percentileValue = parseFloat($('#percentileInput').val());
+        const filterType = $('#percentileFilter').val();
+        
+        if (isNaN(percentileValue) || percentileValue < 0 || percentileValue > 100) {
+            showAlert('Please enter a valid percentile value between 0 and 100', 'warning');
+            return;
+        }
+        
+        console.log(`Filtering by percentile ${filterType} ${percentileValue}`);
+        // Add your filtering logic here if needed
+        
+        if (!originalTableData || originalTableData.length === 0) {
+            showAlert('No table data to filter', 'warning');
+            return;
+        }
+        
+        // Filter the data based on percentile
+        let filteredData;
+        if (filterType === 'above') {
+            filteredData = originalTableData.filter(row => 
+                parseFloat(row.PERCENTILE) >= percentileValue
+            );
+        } else {
+            filteredData = originalTableData.filter(row => 
+                parseFloat(row.PERCENTILE) <= percentileValue
+            );
+        }
+        
+        // Update the table display
+        renderPercentileTable(filteredData);
+        
+        showAlert(`Filtered to ${filteredData.length} samples ${filterType} ${percentileValue}th percentile`, 'info');
+    }
+
+    // Download table as CSV
+    function downloadTableAsCsv() {
+        if (!tableData || tableData.length === 0) {
+            showAlert('No table data available to download', 'warning');
+            return;
+        }
+        
+        // Create CSV content
+        const headers = Object.keys(tableData[0]);
+        const csvContent = [
+            headers.join(','), // Header row
+            ...tableData.map(row => 
+                headers.map(header => `"${row[header]}"`).join(',')
+            )
+        ].join('\n');
+        
+        // Create and trigger download
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'cohort_comparison_data.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        showAlert('CSV file downloaded successfully', 'success');
+    }
+
+    // Render percentile table
+    function renderPercentileTable(data) {
+        if (!data || data.length === 0) {
+            $('#percentileTable').html('<p class="text-muted">No data available</p>');
+            return;
+        }
+        
+        // Create table HTML
+        const headers = Object.keys(data[0]);
+        let tableHtml = `
+            <div class="table-responsive">
+                <table class="table table-striped table-hover">
+                    <thead class="table-dark">
+                        <tr>
+                            ${headers.map(header => `<th>${header}</th>`).join('')}
+                        </tr>
+                    </thead>
+                    <tbody>
+        `;
+        
+        data.forEach(row => {
+            tableHtml += `
+                <tr>
+                    ${headers.map(header => `<td>${row[header]}</td>`).join('')}
+                </tr>
+            `;
+        });
+        
+        tableHtml += `
+                    </tbody>
+                </table>
+            </div>
+        `;
+        
+        $('#percentileTable').html(tableHtml);
+        
+        // Enable download button
+        $('#downloadTableBtn').prop('disabled', false);
+    }
+
+    // Download plot as SVG (handled by download button)
+    function downloadPlotAsSvg() {
+        // This is typically handled by the download button click handler
+        // which opens the plot URL in a new window
+        const iframe = $('#plotIframe');
+        if (iframe.length > 0) {
+            window.open(iframe.attr('src'), '_blank');
+        } else {
+            showAlert('No plot available to download', 'warning');
+        }
     }
 });

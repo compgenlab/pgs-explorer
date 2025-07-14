@@ -169,7 +169,7 @@ def perform_pca_analysis(score_type, specific_pgs_ids=None, cohort=None, user_id
 def fetch_pca_data(score_type, specific_pgs_ids, cohort, user_id):
     """Fetch PGS IDs and sample IDs for PCA analysis."""
     # Get PGS IDs
-    pgs_ids = db.fetch_pgs_ids(
+    pgs_ids = db.active_db.fetch_pgs_ids(
         specific_pgs_ids=specific_pgs_ids,
         score_type=score_type,
         user_id=user_id
@@ -178,11 +178,11 @@ def fetch_pca_data(score_type, specific_pgs_ids, cohort, user_id):
     
     # Get sample IDs
     if cohort and cohort != "ALL":
-        sample_ids = db.ancestry.get_sample_ids_by_cohort(cohort)
+        sample_ids = db.active_db.ancestry.get_sample_ids_by_cohort(cohort)
         print(f"Filtering to {len(sample_ids)} samples from {cohort} population")
     else:
         # Get all sample IDs that have scores for these PGS IDs
-        sample_ids = db.scores.get_sample_ids_with_scores(
+        sample_ids = db.active_db.scores.get_sample_ids_with_scores(
             score_type=score_type,
             pgs_ids=pgs_ids
         )
@@ -198,7 +198,7 @@ def fetch_pca_matrix(sample_ids, pgs_ids, score_type, user_id):
     start_time = time.time()
     print("Starting data processing...")
     
-    matrix, _ = db.get_score_matrix(
+    matrix, _ = db.active_db.get_score_matrix(
         sample_ids=sample_ids,
         pgs_ids=pgs_ids,
         score_type=score_type,
@@ -286,7 +286,7 @@ def generate_pca_score(U, S, Vt, pgs_ids, sample_ids, stats, x_axis="1", y_axis=
     Vt_scaled = scale_singular_vectors_transpose(Vt, S, x_idx, y_idx)
     
     # Fetch metadata and create hover text
-    pgs_metadata = db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
+    pgs_metadata = db.active_db.metadata.fetch_pgs_metadata(pgs_ids=pgs_ids)
     hover_text = create_pgs_hover_text(pgs_ids, pgs_metadata)
     
     # Create figure

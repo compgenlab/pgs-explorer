@@ -66,10 +66,10 @@ async def clear_all_session_data(request: Request, response: Response) -> Dict[s
     user_id = SessionManager.get_or_create_user_id(request)
     
     # Delete user's tasks
-    deleted_tasks = db.tasks.delete_user_tasks(user_id)
+    deleted_tasks = db.active_db.tasks.delete_user_tasks(user_id)
     
     # Delete user's custom cohorts  
-    deleted_cohorts = db.cohorts.delete_user_cohorts(user_id)
+    deleted_cohorts = db.active_db.cohorts.delete_user_cohorts(user_id)
     
     # Clear session
     SessionManager.clear_session(request)

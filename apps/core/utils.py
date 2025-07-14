@@ -3,98 +3,81 @@ import json
 import hashlib
 
 def generate_request_hash(request_data, request_type=None):
-    """
-    TODO
-    """
-    os.makedirs("temp", exist_ok=True)
-
+    """Generate a hash for request data."""
     data_with_type = request_data.copy()
-    data_with_type['_request_type'] = request_type
+    if request_type:
+        data_with_type['_request_type'] = request_type
+    
     request_json = json.dumps(data_with_type, sort_keys=True)
+    return hashlib.md5(request_json.encode()).hexdigest()
 
-    request_hash = hashlib.md5(request_json.encode()).hexdigest()
-    existing_file_html = check_existing_files(request_hash)
-
-    if existing_file_html:
-        return True, existing_file_html, None
-
-    html_path = f"temp/{request_hash}.html"
-    json_path = f"temp/{request_hash}.json"
-
-    return False, html_path, json_path
-
-def check_existing_files(request_hash):
-    # Check if we already have a file with this hash
+def check_cache(request_hash, request_type=None):
+    """Check if a cached file exists."""
+    os.makedirs("temp", exist_ok=True)
+    
     for filename in os.listdir("temp"):
-        if filename.endswith(".html") == f"{request_hash}":
-            # Found a cached file, update its access time
-            cached_filepath = os.path.join("temp", filename)
-            os.utime(cached_filepath)
+        if not filename.endswith(".html"):
+            continue
             
-            print(f"Using cached request: {filename}")
-            # Return file path with empty statistics
-            return True
+        if request_hash not in filename:
+            continue
+            
+        if request_type and request_type not in filename:
+            continue
+            
+        # Update access time
+        cached_filepath = os.path.join("temp", filename)
+        os.utime(cached_filepath)
+        print(f"Using cached {request_type or 'file'}: {filename}")
+        return f"/temp/{filename}"
     
     return None
 
-def cleanup_temp_files(max_size_in_gb=10):
+def get_cache_paths(request_hash, request_type=None):
+    """Generate file paths for caching."""
+    os.makedirs("temp", exist_ok=True)
+    
+    if request_type:
+        html_path = f"temp/{request_hash}_{request_type}.html"
+        json_path = f"temp/{request_hash}_{request_type}.json"
+    else:
+        html_path = f"temp/{request_hash}.html"
+        json_path = f"temp/{request_hash}.json"
+    
+    return html_path, json_path
+
+def process_cache_request(request_data, request_type=None):
     """
-    Cleans up temporary heatmap files when the directory exceeds the specified size limit.
+    Complete cache processing: generate hash, check cache, return paths.
     
-    Args:
-        max_size_in_gb: Maximum allowed size of the temp directory in GB
+    Returns:
+        (cache_hit, file_path, json_path)
+        - If cache_hit is True: file_path is cached file, json_path is None
+        - If cache_hit is False: file_path and json_path are paths to create
     """
-    temp_dir = "temp"
-    max_size_in_bytes = max_size_in_gb * 1024 * 1024 * 1024
+    request_hash = generate_request_hash(request_data, request_type)
     
-    # Check if the directory exists
-    if not os.path.exists(temp_dir):
-        return
+    # Check for existing cache
+    cached_file = check_cache(request_hash, request_type)
+    if cached_file:
+        return True, cached_file, None
     
-    # Get all HTML files in the temp directory with their stats
-    files = []
-    total_size = 0
-    
-    for filename in os.listdir(temp_dir):
-        if filename.endswith(".html"):
-            filepath = os.path.join(temp_dir, filename)
-            file_stats = os.stat(filepath)
-            file_size = file_stats.st_size
-            access_time = file_stats.st_atime  # Last access time
-            
-            files.append({
-                "path": filepath,
-                "size": file_size,
-                "last_accessed": access_time
-            })
-            
-            total_size += file_size
-    
-    print(f"Current temp directory size: {total_size / (1024 * 1024):.2f} MB")
-    
-    # If we're under the limit, do nothing
-    if total_size <= max_size_in_bytes:
-        return
-    
-    print(f"Temp directory size ({total_size / (1024 * 1024 * 1024):.2f} GB) exceeds limit of {max_size_in_gb} GB")
-    
-    # Sort files by last access time (oldest first)
-    files.sort(key=lambda x: x["last_accessed"])
-    
-    # Remove files until we're under the limit
-    deleted_count = 0
-    freed_space = 0
-    
-    while total_size > max_size_in_bytes and files:
-        file_to_remove = files.pop(0)  # Get the oldest file
-        
-        try:
-            os.remove(file_to_remove["path"])
-            freed_space += file_to_remove["size"]
-            total_size -= file_to_remove["size"]
-            deleted_count += 1
-            print(f"Deleted: {os.path.basename(file_to_remove['path'])}")
-        except Exception as e:
-            print(f"Error deleting {file_to_remove['path']}: {e}")
-    
-    print(f"Cleanup complete: Deleted {deleted_count} files, freed {freed_space / (1024 * 1024):.2f} MB")
+    # Generate new paths
+    html_path, json_path = get_cache_paths(request_hash, request_type)
+    return False, html_path, json_path
+def generate_score_hover_texts(pgs_ids, pgs_metadata):
+    """Create hover text for PGS score points."""
+    hover_text = []
+
+    for pgs_id in pgs_ids:
+        meta = pgs_metadata.get(pgs_id, {})
+        if not meta: 
+            print(f"Missing metadata for {pgs_id}.")
+
+        hover_info: (
+            f"PGS ID: {pgs_id}<br>"
+            f"Name: {meta.get('PGS_Name', 'N/A')}<br>"
+            f"Trait: {meta.get('Reported_Trait', 'N/A')}<br>"
+            f"PMID: {meta.get('Publication_PMID', 'N/A')}<br>"
+            f"DOI: {meta.get('Publication_DOI', 'N/A')}<br>"
+        )

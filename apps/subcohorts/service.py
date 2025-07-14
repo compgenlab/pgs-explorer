@@ -26,16 +26,16 @@ def process_subcohort_plot(request_data: Dict[str, Any]) -> str:
         # Extract parameters
         plot_params = extract_plot_parameters(request_data)
         
-        # Get base cohort and subcohort data
+        # Get base cohort (union) and subcohort data
         base_scores, subcohort_data, table_data = get_cohort_data(
             plot_params["pgs_id"], 
             plot_params["score_type"], 
-            plot_params["base_cohort"], 
-            plot_params["subcohorts"],
+            plot_params["cohort_1"], 
+            plot_params["cohort_2"],
             plot_params["user_id"]
         )
         
-        # Generate the plot
+        # Generate the plot (rest remains the same)
         fig = generate_subcohort_plot(
             base_scores, 
             subcohort_data, 
@@ -68,10 +68,22 @@ def extract_required_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "pgs_id": request_data.get("pgs_id"),
         "score_type": request_data.get("score_type"),
-        "base_cohort": request_data.get("base_cohort"),
-        "subcohorts": request_data.get("subcohorts", []),
+        "cohort_1": request_data.get("cohort_1"),
+        "cohort_2": request_data.get("cohort_2"),
         "user_id": request_data.get("user_id", None)
     }
+
+def validate_required_parameters(params: Dict[str, Any]) -> None:
+    """Validate that all required parameters are present."""
+    missing = []
+    if not params["pgs_id"]: missing.append("pgs_id")
+    if not params["score_type"]: missing.append("score_type")
+    if not params["cohort_1"]: missing.append("cohort_1")  # Changed from base_cohort
+    if not params["cohort_2"]: missing.append("cohort_2")  # New validation
+    
+    if missing:
+        raise ValueError(f"Missing required parameters: {', '.join(missing)}")
+
 
 def extract_optional_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """Extract optional parameters with defaults from request data."""
@@ -86,42 +98,95 @@ def extract_optional_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
         "decile_count": request_data.get("decile_count", 10)
     }
 
-def validate_required_parameters(params: Dict[str, Any]) -> None:
-    """Validate that all required parameters are present."""
-    missing = []
-    if not params["pgs_id"]: missing.append("pgs_id")
-    if not params["score_type"]: missing.append("score_type")
-    if not params["base_cohort"]: missing.append("base_cohort")
-    if not params["subcohorts"]: missing.append("subcohorts")
-    
-    if missing:
-        raise ValueError(f"Missing required parameters: {', '.join(missing)}")
-
 def get_cohort_data(
     pgs_id: str, 
     score_type: str, 
-    base_cohort: str, 
-    subcohorts: List[Dict[str, Any]],
+    cohort_1: str, 
+    cohort_2: str,
     user_id: str
 ) -> Tuple[List[float], List[Dict[str, Any]], List[Dict[str, Any]]]:
-    """Retrieve score data for base cohort and subcohorts."""
+    """Retrieve score data for union base cohort and two subcohorts from existing cohorts."""
     # Get all scores for this PGS ID
     score_dict = fetch_pgs_scores(pgs_id, score_type, user_id)
     
-    # Get base cohort data
-    base_scores = fetch_base_cohort_scores(base_cohort, score_dict)
+    # Get sample IDs for both cohorts
+    cohort_1_sample_ids = db.active_db.get_sample_ids_by_cohort(cohort_1, user_id=user_id)
+    cohort_2_sample_ids = db.active_db.get_sample_ids_by_cohort(cohort_2, user_id=user_id)
     
-    # Process subcohorts
-    subcohort_data, table_data = process_subcohorts(
-        subcohorts, score_dict, base_scores
+    # Create union for base cohort (remove duplicates)
+    union_sample_ids = list(set(cohort_1_sample_ids + cohort_2_sample_ids))
+    
+    # Get base cohort scores (union of both cohorts)
+    base_scores = fetch_cohort_scores_from_sample_ids(union_sample_ids, score_dict)
+    
+    # Create subcohort data structures from the existing cohorts
+    subcohort_data = []
+    table_data = []
+    
+    # Define default colors for the two cohorts
+    colors = ["#ff6b6b", "#4ecdc4"]  # Red and teal
+    
+    # Process cohort_1 as first subcohort
+    cohort_1_data = process_cohort_as_subcohort(
+        cohort_1, cohort_1_sample_ids, score_dict, base_scores, colors[0]
     )
+    if cohort_1_data:
+        subcohort_data.append(cohort_1_data["subcohort_info"])
+        table_data.extend(cohort_1_data["table_entries"])
+    
+    # Process cohort_2 as second subcohort
+    cohort_2_data = process_cohort_as_subcohort(
+        cohort_2, cohort_2_sample_ids, score_dict, base_scores, colors[1]
+    )
+    if cohort_2_data:
+        subcohort_data.append(cohort_2_data["subcohort_info"])
+        table_data.extend(cohort_2_data["table_entries"])
     
     return base_scores, subcohort_data, table_data
 
+def fetch_cohort_scores_from_sample_ids(sample_ids: List[str], score_dict: Dict[str, float]) -> List[float]:
+    """Fetch and filter scores for given sample IDs."""
+    # Filter to include only samples that exist in our data
+    valid_samples = filter_valid_samples(sample_ids, score_dict)
+    
+    if not valid_samples:
+        raise ValueError(f"No valid samples found for the provided sample IDs")
+    
+    return [sample["SCORE"] for sample in valid_samples]
+
+def process_cohort_as_subcohort(
+    cohort_name: str,
+    sample_ids: List[str],
+    score_dict: Dict[str, float], 
+    base_scores: List[float],
+    color: str
+) -> Dict[str, Any]:
+    """Process an existing cohort as a subcohort."""
+    # Filter valid samples
+    valid_samples = filter_valid_samples(sample_ids, score_dict)
+    
+    if not valid_samples:
+        print(f"Warning: No valid samples found for cohort '{cohort_name}'")
+        return None
+    
+    # Extract scores
+    subcohort_scores = [sample["SCORE"] for sample in valid_samples]
+    
+    # Create table entries with percentiles
+    table_entries = create_table_entries(valid_samples, base_scores, cohort_name)
+    
+    return {
+        "subcohort_info": {
+            "name": cohort_name,
+            "color": color,
+            "values": subcohort_scores
+        },
+        "table_entries": table_entries
+    }
+
 def fetch_pgs_scores(pgs_id: str, score_type: str, user_id: str) -> Dict[str, float]:
     """Fetch scores for a PGS ID."""
-    score_dict = db.get_scores_for_pgs(pgs_id, score_type, user_id=user_id)
-    
+    score_dict = db.active_db.get_scores_for_pgs(pgs_id, score_type, user_id=user_id)
     if not score_dict:
         raise ValueError(f"No data found for PGS '{pgs_id}' and Score Type '{score_type}'")
     
@@ -130,7 +195,7 @@ def fetch_pgs_scores(pgs_id: str, score_type: str, user_id: str) -> Dict[str, fl
 def fetch_base_cohort_scores(base_cohort: str, score_dict: Dict[str, float]) -> List[float]:
     """Fetch and filter scores for the base cohort."""
     # Get base cohort sample IDs
-    base_sample_ids = db.ancestry.get_sample_ids_by_cohort(base_cohort)
+    base_sample_ids = db.active_db.ancestry.get_sample_ids_by_cohort(base_cohort)
     
     # Filter to include only samples that exist in our data
     base_valid_samples = filter_valid_samples(base_sample_ids, score_dict)
@@ -205,7 +270,7 @@ def process_single_subcohort(
 def get_subcohort_sample_ids(subcohort: Dict[str, Any]) -> List[str]:
     """Get sample IDs for a subcohort."""
     if "sample_ids" not in subcohort:
-        return db.ancestry.sample_ids_by_cohort(subcohort["name"])
+        return db.active_db.ancestry.sample_ids_by_cohort(subcohort["name"])
     return subcohort["sample_ids"]
 
 def create_table_entries(
@@ -239,14 +304,17 @@ def generate_subcohort_plot(
     # Configure layout
     configure_plot_layout(fig, plot_params)
     
-    # Add visualizations
-    add_base_cohort_curve(fig, base_scores, plot_params["base_cohort"])
+    # Add visualizations in the correct order for proper layering
+    # 1. First add subcohort histograms (background layer)
     add_subcohort_histograms(
         fig, base_scores, subcohort_data, 
         plot_params["bin_size"], plot_params["normalize_bins"]
     )
     
-    # Add odds ratio if requested
+    # 2. Then add base cohort curve (foreground layer)
+    add_base_cohort_curve(fig, base_scores, plot_params)
+    
+    # 3. Add odds ratio if requested (top layer)
     if plot_params["display_or"] and len(subcohort_data) == 2:
         add_odds_ratio_analysis(fig, subcohort_data, plot_params)
     
@@ -268,24 +336,33 @@ def configure_plot_layout(fig: go.Figure, plot_params: Dict[str, Any]) -> None:
         height=600,
         margin=dict(l=60, r=160, t=50, b=50),
         legend=dict(x=1.05, y=0.5),
-        template="plotly_white"
+        template="plotly_white",
+        # Ensure proper layering
+        plot_bgcolor='white',
+        # Add grid for better readability
+        xaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray'),
+        yaxis=dict(showgrid=True, gridwidth=1, gridcolor='lightgray')
     )
 
-def add_base_cohort_curve(fig: go.Figure, base_scores: List[float], base_cohort: str) -> None:
+def add_base_cohort_curve(fig: go.Figure, base_scores: List[float], plot_params: Dict[str, Any]) -> None:
     """Add base cohort density curve to the plot."""
     # Calculate KDE
     kde_data = calculate_kde(base_scores)
     
-    # Add trace
+    # Create a meaningful name for the union
+    base_name = f"{plot_params['cohort_1']} ∪ {plot_params['cohort_2']}"
+    
     fig.add_trace(
         go.Scatter(
             x=kde_data["x"],
             y=kde_data["y"],
             mode="lines",
-            line=dict(color="#1f77b4", width=2),
-            name=f"{base_cohort} ({len(base_scores)} samples, density)"
+            line=dict(color="#1f77b4", width=3),
+            name=f"{base_name} ({len(base_scores)} samples, density)",
+            hovertemplate="<b>%{fullData.name}</b><br>Score: %{x:.4f}<br>Density: %{y:.4f}<extra></extra>"
         )
     )
+
 
 def calculate_kde(scores: List[float]) -> Dict[str, np.ndarray]:
     """Calculate kernel density estimation."""
@@ -342,12 +419,14 @@ def add_single_histogram(
         go.Bar(
             x=bin_centers,
             y=hist,
-            opacity=0.6,
+            opacity=0.5,  # Reduced opacity for better transparency
             width=bins[1]-bins[0],
             name=f"{subcohort['name']} ({len(subcohort['values'])} samples)",
             marker_color=subcohort["color"],
             marker_line_color="black",
-            marker_line_width=0.5
+            marker_line_width=0.5,
+            # Better hover template
+            hovertemplate="<b>%{fullData.name}</b><br>Score: %{x:.4f}<br>Count: %{y}<extra></extra>"
         )
     )
 
@@ -423,39 +502,31 @@ def add_or_line(fig: go.Figure, x_values: List[float], or_values: List[float],
         go.Scatter(
             x=x_values,
             y=or_values,
-            mode="lines",
-            line=dict(color="red", width=2),
+            mode="lines+markers",  # Add markers for better visibility
+            line=dict(color="red", width=3),  # Thicker line
+            marker=dict(color="red", size=4),
             name=f"OR: {name1} vs {name2}",
-            yaxis="y2"
+            yaxis="y2",
+            # Better hover template
+            hovertemplate="<b>OR: %{fullData.name}</b><br>Score: %{x:.4f}<br>OR: %{y:.3f}<extra></extra>"
         )
     )
 
 def add_confidence_interval(fig: go.Figure, x_values: List[float], 
                           ci_lower: List[float], ci_upper: List[float]) -> None:
     """Add confidence interval band to plot."""
-    # Lower bound
+    # Add confidence interval as a filled area
     fig.add_trace(
         go.Scatter(
-            x=x_values,
-            y=ci_upper,
-            mode="lines",
-            line=dict(width=0),
-            showlegend=False,
-            yaxis="y2"
-        )
-    )
-    
-    # Upper bound with fill
-    fig.add_trace(
-        go.Scatter(
-            x=x_values,
-            y=ci_lower,
-            mode="lines",
-            line=dict(width=0),
-            fillcolor="rgba(255, 0, 0, 0.2)",
-            fill="tonexty",
+            x=x_values + x_values[::-1],  # x, then x reversed
+            y=ci_upper + ci_lower[::-1],  # upper, then lower reversed
+            fill='toself',
+            fillcolor="rgba(255, 0, 0, 0.15)",  # More transparent
+            line=dict(color="rgba(255,255,255,0)"),  # Invisible line
             name="95% CI",
-            yaxis="y2"
+            yaxis="y2",
+            showlegend=True,
+            hoverinfo='skip'  # Skip hover for CI band
         )
     )
 
