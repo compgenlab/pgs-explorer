@@ -1,15 +1,43 @@
+{% extends 'base.html' %}
 
+{% block head %}
+<link rel="stylesheet" href="/static/css/search.css">
+<link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+{% endblock %}
 
-{% block title %} Search for PGS scores {% endblock %}
+<!-- Tab title -->
+{% block title %} Search for a PGS {% endblock %}
 
 {% block content %}
+<div id="searchWrapper">
+    <form id="searchForm">
+        <div id = "inputWrapper">
+            <!-- search bar -->
+            <input autocomplete="off" type="text" class="form-control" placeholder="Search for a score..." id = "searchInput">
+        </div>
+        
+        <div id="pillboxes"></div>
+        <!-- span to list the total number of results found -->
+        <span id="totalHits"></span>
+    </form>
 
-    <!-- Will have to remove the React stuff probably -->
-    <noscript>You need to enable JavaScript to run this app.</noscript>
-    <div id="root"></div>
+    <div id="selectedIDs"></div>
 
+    <!-- list of results populated by the search function -->
+    <ul id="hit-list"></ul>
+    <!-- pagination to keep track of page number -->
+    <div class="pagination" data-page-number="0"></div>
+    <div id="display-pageNumber"></div>
+    <!-- navigation buttons -->
+    <div class="pgBtns"></div>
+        <button class="btn btn-primary mt-3" id="previous_button">Previous</button>
+        <button class="btn btn-primary mt-3" id="next_button">Next</button>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
-
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/3.7.1/jquery.min.js"></script>
+<script src="/static/js/search.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 {% endblock %}
