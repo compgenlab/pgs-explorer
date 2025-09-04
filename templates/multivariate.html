@@ -11,9 +11,14 @@
     <div class="col-md-12">
         <div class="card shadow">
             <div class="card-body">
-                <h1 class="card-title">
-                    <i class="fas fa-th text-primary me-2"></i>PGS Multivariate Analysis
-                </h1>
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h1 class="card-title mb-0">
+                        <i class="fas fa-th text-primary me-2"></i>PGS Multivariate Analysis
+                    </h1>
+                    <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#helpModal">
+                        <i class="fas fa-question-circle me-1"></i>How to use 
+                    </button>
+                </div>
                 <p class="lead">
                     Generate interactive visualizations to explore patterns across PGS IDs and samples using heatmaps, dimensionality reduction, and component analysis.
                 </p>
@@ -234,39 +239,6 @@
                     </select>
                     <div class="form-text">Filter samples by population cohort</div>
                 </div>
-                
-                <!-- Subcohort Management -->
-                <h6 class="mb-3 mt-4 border-bottom pb-2">Subcohort Definition</h6>
-                <div class="mb-3">
-                    <label for="subcohortName" class="form-label">Subcohort Name</label>
-                    <input type="text" class="form-control" id="subcohortName" placeholder="e.g., Cases">
-                </div>
-                
-                <div class="mb-3">
-                    <label for="subcohortColor" class="form-label">Subcohort Color</label>
-                    <div class="input-group">
-                        <input type="color" class="form-control form-control-color" id="subcohortColor" value="#e41a1c">
-                        <span id="colorPreview" style="background-color: #e41a1c; width: 30px; border: 1px solid #dee2e6; border-radius: 0.25rem;"></span>
-                    </div>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="sampleIdsInput" class="form-label">Sample IDs</label>
-                    <textarea class="form-control" id="sampleIdsInput" rows="4" placeholder="Enter sample IDs, one per line"></textarea>
-                </div>
-                
-                <div class="d-grid mb-3">
-                    <button type="button" class="btn btn-success" id="addSubcohortBtn">
-                        <i class="fas fa-plus me-1"></i> Add Subcohort
-                    </button>
-                </div>
-                
-                <h6 class="mb-3">Active Subcohorts</h6>
-                <div id="subcohortsList" class="mb-3">
-                    <div class="text-center text-muted py-3" id="noSubcohorts">
-                        No subcohorts added yet
-                    </div>
-                </div>
             </div>
         </div>
     
@@ -314,7 +286,7 @@
     </div>
 
     <div class="col-md-9">
-        <!-- Heatmap visualization -->
+        <!-- Visualization -->
         <div class="card shadow">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
@@ -342,22 +314,13 @@
                     <div id="plotPlaceholder" class="d-flex justify-content-center align-items-center h-100">
                         <div class="text-center p-4">
                             <i class="fas fa-chart-area fa-3x text-muted mb-3"></i>
-                            <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Heatmap" to visualize the data.</p>
+                            <p class="text-muted">Add PGS IDs, select a score type, and click "Generate Plot" to visualize the data.</p>
                         </div>
                     </div>
                     <div id="heatmapPlot" style="display: none;"></div>
                 </div>
             </div>
         </div>
-        
-        <!-- Statistics section -->
-        <!-- <div class="card shadow mt-4" id="statsCard" style="display: none;">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <i class="fas fa-info-circle me-2"></i>Heatmap Statistics
-                </h5>
-            </div>
-        </div> -->
     </div>
 
     <!-- Task Name Modal -->
@@ -394,6 +357,130 @@
             <button type="button" class="btn btn-primary" id="confirmTaskName">Generate</button>
             </div>
         </div>
+        </div>
+    </div>
+</div>
+
+<!-- Simple Help Modal -->
+<div class="modal fade" id="helpModal" tabindex="-1" aria-labelledby="helpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="helpModalLabel">
+                    <i class="fas fa-th me-2"></i>What is Multivariate Analysis?
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Overview Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-compass me-2"></i>Overview
+                    </h6>
+                    <p>
+                        Multivariate analysis reveals <strong>large-scale relationships</strong> across multiple polygenic scores and samples simultaneously, helping you discover patterns that aren't visible when looking at individual scores.
+                    </p>
+                </div>
+
+                <!-- Visualization Components Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-chart-area me-2"></i>Visualization Options
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="text-center p-3 border rounded mb-3">
+                                <i class="fas fa-th fa-2x text-primary mb-2"></i>
+                                <h6>Heatmaps</h6>
+                                <small class="text-muted">Overall data patterns and outliers across your entire dataset</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-center p-3 border rounded mb-3">
+                                <i class="fas fa-project-diagram fa-2x text-success mb-2"></i>
+                                <h6>UMAP & t-SNE</h6>
+                                <small class="text-muted">Hidden clusters of similar samples or groups of related traits</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="text-center p-3 border rounded mb-3">
+                                <i class="fas fa-chart-line fa-2x text-warning mb-2"></i>
+                                <h6>PCA</h6>
+                                <small class="text-muted">The main drivers of variation in your data</small>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="text-center p-3 border rounded mb-3">
+                                <i class="fas fa-cube fa-2x text-info mb-2"></i>
+                                <h6>SVD Analysis</h6>
+                                <small class="text-muted">Fundamental data structure and component relationships</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- How to Use Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-tasks me-2"></i>How to Use
+                    </h6>
+                    <ol>
+                        <li><strong>Select Data:</strong> Choose multiple PGS scores (5+ recommended for meaningful patterns)</li>
+                        <li><strong>Choose Method:</strong> Pick your visualization method based on your research question</li>
+                        <li><strong>Set Perspective:</strong> Decide between sample-centered or score-centered analysis</li>
+                        <li><strong>Generate & Explore:</strong> Create your visualization and investigate the large-scale patterns</li>
+                    </ol>
+                </div>
+
+                <!-- Configuration Options Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-sliders-h me-2"></i>Configuration Options
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card border-primary">
+                                <div class="card-header bg-primary text-white">
+                                    <strong>Sample-Centered</strong>
+                                </div>
+                                <div class="card-body">
+                                    <p class="small mb-0">Points represent individual samples. Shows which samples have similar polygenic risk profiles across multiple traits.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-success">
+                                <div class="card-header bg-success text-white">
+                                    <strong>Score-Centered</strong>
+                                </div>
+                                <div class="card-body">
+                                    <p class="small mb-0">Points represent PGS scores. Shows which polygenic scores tend to correlate and form groups of related traits.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Use Cases Section -->
+                <div class="alert alert-success">
+                    <h6 class="fw-bold">
+                        <i class="fas fa-star me-2"></i>Use Cases
+                    </h6>
+                    <p class="mb-2">
+                        <strong>Sample-centered analysis:</strong> Discover if samples cluster by ancestry, disease status, or other population characteristics.
+                    </p>
+                    <p class="mb-0">
+                        <strong>Score-centered analysis:</strong> Find groups of related traits such as cardiovascular vs metabolic vs psychiatric scores.
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
         </div>
     </div>
 </div>

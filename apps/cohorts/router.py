@@ -52,6 +52,12 @@ async def create_cohort(request: Request, cohort_request: CreateCohortRequest):
         "sample_count": len(valid_sample_ids)
     }
 
+@router.get("/api/cohorts/import-biobank")
+async def import_cohorts(request: Request):
+    return templates.TemplateResponse("cohorts-import.html", {
+        "request": request,
+        })
+
 @router.get("/api/cohorts")
 async def list_cohorts(request: Request):
     """List user's cohorts."""

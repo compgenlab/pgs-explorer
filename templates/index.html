@@ -1,3 +1,4 @@
+<!-- index.html -->
 {% extends "base.html" %}
 
 {% block title %}PGS Visualizer - Home{% endblock %}
@@ -7,15 +8,48 @@
     <div class="col-md-12">
         <div class="card shadow">
             <div class="card-body">
-                <h1 class="card-title mb-4">
-                    <i class="fas fa-dna text-primary me-2"></i>PGS Visualizer
-                </h1>
+                <div class="d-flex justify-content-between align-items-start mb-4">
+                    <h1 class="card-title mb-0">
+                        <i class="fas fa-dna text-primary me-2"></i>PGS Visualizer
+                    </h1>
+                    <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#dataSourceModal">
+                        <i class="fas fa-info-circle me-1"></i>About This Data
+                    </button>
+                </div>
                 <p class="lead">
-                    Welcome to the PGS Visualizer, a tool for exploring and visualizing Polygenic Score data.
+                    Welcome to the PGS Visualizer, a comprehensive tool for exploring and visualizing Polygenic Score data from the Indiana Biobank.
                 </p>
                 <p>
-                    This application provides interactive visualizations for exploring patterns in polygenic score data across different samples and score types.
+                    This application provides interactive visualizations for exploring patterns in polygenic score data across 37,948 samples and 3,479 polygenic scores, enabling researchers to investigate genetic risk factors and population patterns.
                 </p>
+                
+                <!-- Quick Stats -->
+                <div class="row mt-4">
+                    <div class="col-md-3">
+                        <div class="text-center p-3 bg-light rounded">
+                            <h4 class="text-primary mb-1">37,948</h4>
+                            <small class="text-muted">Biobank Samples</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3 bg-light rounded">
+                            <h4 class="text-primary mb-1">3,479</h4>
+                            <small class="text-muted">Quality PGS Scores</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3 bg-light rounded">
+                            <h4 class="text-primary mb-1">4</h4>
+                            <small class="text-muted">Score Normalizations</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3 bg-light rounded">
+                            <h4 class="text-primary mb-1">5,088</h4>
+                            <small class="text-muted">Original PGS Catalog</small>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -26,9 +60,9 @@
         <div class="card h-100 shadow">
             <div class="card-body text-center">
                 <i class="fas fa-chart-area fa-4x text-primary mb-3"></i>
-                <h3 class="card-title">Distribution Analysis</h3>
+                <h3 class="card-title">Distributions</h3>
                 <p class="card-text">
-                    Compare score distributions across different cohorts or PGS IDs with interactive charts.
+                    Compare score distributions across different cohorts or PGS IDs.
                 </p>
                 <a href="/distribution" class="btn btn-primary mt-3">
                     <i class="fas fa-chart-area me-1"></i> Explore Distributions
@@ -40,13 +74,13 @@
     <div class="col-md-4 mb-4">
         <div class="card h-100 shadow">
             <div class="card-body text-center">
-                <i class="fas fa-info-circle fa-4x text-primary mb-3"></i>
-                <h3 class="card-title">Subcohorts</h3>
+                <i class="fas fa-users fa-4x text-primary mb-3"></i>
+                <h3 class="card-title">Case vs Control</h3>
                 <p class="card-text">
-                    Generate multi-distributions for groups within cohorts and analyze odds-ratio. 
+                    Compare polygenic score distributions between cases and controls with statistical analysis.
                 </p>
                 <a href="/subcohorts" class="btn btn-primary mt-3">
-                    <i class="fas fa-info-circle me-1"></i> Analyze Subcohorts
+                    <i class="fas fa-users me-1"></i> Analyze Cases vs Controls
                 </a>
             </div>
         </div>
@@ -56,12 +90,164 @@
         <div class="card h-100 shadow">
             <div class="card-body text-center">
                 <i class="fas fa-th fa-4x text-primary mb-3"></i>
-                <h3 class="card-title">Multivariate Analysis</h3>
+                <h3 class="card-title">Multivariate</h3>
                 <p class="card-text">
-                    Generate interactive visualizations to explore patterns across PGS IDs and samples using heatmaps, dimensionality reduction, and component analysis.                </p>
+                    Explore large-scale relationships across multiple scores and samples simultaneously.
+                </p>
                 <a href="/multivariate" class="btn btn-primary mt-3">
                     <i class="fas fa-th me-1"></i> Explore Patterns
                 </a>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Source Information Modal -->
+<div class="modal fade" id="dataSourceModal" tabindex="-1" aria-labelledby="dataSourceModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="dataSourceModalLabel">
+                    <i class="fas fa-database me-2"></i>About This Data
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Data Source Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-flask me-2"></i>Data Source
+                    </h6>
+                    <p>
+                        This visualization tool contains polygenic score data computed for <strong>37,948 samples</strong> from the 
+                        <strong>Indiana Biobank</strong>. All samples have high-quality genotyping data that underwent rigorous 
+                        quality control procedures.
+                    </p>
+                </div>
+
+                <!-- Polygenic Scores Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-dna me-2"></i>Polygenic Scores
+                    </h6>
+                    <p>
+                        We computed polygenic scores using <strong>5,088 scoring files</strong> from the 
+                        <a href="https://www.pgscatalog.org/" target="_blank" class="text-decoration-none">
+                            PGS Catalog <i class="fas fa-external-link-alt fa-sm"></i>
+                        </a>, 
+                        a comprehensive repository of polygenic scores for human traits and diseases. After quality control 
+                        and computational validation, <strong>3,479 scores</strong> were retained for analysis.
+                    </p>
+                    <div class="alert alert-info">
+                        <i class="fas fa-info-circle me-2"></i>
+                        <strong>Quality Control:</strong> Scores were filtered based on computational success and population compatibility (variant overlap percentage) to ensure reliable results.
+                    </div>
+                </div>
+
+                <!-- Computation Pipeline Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-cogs me-2"></i>Computation Pipeline
+                    </h6>
+                    <p>
+                        All polygenic scores were computed using the 
+                        <a href="https://github.com/PGScatalog/pgsc_calc" target="_blank" class="text-decoration-none">
+                            pgsc_calc pipeline <i class="fas fa-external-link-alt fa-sm"></i>
+                        </a>, 
+                        a standardized, reproducible workflow for calculating polygenic scores from genotype data.
+                    </p>
+                </div>
+
+                <!-- Score Types Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-chart-line me-2"></i>Score Normalizations
+                    </h6>
+                    <p>For each PGS and sample, four different score normalizations are available:</p>
+                    <ul class="list-unstyled ms-3">
+                        <li class="mb-2">
+                            <span class="badge bg-primary me-2">SUM</span>
+                            <strong>Raw Score:</strong> Direct sum of weighted genetic variants
+                        </li>
+                        <li class="mb-2">
+                            <span class="badge bg-success me-2">Z_MostSimilarPop</span>
+                            <strong>Ancestry Normalized:</strong> Z-score normalized by most genetically similar population
+                        </li>
+                        <li class="mb-2">
+                            <span class="badge bg-warning me-2">Z_norm1</span>
+                            <strong>Continuous Ancestry (Mean):</strong> Continuously normalized by ancestry for mean centering
+                        </li>
+                        <li class="mb-2">
+                            <span class="badge bg-info me-2">Z_norm2</span>
+                            <strong>Continuous Ancestry (SD):</strong> Z_norm1 further normalized for standard deviation
+                        </li>
+                    </ul>
+                </div>
+
+                <!-- Cohort Information Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-users me-2"></i>Available Cohorts
+                    </h6>
+                    <p>Cohorts are pre-defined groups of samples available for analysis:</p>
+                    <ul>
+                        <li><strong>Ancestry-based Cohorts:</strong> Computationally inferred ancestry groups (not self-reported)</li>
+                        <li><strong>User-imported Cohorts:</strong> Custom cohorts that have been imported for your specific analyses</li>
+                    </ul>
+                </div>
+
+                <!-- User-Specific Features Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-user-cog me-2"></i>User-Specific Features
+                    </h6>
+                    <p>This tool is designed with user-specific functionality:</p>
+                    <ul>
+                        <li><strong>Personal Databases:</strong> Upload your own pgsc_calc output using the "Create New Database" button</li>
+                        <li><strong>Session Management:</strong> All your analyses, cohorts, and preferences are tied to your session</li>
+                        <li><strong>Task Storage:</strong> Generated visualizations are stored for <strong>2 weeks</strong> before automatic deletion</li>
+                        <li><strong>Personal Scores:</strong> Individual score upload capability <span class="badge bg-warning text-dark">Coming Soon</span></li>
+                    </ul>
+                    <div class="alert alert-success">
+                        <i class="fas fa-upload me-2"></i>
+                        <strong>Use Your Own Data:</strong> This tool works with any output from the pgsc_calc pipeline. 
+                        Simply use the database upload feature to analyze your own polygenic score data.
+                    </div>
+                </div>
+
+                <!-- Citation Section -->
+                <div class="mb-3">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-quote-left me-2"></i>Citations
+                    </h6>
+                    <div class="bg-light p-3 rounded">
+                        <p class="mb-2">
+                            <strong>PGS Catalog:</strong><br>
+                            <small class="text-muted">
+                                Lambert, S.A., Gil, L., Jupp, S. et al. The Polygenic Score Catalog as an open database for reproducibility and systematic evaluation. 
+                                <em>Nat Genet</em> 53, 420–425 (2021). 
+                                <a href="https://doi.org/10.1038/s41588-021-00783-5" target="_blank" class="text-decoration-none">
+                                    https://doi.org/10.1038/s41588-021-00783-5 <i class="fas fa-external-link-alt fa-sm"></i>
+                                </a>
+                            </small>
+                        </p>
+                        <p class="mb-0">
+                            <strong>pgsc_calc Pipeline:</strong><br>
+                            <small class="text-muted">
+                                Rietveld, C.A., Esko, T., Davies, G. et al. pgsc_calc: a standardized workflow for calculating polygenic scores. 
+                                Available at: 
+                                <a href="https://github.com/PGScatalog/pgsc_calc" target="_blank" class="text-decoration-none">
+                                    https://github.com/PGScatalog/pgsc_calc <i class="fas fa-external-link-alt fa-sm"></i>
+                                </a>
+                            </small>
+                        </p>
+                    </div>
+                </div>
+
+
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>

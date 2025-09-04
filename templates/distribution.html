@@ -12,11 +12,16 @@
     <div class="col-md-12">
         <div class="card shadow">
             <div class="card-body">
-                <h1 class="card-title">
-                    <i class="fas fa-chart-area text-primary me-2"></i>PGS Distribution Analysis
-                </h1>
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h1 class="card-title mb-0">
+                        <i class="fas fa-chart-area text-primary me-2"></i>PGS Distribution Analysis
+                    </h1>
+                    <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#distributionHelpModal">
+                        <i class="fas fa-question-circle me-1"></i>How to Use
+                    </button>
+                </div>
                 <p class="lead">
-                    Compare score distributions across different cohorts or PGS IDs.
+                    Compare score distributions across different cohorts or PGS IDs using interactive visualizations.
                 </p>
             </div>
         </div>
@@ -286,6 +291,186 @@
                         <button type="button" class="btn btn-primary" id="confirmTaskName">Generate</button>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Distribution Analysis Help Modal -->
+<div class="modal fade" id="distributionHelpModal" tabindex="-1" aria-labelledby="distributionHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="distributionHelpModalLabel">
+                    <i class="fas fa-chart-area me-2"></i>Distribution Analysis Guide
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Overview Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-compass me-2"></i>Overview
+                    </h6>
+                    <p>
+                        The Distribution Analysis tool allows you to compare polygenic score distributions in two ways:
+                    </p>
+                    <ul>
+                        <li><strong>Compare Cohorts:</strong> View how the same PGS varies across different population groups</li>
+                        <li><strong>Compare PGS Scores:</strong> Compare distributions of multiple PGS for the same cohort</li>
+                    </ul>
+                </div>
+
+                <!-- Analysis Types Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-cogs me-2"></i>Analysis Types
+                    </h6>
+                    
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>1. Compare Cohorts (Same PGS)</strong>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-2"><strong>Purpose:</strong> Compare how a single polygenic score is distributed across different population groups or custom cohorts.</p>
+                            <p class="mb-2"><strong>Steps:</strong></p>
+                            <ol class="mb-2">
+                                <li>Select "Compare Cohorts" from Analysis Type</li>
+                                <li>Choose a PGS ID from the dropdown</li>
+                                <li>Select a score type (SUM, Z_MostSimilarPop, Z_norm1, or Z_norm2)</li>
+                                <li>Select cohorts from the available options</li>
+                                <li>Generate your visualization</li>
+                            </ol>
+                            <div class="alert alert-info mb-0">
+                                <i class="fas fa-lightbulb me-2"></i>
+                                <strong>Tip:</strong> This is ideal for studying differences between population groups or identifying patterns across different study cohorts.
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-header bg-light">
+                            <strong>2. Compare PGS Scores (Same Cohort)</strong>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-2"><strong>Purpose:</strong> Compare distributions of multiple PGS within the same population group.</p>
+                            <p class="mb-2"><strong>Steps:</strong></p>
+                            <ol class="mb-2">
+                                <li>Select "Compare PGS Scores" from Analysis Type</li>
+                                <li>Choose a cohort from the dropdown</li>
+                                <li>Select a score type (all PGS will use the same type)</li>
+                                <li>Select multiple PGS IDs from the available options</li>
+                                <li>Generate your visualization</li>
+                            </ol>
+                            <div class="alert alert-info mb-0">
+                                <i class="fas fa-lightbulb me-2"></i>
+                                <strong>Tip:</strong> Useful for comparing related traits or validating multiple PGS for the same phenotype.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Visualization Types Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-chart-line me-2"></i>Visualization Types
+                    </h6>
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-wave-square fa-2x text-primary mb-2"></i>
+                                <h6>Density Plot</h6>
+                                <small class="text-muted">Smooth distribution curves showing probability density</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-chart-bar fa-2x text-success mb-2"></i>
+                                <h6>Histogram</h6>
+                                <small class="text-muted">Binned counts showing frequency distribution</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-square fa-2x text-warning mb-2"></i>
+                                <h6>Box Plot</h6>
+                                <small class="text-muted">Statistical summary with quartiles and outliers</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Available Cohorts Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-users me-2"></i>Available Cohorts
+                    </h6>
+                    <p>
+                        Cohorts are pre-defined groups of samples that allow you to compare distributions across 
+                        different populations or study groups. These cohorts are created using the Indiana Biobank system and are imported into the system. We automatically load the computed ancestry cohorts in every session.
+                    </p>
+                </div>
+
+                <!-- Score Types Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-calculator me-2"></i>Score Type Selection
+                    </h6>
+                    <p>Choose the appropriate normalization based on your analysis goals:</p>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card border-primary">
+                                <div class="card-body">
+                                    <span class="badge bg-primary mb-2">SUM</span>
+                                    <p class="small mb-0">Raw polygenic score values. Use when you need the actual calculated scores without normalization.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-success">
+                                <div class="card-body">
+                                    <span class="badge bg-success mb-2">Z_MostSimilarPop</span>
+                                    <p class="small mb-0">Normalized by ancestry group. Best for cross-population comparisons.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-md-6">
+                            <div class="card border-warning">
+                                <div class="card-body">
+                                    <span class="badge bg-warning text-dark mb-2">Z_norm1</span>
+                                    <p class="small mb-0">Continuously normalized for mean. Use for ancestry-adjusted analyses.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card border-info">
+                                <div class="card-body">
+                                    <span class="badge bg-info mb-2">Z_norm2</span>
+                                    <p class="small mb-0">Normalized for both mean and standard deviation. Most standardized form.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-tasks me-2"></i>Typical Workflow
+                    </h6>
+                    <ol>
+                        <li><strong>Choose Analysis Type:</strong> Decide whether to compare cohorts or PGS scores</li>
+                        <li><strong>Select Data:</strong> Pick your PGS ID(s) and/or cohort(s)</li>
+                        <li><strong>Configure Visualization:</strong> Choose chart type and score normalization</li>
+                        <li><strong>Generate Plot:</strong> Create your interactive visualization</li>
+                        <li><strong>Explore Results:</strong> Use the interactive features, view metadata, and download data</li>
+                        <li><strong>Export:</strong> Save your plots as HTML or view in new tab for presentations</li>
+                    </ol>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
