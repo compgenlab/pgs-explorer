@@ -1,3 +1,4 @@
+<!--base.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -17,6 +18,8 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/css/styles.css">
     
+    <link rel="icon" type="image/x-icon" href="/data/dev/pgs-explorer/static/images/favicon.ico">
+
     {% block head %}{% endblock %}
 </head>
 <body>
@@ -38,17 +41,17 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.url.path == '/distribution' %}active{% endif %}" href="/distribution">
-                            <i class="fas fa-chart-area me-1"></i> Distribution
+                            <i class="fas fa-chart-area me-1"></i> Distributions
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.url.path == '/subcohorts' %}active{% endif %}" href="/subcohorts">
-                            <i class="fas fa-layer-group me-1"></i>Subcohort Analysis
+                            <i class="fas fa-users me-1"></i> Case vs Control
                         </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link {% if request.url.path == '/multivariate' %}active{% endif %}" href="/multivariate">
-                            <i class="fas fa-th me-1"></i> Multivariate Analysis
+                            <i class="fas fa-th me-1"></i> Multivariate
                         </a>
                     </li>
                 </ul>
@@ -631,71 +634,6 @@
             
             $('#confirmClearModal').on('hidden.bs.modal', function() {
                 $(this).remove();
-            });
-        });
-
-        // Create New Database Function
-        $('#createDatabaseBtn').click(function() {
-            const databaseName = $('#databaseName').val().trim();
-            const scoresFileInput = $('#scoresFile')[0];
-            const metadataFileInput = $('#metadataFile')[0];
-            
-            if (!databaseName || !scoresFileInput.files[0]) {
-                showNotification('Please provide a database name and select a scores file.', 'error');
-                return;
-            }
-            
-            // Validate database name (no special characters, spaces, etc.)
-            if (!/^[a-zA-Z0-9_-]+$/.test(databaseName)) {
-                showNotification('Database name can only contain letters, numbers, hyphens, and underscores.', 'error');
-                return;
-            }
-            
-            const formData = new FormData();
-            formData.append('database_name', databaseName);
-            formData.append('scores_file', scoresFileInput.files[0]);
-            
-            if (metadataFileInput.files[0]) {
-                formData.append('metadata_file', metadataFileInput.files[0]);
-            }
-            
-            // Show loading state
-            $('#createDatabaseBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin me-1"></i>Creating Database...');
-            
-            // Show processing notification
-            showNotification('Database creation started. This may take several minutes for large files...', 'info');
-            
-            $.ajax({
-                url: '/api/create_database',
-                type: 'POST',
-                data: formData,
-                processData: false,
-                contentType: false,
-                timeout: 600000, // 10 minutes timeout for large files
-                success: function(response) {
-                    $('#createNewDatabaseModal').modal('hide');
-                    showNotification(`Database "${response.database_name}" created successfully! It has been added to your database list.`, 'success');
-                    
-                    // Clear form
-                    $('#createDatabaseForm')[0].reset();
-                    
-                    // Reload database list to include the new database
-                    loadDatabaseList();
-                },
-                error: function(xhr) {
-                    let error = 'Error creating database';
-                    if (xhr.responseJSON?.detail) {
-                        error = xhr.responseJSON.detail;
-                    } else if (xhr.status === 413) {
-                        error = 'File too large. Please use a smaller file.';
-                    } else if (xhr.status === 0) {
-                        error = 'Request timeout. File may be too large or server may be busy.';
-                    }
-                    showNotification(`Database creation failed: ${error}`, 'error');
-                },
-                complete: function() {
-                    $('#createDatabaseBtn').prop('disabled', false).html('<i class="fas fa-plus me-1"></i>Create Database');
-                }
             });
         });
 

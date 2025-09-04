@@ -11,16 +11,22 @@
     <div class="col-md-12">
         <div class="card shadow">
             <div class="card-body">
-                <h1 class="card-title">
-                    <i class="fas fa-layer-group text-primary me-2"></i>PGS Subcohort Analysis
-                </h1>
+                <div class="d-flex justify-content-between align-items-start mb-3">
+                    <h1 class="card-title mb-0">
+                        <i class="fas fa-users text-primary me-2"></i>PGS Case vs Control Analysis
+                    </h1>
+                    <button class="btn btn-outline-info btn-sm" type="button" data-bs-toggle="modal" data-bs-target="#subcohortHelpModal">
+                        <i class="fas fa-question-circle me-1"></i>How to Use
+                    </button>
+                </div>
                 <p class="lead">
-                    Analyze and visualize custom subcohorts within your population data.
+                    Compare polygenic score distributions between cases and controls with statistical analysis.
                 </p>
             </div>
         </div>
     </div>
 </div>
+
 
 <div class="row">
     <div class="col-md-3">
@@ -48,7 +54,6 @@
                     <label for="cohort1" class="form-label">Cohort 1</label>
                     <select class="form-select" id="cohort1" required>
                         <option value="" selected disabled>Select Cohort 1</option>
-                        <!-- <option value="ALL">All Samples</option> -->
                     </select>
                 </div>
                 
@@ -56,7 +61,6 @@
                     <label for="cohort2" class="form-label">Cohort 2</label>
                     <select class="form-select" id="cohort2" required>
                         <option value="" selected disabled>Select Cohort 2</option>
-                        <!-- <option value="ALL">All Samples</option> -->
                     </select>
                 </div>
 
@@ -64,322 +68,100 @@
                     <label for="plotTitle" class="form-label">Plot Title</label>
                     <input type="text" class="form-control" id="plotTitle" placeholder="Enter plot title">
                 </div>
-                    <div class="form-check form-switch">
+                <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="normalizeBins" name="normalizeBins">
                     <label class="form-check-label" for="normalizeBins">Normalize Bins?</label>
-                    <div class="form-text">Normalizes bin heights.</div>
+                    <div class="form-text">Normalizes bin heights for better comparison.</div>
                 </div>
                 <div class="d-grid">
                     <button type="button" class="btn btn-primary" id="generateButton">
                         <i class="fas fa-chart-area me-1"></i> Generate Plot
                     </button>
                 </div>
-
             </div>
         </div>
         
         <!-- Odds-Ratio panel -->
         <div class="card shadow mb-3">
             <div class="card-header">
-                <h5 class="mb-0">Odds Ratio</h5>
+                <h5 class="mb-0">
+                    Odds Ratio Analysis
+                    <button class="btn btn-sm btn-outline-info ms-2" type="button" data-bs-toggle="modal" data-bs-target="#oddsRatioHelpModal">
+                        <i class="fas fa-question-circle"></i>
+                    </button>
+                </h5>
             </div>
             <div class="card-body">
                 <div class="mb-3">
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="displayOR" name="displayOR">
-                        <label class="form-check-label" for="displayOR">Calculate OR?</label>
-                        <div class="form-text">Will only work with exactly 2 subcohorts.</div>
+                        <label class="form-check-label" for="displayOR">Calculate Odds Ratio?</label>
+                        <div class="form-text">Compare risk between the two selected cohorts.</div>
                     </div>
                 </div>
                 
                 <div id="orOptionsContainer" class="mb-3" style="display: none;">
-                    <!-- Option 1: Histogram bin (Cumulative only) -->
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByBin" value="bin" checked>
-                        <label class="form-check-label" for="orByBin">
-                            Calculate by histogram bin (cumulative)
-                        </label>
-                    </div>
-                    
-                    <div class="mb-3 ms-4 orBinOptions">
-                        <label for="binSize" class="form-label">Bin Size</label>
-                        <input type="number" class="form-control" id="binSize" name="binSize" 
-                            value="30" min="1" max="100" step="1">
-                        <div class="form-text">
-                            <hr class="mt-2 mb-2">
-                            <div class="form-text">
-                                <hr class="mt-2 mb-2">
-                                <strong>How it works:</strong>
-                                <ul>
-                                    <li>For each bin i:
-                                        <ul>
-                                            <li>Define T<sub>i</sub> as the lower bound of bin i</li>
-                                        </ul>
-                                    </li>
-                                </ul>
-                                
-                                <table class="table table-bordered">
-                                    <thead>
-                                        <tr>
-                                            <th></th>
-                                            <th>≥ T<sub>i</sub></th>
-                                            <th>< T<sub>i</sub></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Subcohort 1</td>
-                                            <td>A<sub>i</sub></td>
-                                            <td>B<sub>i</sub></td>
-                                        </tr>
-                                        <tr>
-                                            <td>Subcohort 2</td>
-                                            <td>C<sub>i</sub></td>
-                                            <td>D<sub>i</sub></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                
-                                <ul>
-                                    <li>(OR<sub>i</sub>) = ((A<sub>i</sub> + ε) × (D<sub>i</sub> + ε)) / ((B<sub>i</sub> + ε) × (C<sub>i</sub> + ε)) where ε = 0.5</li>
-                                    <li>Log Odds Ratio = ln(OR<sub>i</sub>)</li>
-                                    <li>Standard Error = √(1/(A<sub>i</sub>+ε) + 1/(B<sub>i</sub>+ε) + 1/(C<sub>i</sub>+ε) + 1/(D<sub>i</sub>+ε))</li>
-                                    <li>95% CI = exp(ln(OR<sub>i</sub>) ± 1.96 × SE)</li>
-                                </ul>
-                            </div>                        </div>
-                    </div>
-                    
-                    <!-- Option 2: Quantiles (Cumulative only) -->
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByQuantile" value="quantile">
-                        <label class="form-check-label" for="orByQuantile">
-                            Calculate by quantile (cumulative)
-                        </label>
-                    </div>
-                    
-                    <div class="mb-3 ms-4 orQuantileOptions" style="display: none;">
-                        <label for="quantileCount" class="form-label">Number of Quantiles</label>
-                        <input type="number" class="form-control" id="quantileCount" name="quantileCount" 
-                            value="10" min="2" max="100" step="1">
-                        <div class="form-text">
-                            <hr class="mt-2 mb-2">
-                            <div class="form-text">
-                                <hr class="mt-2 mb-2">
-                                <strong>How it works:</strong>
-                                <ul>
-                                    <li>For each quantile q:
-                                        <ul>
-                                            <li>Define Q<sub>q</sub> as the score at quantile q</li>
-                                        </ul>
-                                    </li>
-                                </ul>
-                                
-                                <table class="table table-bordered">
-                                    <thead>
-                                        <tr>
-                                            <th></th>
-                                            <th>≥ Q<sub>q</sub></th>
-                                            <th>< Q<sub>q</sub></th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Subcohort 1</td>
-                                            <td>A<sub>q</sub></td>
-                                            <td>B<sub>q</sub></td>
-                                        </tr>
-                                        <tr>
-                                            <td>Subcohort 2</td>
-                                            <td>C<sub>q</sub></td>
-                                            <td>D<sub>q</sub></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                
-                                <ul>
-                                    <li>(OR<sub>q</sub>) = ((A<sub>q</sub> + ε) × (D<sub>q</sub> + ε)) / ((B<sub>q</sub> + ε) × (C<sub>q</sub> + ε)) where ε = 0.5</li>
-                                    <li>Log Odds Ratio = ln(OR<sub>q</sub>)</li>
-                                    <li>Standard Error = √(1/(A<sub>q</sub>+ε) + 1/(B<sub>q</sub>+ε) + 1/(C<sub>q</sub>+ε) + 1/(D<sub>q</sub>+ε))</li>
-                                    <li>95% CI = exp(ln(OR<sub>q</sub>) ± 1.96 × SE)</li>
-                                </ul>
-                            </div>                        </div>
-                    </div>
-                    
-                    <!-- Option 3: Threshold -->
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByThreshold" value="threshold">
+                    <!-- Option 1: Single Threshold -->
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByThreshold" value="threshold" checked>
                         <label class="form-check-label" for="orByThreshold">
-                            Calculate by threshold
+                            <strong>Single Threshold</strong>
+                            <button class="btn btn-sm btn-link p-0 ms-1" type="button" data-bs-toggle="tooltip" 
+                                    title="Compare proportions above vs below a specific score value">
+                                <i class="fas fa-question-circle text-info"></i>
+                            </button>
                         </label>
+                        <div class="form-text">Compare risk above vs below a specific score value</div>
                     </div>
                     
-                    <div class="mb-3 ms-4 orThresholdOptions" style="display: none;">
+                    <div class="mb-3 ms-4 orThresholdOptions">
                         <label for="thresholdValue" class="form-label">Threshold Value</label>
                         <input type="number" class="form-control" id="thresholdValue" name="thresholdValue" 
                             value="0" step="any">
-                        <div class="form-text">
-                            <hr class="mt-2 mb-2">
-                            <div class="form-text">
-                                <hr class="mt-2 mb-2">
-                                <strong>How it works:</strong>
-                                <ul>
-                                    <li>For a single threshold T:
-                                        <ul>
-                                            <li>Define contingency table for values above and below threshold</li>
-                                        </ul>
-                                    </li>
-                                </ul>
-                                
-                                <table class="table table-bordered">
-                                    <thead>
-                                        <tr>
-                                            <th></th>
-                                            <th>≥ T</th>
-                                            <th>< T</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Subcohort 1</td>
-                                            <td>A</td>
-                                            <td>B</td>
-                                        </tr>
-                                        <tr>
-                                            <td>Subcohort 2</td>
-                                            <td>C</td>
-                                            <td>D</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                
-                                <ul>
-                                    <li>OR = ((A + ε) × (D + ε)) / ((B + ε) × (C + ε)) where ε = 0.5</li>
-                                    <li>Log Odds Ratio = ln(OR)</li>
-                                    <li>Standard Error = √(1/(A+ε) + 1/(B+ε) + 1/(C+ε) + 1/(D+ε))</li>
-                                    <li>95% CI = exp(ln(OR) ± 1.96 × SE)</li>
-                                </ul>
-                            </div>                        </div>
                     </div>
                     
-                    <!-- Option 4: Decile vs Baseline -->
-                    <div class="form-check mb-2">
+                    <!-- Option 2: Multiple Thresholds (Cumulative) -->
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByQuantile" value="quantile">
+                        <label class="form-check-label" for="orByQuantile">
+                            <strong>Multiple Thresholds (Cumulative)</strong>
+                            <button class="btn btn-sm btn-link p-0 ms-1" type="button" data-bs-toggle="tooltip" 
+                                    title="Calculate odds ratios at multiple score thresholds, showing cumulative risk">
+                                <i class="fas fa-question-circle text-info"></i>
+                            </button>
+                        </label>
+                        <div class="form-text">Calculate risk at multiple score thresholds (cumulative)</div>
+                    </div>
+                    
+                    <div class="mb-3 ms-4 orQuantileOptions" style="display: none;">
+                        <label for="quantileCount" class="form-label">Number of Thresholds</label>
+                        <input type="number" class="form-control" id="quantileCount" name="quantileCount" 
+                            value="10" min="2" max="20" step="1">
+                        <div class="form-text">Divides scores into this many equal-sized groups</div>
+                    </div>
+                    
+                    <!-- Option 3: Risk Categories (Non-cumulative) -->
+                    <div class="form-check mb-3">
                         <input class="form-check-input" type="radio" name="orCalculationType" id="orByDecileBaseline" value="decileBaseline">
                         <label class="form-check-label" for="orByDecileBaseline">
-                            Calculate by decile vs baseline (1st decile)
+                            <strong>Risk Categories vs Lowest Risk</strong>
+                            <button class="btn btn-sm btn-link p-0 ms-1" type="button" data-bs-toggle="tooltip" 
+                                    title="Compare each risk category against the lowest risk group as baseline">
+                                <i class="fas fa-question-circle text-info"></i>
+                            </button>
                         </label>
+                        <div class="form-text">Compare each risk group vs lowest risk group</div>
                     </div>
                     
                     <div class="mb-3 ms-4 orDecileBaselineOptions" style="display: none;">
-                        <label for="decileCount" class="form-label">Number of Deciles</label>
+                        <label for="decileCount" class="form-label">Number of Risk Categories</label>
                         <input type="number" class="form-control" id="decileCount" name="decileCount" 
                             value="10" min="2" max="20" step="1">
-                        <div class="form-text">
-                            <hr class="mt-2 mb-2">
-                            <div class="form-text">
-                                <hr class="mt-2 mb-2">
-                                <strong>How it works:</strong>
-                                <ul>
-                                    <li>For each decile d (from 1 to 10):
-                                        <ul>
-                                            <li>Define D<sub>d</sub> as the set of values in decile d</li>
-                                        </ul>
-                                    </li>
-                                </ul>
-                                
-                                <table class="table table-bordered">
-                                    <thead>
-                                        <tr>
-                                            <th></th>
-                                            <th>In Decile d</th>
-                                            <th>In Decile 1 (baseline)</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Subcohort 1</td>
-                                            <td>A<sub>d</sub></td>
-                                            <td>A<sub>1</sub></td>
-                                        </tr>
-                                        <tr>
-                                            <td>Subcohort 2</td>
-                                            <td>C<sub>d</sub></td>
-                                            <td>C<sub>1</sub></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                
-                                <ul>
-                                    <li>For d=1: OR<sub>1</sub> = 1.0 (baseline)</li>
-                                    <li>For d>1: OR<sub>d</sub> = ((A<sub>d</sub> + ε) × (C<sub>1</sub> + ε)) / ((C<sub>d</sub> + ε) × (A<sub>1</sub> + ε)) where ε = 0.5</li>
-                                    <li>Log Odds Ratio = ln(OR<sub>d</sub>)</li>
-                                    <li>Standard Error = √(1/(A<sub>d</sub>+ε) + 1/(C<sub>d</sub>+ε) + 1/(A<sub>1</sub>+ε) + 1/(C<sub>1</sub>+ε))</li>
-                                    <li>95% CI = exp(ln(OR<sub>d</sub>) ± 1.96 × SE)</li>
-                                </ul>
-                            </div>                        </div>
-                    </div>
-                    
-                    
-                    <!-- Option 5: Decile vs Cumulative -->
-                    <div class="form-check mb-2">
-                        <input class="form-check-input" type="radio" name="orCalculationType" id="orByDecileCumulative" value="decileCumulative">
-                        <label class="form-check-label" for="orByDecileCumulative">
-                            Calculate by decile vs all lower deciles
-                        </label>
-                    </div>
-                    
-                    <div class="mb-3 ms-4 orDecileCumulativeOptions" style="display: none;">
-                        <label for="decileCount" class="form-label">Number of Deciles</label>
-                        <input type="number" class="form-control" id="decileCount" name="decileCount" 
-                            value="10" min="2" max="20" step="1">
-                        <div class="form-text">
-                            <hr class="mt-2 mb-2">
-                            <div class="form-text">
-                                <hr class="mt-2 mb-2">
-                                <strong>How it works:</strong>
-                                <ul>
-                                    <li>For each decile d (from 1 to 10):
-                                        <ul>
-                                            <li>Define D<sub>d</sub> as the set of values in decile d</li>
-                                            <li>Define D<sub>&lt;d</sub> as the set of values in all deciles lower than d</li>
-                                        </ul>
-                                    </li>
-                                </ul>
-                                
-                                <table class="table table-bordered">
-                                    <thead>
-                                        <tr>
-                                            <th></th>
-                                            <th>In Decile d</th>
-                                            <th>In All Lower Deciles</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        <tr>
-                                            <td>Subcohort 1</td>
-                                            <td>A<sub>d</sub></td>
-                                            <td>A<sub>&lt;d</sub></td>
-                                        </tr>
-                                        <tr>
-                                            <td>Subcohort 2</td>
-                                            <td>C<sub>d</sub></td>
-                                            <td>C<sub>&lt;d</sub></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                                
-                                <ul>
-                                    <li>For d=1: OR<sub>1</sub> = 1.0 (no comparison group)</li>
-                                    <li>For d>1: OR<sub>d</sub> = ((A<sub>d</sub> + ε) × (C<sub>&lt;d</sub> + ε)) / ((C<sub>d</sub> + ε) × (A<sub>&lt;d</sub> + ε)) where ε = 0.5</li>
-                                    <li>Log Odds Ratio = ln(OR<sub>d</sub>)</li>
-                                    <li>Standard Error = √(1/(A<sub>d</sub>+ε) + 1/(C<sub>d</sub>+ε) + 1/(A<sub>&lt;d</sub>+ε) + 1/(C<sub>&lt;d</sub>+ε))</li>
-                                    <li>95% CI = exp(ln(OR<sub>d</sub>) ± 1.96 × SE)</li>
-                                </ul>
-                            </div>                        </div>
+                        <div class="form-text">Divides scores into equal-sized risk categories</div>
                     </div>
                 </div>
             </div>
         </div>
-        
     </div>
     
     <div class="col-md-9">
@@ -387,7 +169,7 @@
         <div class="card shadow mb-3">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0">
-                    <i class="fas fa-chart-area me-2"></i>Distribution Visualization
+                    <i class="fas fa-chart-area me-2"></i>Subcohort Comparison
                 </h5>
                 <div>
                     <button class="btn btn-sm btn-outline-primary" id="downloadSvgBtn" disabled>
@@ -408,71 +190,332 @@
                             <p class="text-muted">Select a PGS ID, score type, and two cohorts to generate visualizations.</p>
                         </div>
                     </div>
-                    <!-- We'll replace this SVG with an iframe to show the Plotly visualization -->
                     <svg id="plotSvg" width="100%" height="700" style="display: none;"></svg>
                 </div>
             </div>
         </div>
-        <!-- Percentile table section -->
-        <div class="card shadow">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">
-                    <i class="fas fa-table me-2"></i>Subcohort Scores & Percentiles
-                </h5>
-                <div>
-                    <button class="btn btn-sm btn-outline-primary" id="downloadTableBtn" disabled>
-                        <i class="fas fa-download me-1"></i>Download CSV
-                    </button>
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="mb-3 row">
-                    <div class="col-md-4">
-                        <label for="percentileInput" class="form-label">Filter Percentile</label>
-                        <input type="number" class="form-control" id="percentileInput" min="0" max="100" step="1" placeholder="Enter value (0-100)">
-                    </div>
-                    <div class="col-md-4">
-                        <label for="percentileFilter" class="form-label">Condition</label>
-                        <select class="form-control" id="percentileFilter">
-                            <option value="above">Above</option>
-                            <option value="below">Below</option>
-                        </select>
-                    </div>
-                    <div class="col-md-4 d-flex align-items-end">
-                        <button type="button" class="btn btn-outline-primary" id="applyFilterBtn">
-                            Apply Filter
-                        </button>
-                    </div>
-                </div>
-                
-                <div id="percentileTable"></div>
-            </div>
-        </div>
+
+        <!-- Task Name Modal -->
         <div class="modal fade" id="taskNameModal" tabindex="-1" aria-labelledby="taskNameModalLabel" aria-hidden="true">
             <div class="modal-dialog">
-              <div class="modal-content">
-                <div class="modal-header">
-                  <h5 class="modal-title" id="taskNameModalLabel">Name Your Subcohort Plot</h5>
-                  <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="taskNameModalLabel">Name Your Subcohort Plot</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Enter a descriptive name for this visualization or leave it blank to use the default.</p>
+                        <div class="mb-3">
+                            <label for="taskName" class="form-label">Task Name</label>
+                            <input type="text" class="form-control" id="taskName" placeholder="My Subcohort Plot">
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="button" class="btn btn-primary" id="confirmTaskName">Generate</button>
+                    </div>
                 </div>
-                <div class="modal-body">
-                  <p>Enter a descriptive name for this visualization or leave it blank to use the default.</p>
-                  <div class="mb-3">
-                    <label for="taskName" class="form-label">Task Name</label>
-                    <input type="text" class="form-control" id="taskName" placeholder="My Subcohort Plot">
-                  </div>
-                </div>
-                <div class="modal-footer">
-                  <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                  <button type="button" class="btn btn-primary" id="confirmTaskName">Generate</button>
-                </div>
-              </div>
             </div>
-          </div>
+        </div>
+    </div>
+</div>
+
+<!-- Subcohort Analysis Help Modal -->
+<div class="modal fade" id="subcohortHelpModal" tabindex="-1" aria-labelledby="subcohortHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="subcohortHelpModalLabel">
+                    <i class="fas fa-layer-group me-2"></i>Subcohort Analysis Guide
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Overview Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-compass me-2"></i>Overview
+                    </h6>
+                    <p>
+                        Subcohort Analysis allows you to compare polygenic score distributions between two specific cohorts. 
+                        This tool generates three types of visualizations:
+                    </p>
+                    <ul>
+                        <li><strong>Distribution Curve:</strong> Shows the overall score distribution for the combined cohorts</li>
+                        <li><strong>Cohort Histograms:</strong> Displays frequency distributions for each cohort separately</li>
+                        <li><strong>Odds Ratio Plot:</strong> (Optional) Compares risk between cohorts using statistical measures</li>
+                    </ul>
+                </div>
+
+                <!-- What You'll See Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-chart-area me-2"></i>Visualization Components
+                    </h6>
+                    
+                    <div class="row">
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-wave-square fa-2x text-primary mb-2"></i>
+                                <h6>Distribution Curve</h6>
+                                <small class="text-muted">Smooth curve showing combined score distribution</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-chart-bar fa-2x text-success mb-2"></i>
+                                <h6>Cohort Histograms</h6>
+                                <small class="text-muted">Side-by-side frequency counts for each cohort</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="text-center p-3 border rounded">
+                                <i class="fas fa-chart-line fa-2x text-warning mb-2"></i>
+                                <h6>Odds Ratio Plot</h6>
+                                <small class="text-muted">Statistical comparison of risk between cohorts</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Step by Step Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-tasks me-2"></i>How to Use
+                    </h6>
+                    <ol>
+                        <li><strong>Select PGS ID:</strong> Choose the polygenic score you want to analyze</li>
+                        <li><strong>Choose Score Type:</strong> Select the appropriate normalization (SUM, Z_MostSimilarPop, Z_norm1, or Z_norm2)</li>
+                        <li><strong>Pick Two Cohorts:</strong> Select the two groups you want to compare</li>
+                        <li><strong>Configure Options:</strong> 
+                            <ul>
+                                <li>Add a custom plot title if desired</li>
+                                <li>Enable "Normalize Bins" for better visual comparison of differently-sized cohorts</li>
+                            </ul>
+                        </li>
+                        <li><strong>Optional - Add Odds Ratio:</strong> Enable odds ratio analysis to quantify risk differences</li>
+                        <li><strong>Generate Plot:</strong> Click the generate button to create your visualization</li>
+                    </ol>
+                </div>
+
+                <!-- Options Section -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-sliders-h me-2"></i>Configuration Options
+                    </h6>
+                    
+                    <div class="card mb-3">
+                        <div class="card-header bg-light">
+                            <strong>Normalize Bins</strong>
+                        </div>
+                        <div class="card-body">
+                            <p class="mb-2">
+                                When enabled, adjusts histogram bin heights to account for different cohort sizes. 
+                                This makes it easier to compare distribution shapes when your two cohorts have very different sample sizes.
+                            </p>
+                            <div class="alert alert-info mb-0">
+                                <i class="fas fa-lightbulb me-2"></i>
+                                <strong>Recommendation:</strong> Enable this when comparing cohorts of very different sizes.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- When to Use Section -->
+                <div class="alert alert-success">
+                    <p class="mb-2">
+                        <strong>Primary Application:</strong> This analysis is particularly powerful for <strong>case vs control comparisons</strong>, 
+                        where you want to compare polygenic score distributions between individuals with and without a specific condition or trait.
+                    </p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Odds Ratio Methods Help Modal -->
+<div class="modal fade" id="oddsRatioHelpModal" tabindex="-1" aria-labelledby="oddsRatioHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="oddsRatioHelpModalLabel">
+                    <i class="fas fa-calculator me-2"></i>Odds Ratio Methods Explained
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Overview -->
+                <div class="mb-4">
+                    <h6 class="fw-bold text-primary">
+                        <i class="fas fa-info-circle me-2"></i>What is an Odds Ratio?
+                    </h6>
+                    <p>
+                        An odds ratio (OR) compares the likelihood of an outcome between two groups. 
+                        In our context, it compares the likelihood of having a high polygenic score between two cohorts.
+                    </p>
+                    <ul>
+                        <li><strong>OR = 1:</strong> Equal risk between cohorts</li>
+                        <li><strong>OR > 1:</strong> Cohort 1 has higher risk than Cohort 2</li>
+                        <li><strong>OR < 1:</strong> Cohort 1 has lower risk than Cohort 2</li>
+                    </ul>
+                </div>
+
+                <!-- Method 1 -->
+                <div class="card mb-3">
+                    <div class="card-header bg-primary text-white">
+                        <h6 class="mb-0">
+                            <i class="fas fa-cut me-2"></i>Single Threshold Method
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>What it does:</strong> Compares the proportion of individuals above vs below a specific score value.</p>
+                        
+                        <p><strong>How it works:</strong></p>
+                        <div class="bg-light p-3 rounded mb-3">
+                            <table class="table table-sm table-bordered mb-2">
+                                <thead>
+                                    <tr><th></th><th>Score ≥ Threshold</th><th>Score < Threshold</th></tr>
+                                </thead>
+                                <tbody>
+                                    <tr><td><strong>Cohort 1</strong></td><td>A</td><td>B</td></tr>
+                                    <tr><td><strong>Cohort 2</strong></td><td>C</td><td>D</td></tr>
+                                </tbody>
+                            </table>
+                            <p class="mb-0"><strong>Odds Ratio = (A × D) / (B × C)</strong></p>
+                        </div>
+                        
+                        <p><strong>Best for:</strong> Testing a specific clinically relevant threshold (e.g., a risk cutoff used in practice).</p>
+                        
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            <strong>Example:</strong> If you know that scores above 1.5 indicate high risk, use this method with threshold = 1.5.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Method 2 -->
+                <div class="card mb-3">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0">
+                            <i class="fas fa-layer-group me-2"></i>Multiple Thresholds (Cumulative)
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>What it does:</strong> Calculates odds ratios at multiple score thresholds, showing how risk changes across the score distribution.</p>
+                        
+                        <p><strong>How it works:</strong></p>
+                        <ul>
+                            <li>Divides all scores into equal-sized groups (e.g., 10 groups)</li>
+                            <li>For each threshold, compares individuals above vs below that point</li>
+                            <li>Creates a series of odds ratios showing cumulative risk</li>
+                        </ul>
+                        
+                        <p><strong>Best for:</strong> Understanding how risk differences change across the entire score range, identifying optimal thresholds.</p>
+                        
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            <strong>Example:</strong> Shows whether risk differences are consistent across low, medium, and high score ranges.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Method 3 -->
+                <div class="card mb-3">
+                    <div class="card-header bg-warning text-dark">
+                        <h6 class="mb-0">
+                            <i class="fas fa-stairs me-2"></i>Risk Categories vs Lowest Risk
+                        </h6>
+                    </div>
+                    <div class="card-body">
+                        <p><strong>What it does:</strong> Divides scores into risk categories and compares each category against the lowest risk group.</p>
+                        
+                        <p><strong>How it works:</strong></p>
+                        <ul>
+                            <li>Divides all scores into equal-sized risk categories (e.g., deciles)</li>
+                            <li>Uses the lowest category (1st decile) as the reference baseline</li>
+                            <li>Compares each higher category against this baseline</li>
+                        </ul>
+                        
+                        <p><strong>Best for:</strong> Clinical interpretation, creating risk stratification systems, comparing high-risk to low-risk groups.</p>
+                        
+                        <div class="alert alert-info mb-0">
+                            <i class="fas fa-lightbulb me-2"></i>
+                            <strong>Example:</strong> "Individuals in the top 10% of scores have 3x higher odds compared to those in the bottom 10%."
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Method Selection Guide -->
+                <div class="alert alert-primary">
+                    <h6 class="fw-bold">
+                        <i class="fas fa-compass me-2"></i>Which Method Should You Choose?
+                    </h6>
+                    <ul class="mb-0">
+                        <li><strong>Single Threshold:</strong> When you have a specific, clinically meaningful cutoff value</li>
+                        <li><strong>Multiple Thresholds:</strong> For exploratory analysis to find optimal thresholds</li>
+                        <li><strong>Risk Categories:</strong> For clinical applications and risk stratification</li>
+                    </ul>
+                </div>
+
+                <!-- Statistical Notes -->
+                <div class="mt-3">
+                    <h6 class="fw-bold text-secondary">
+                        <i class="fas fa-chart-line me-2"></i>Statistical Notes
+                    </h6>
+                    <ul class="small text-muted">
+                        <li>All methods include 95% confidence intervals</li>
+                        <li>Small cell counts are adjusted using continuity correction (ε = 0.5)</li>
+                        <li>Confidence intervals that cross 1.0 indicate non-significant differences</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
     </div>
 </div>
 
 <div class="alert-container" id="alertContainer"></div>
+
+<script>
+// Initialize tooltips
+document.addEventListener('DOMContentLoaded', function() {
+    var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+    var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+    
+    // Handle OR method selection
+    const orMethods = document.querySelectorAll('input[name="orCalculationType"]');
+    const orOptionsMap = {
+        'threshold': '.orThresholdOptions',
+        'quantile': '.orQuantileOptions', 
+        'decileBaseline': '.orDecileBaselineOptions'
+    };
+    
+    orMethods.forEach(method => {
+        method.addEventListener('change', function() {
+            // Hide all option containers
+            Object.values(orOptionsMap).forEach(selector => {
+                const element = document.querySelector(selector);
+                if (element) element.style.display = 'none';
+            });
+            
+            // Show selected option container
+            const selectedOption = orOptionsMap[this.value];
+            if (selectedOption) {
+                const element = document.querySelector(selectedOption);
+                if (element) element.style.display = 'block';
+            }
+        });
+    });
+});
+</script>
+
 {% endblock %}
 
 {% block scripts %}
