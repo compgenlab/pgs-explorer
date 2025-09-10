@@ -289,9 +289,9 @@ $(document).ready(function() {
                         
                         const sampleCount = cohort.sample_ids.length;
                         const optionText = `${cohort.name} (${sampleCount} samples)`;
-                        const optionHtml = `<option value="${cohort.name}">${optionText}</option>`;
+                        const optionHtml = `<option value="${cohort.id}">${optionText}</option>`;
                         
-                        console.log(`DEBUG: Creating option - Value: "${cohort.name}", Text: "${optionText}"`);
+                        console.log(`DEBUG: Creating option - Value: "${cohort.id}", Text: "${optionText}"`);
                         console.log(`DEBUG: Option HTML: ${optionHtml}`);
                         
                         // Add to both dropdowns

@@ -125,6 +125,7 @@ class AncestryRepository(BaseRepository):
                 if sample_ids:
                     cohorts.append({
                         "name": population,
+                        "id": population,
                         "sample_ids": sample_ids
                     })
             except json.JSONDecodeError as e:

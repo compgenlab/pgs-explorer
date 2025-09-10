@@ -61,6 +61,7 @@ class Database:
             formatted_custom = [
                 {
                     "name": cohort["cohort_name"],
+                    "id": cohort["cohort_id"],
                     "sample_ids": cohort["sample_ids"]
                 }
                 for cohort in custom_cohorts
