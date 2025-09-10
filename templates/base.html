@@ -23,7 +23,10 @@
     {% block head %}{% endblock %}
 </head>
 <body>
-    <!-- Navigation Bar -->
+<div class="alert alert-warning" role="alert">
+	<b>Note: This site is under active development</b>
+</div>
+	<!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="/">
@@ -49,9 +52,16 @@
                             <i class="fas fa-users me-1"></i> Case vs Control
                         </a>
                     </li>
+<!--
                     <li class="nav-item">
                         <a class="nav-link {% if request.url.path == '/multivariate' %}active{% endif %}" href="/multivariate">
                             <i class="fas fa-th me-1"></i> Multivariate
+                        </a>
+                    </li>
+-->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/cohorts' %}active{% endif %}" href="/cohorts">
+                            <i class="fas fa-th me-1"></i> Cohorts
                         </a>
                     </li>
                 </ul>

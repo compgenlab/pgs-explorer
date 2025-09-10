@@ -417,6 +417,7 @@ class Database:
 
 class DatabaseManager: 
     def __init__(self, db_directory=None):
+        # TODO: make this configurable
         self.db_directory = db_directory or '/data/dev/db/'
         self.all_databases = self.initialize_all_dbs(self.db_directory)
         self.active_db = self.all_databases[0]
@@ -936,7 +937,8 @@ class DatabaseManager:
             return False
 
 # Create a default instance
-db = DatabaseManager()
+# TODO: pass config options here.
+db = DatabaseManager('/data2/mbreese/working/pgs-db')
 
 # FastAPI dependency functions
 async def get_db():

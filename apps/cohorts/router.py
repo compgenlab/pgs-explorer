@@ -1,12 +1,14 @@
 import uuid
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from typing import List, Dict, Any
 from pydantic import BaseModel
 
 from apps.core.config import templates
 from apps.session.service import SessionManager
 from database import db
+
+import requests
 
 router = APIRouter(tags=["cohorts"])
 
@@ -54,8 +56,80 @@ async def create_cohort(request: Request, cohort_request: CreateCohortRequest):
 
 @router.get("/api/cohorts/import-biobank")
 async def import_cohorts(request: Request):
+    cohort_id = request.query_params.get("cohort_id")
+    token = request.query_params.get("token")
+    callback = request.query_params.get("api_base_url")
+    dataset = request.query_params.get("dataset")
+
+    error = ""
+    cohort_name = ""
+    sample_ids = []
+
+    headers = {"Authorization": "Basic %s" % token}
+
+    samples_url = "%s/cohorts/%s/participant-ids" % (callback, cohort_id)
+    cohort_url = "%s/cohorts/%s/" % (callback, cohort_id)
+
+    response_samples = None
+    attempts = 0
+    while not response_samples or (response_samples.status_code != 200 and attempts < 3):
+        response_samples = requests.get(samples_url, headers=headers)
+        attempts += 1
+    
+    if response_samples and response_samples.status_code == 200:
+        sample_ids = response_samples.json()
+        # print(sample_ids)
+
+        response_cohort = None
+        attempts = 0
+        while not response_cohort or (response_cohort.status_code != 200 and attempts < 3):
+            response_cohort = requests.get(cohort_url, headers=headers)
+            attempts += 1
+
+        if response_cohort and response_cohort.status_code == 200:
+            cohort_json = response_cohort.json()
+            cohort_name = cohort_json["name"]
+            print(cohort_json)
+        elif response_cohort:
+            error = "Unable to retrieve cohort information (%s)" % response_cohort.status_code
+        else:
+            error = "Unable to retrieve cohort information (unknown error)"
+
+    elif response_samples:
+        error = "Unable to retrieve cohort samples (%s)" % response_samples.status_code
+    else:
+        error = "Unable to retrieve cohort samples (unknown error)"
+
+    valid_sample_ids = sample_ids
+
+    if not error:
+        user_id = SessionManager.get_or_create_user_id(request)
+        existing_cohort = db.active_db.cohorts.get_cohort(cohort_id, user_id)
+        
+        print("Existing cohort: %s (None?: %s, not none?: %s)" % (existing_cohort, existing_cohort is None, not existing_cohort is None))
+
+        if existing_cohort is None:
+            print("Cohort does not exist!")
+            valid_sample_ids = db.active_db.ancestry.get_valid_sample_ids(sample_ids)
+            if not valid_sample_ids:
+                # raise HTTPException(status_code=400, detail="No valid sample IDs provided")
+                error = "No valid sample IDs provided"
+            else:
+                db.active_db.cohorts.create_cohort(cohort_id, user_id, cohort_name, valid_sample_ids)
+                # return RedirectResponse(url="/cohorts", status_code=307)
+        else:
+            print("Cohort exists")
+            error = "Cohort with the ID: %s already exists. (Try deleting it first!)" % cohort_id
+
+
     return templates.TemplateResponse("cohorts-import.html", {
         "request": request,
+        "cohort_id": cohort_id,
+        "cohort_name": cohort_name,
+        "sample_id_count": len(sample_ids),
+        "valid_sample_id_count": len(valid_sample_ids),
+        "dataset": dataset,
+        "error": error,
         })
 
 @router.get("/api/cohorts")

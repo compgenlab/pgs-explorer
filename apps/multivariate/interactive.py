@@ -1064,7 +1064,7 @@ def add_interactive_filter_umap(html_file_path, output_file_path=None):
     
     # Add the JavaScript for filtering functionality
     script_tag = soup.new_tag('script')
-    script_tag.string = """
+    script_tag.string = r"""
 // JavaScript for interactive filtering with hover text ID extraction
 document.addEventListener('DOMContentLoaded', function() {
     console.log('Hover text ID filter script loaded');

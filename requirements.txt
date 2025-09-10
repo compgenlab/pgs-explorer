@@ -13,3 +13,4 @@ aiofiles>=23.1.0
 pyyaml
 bs4
 itsdangerous
+requests>=2.32.5
