@@ -312,7 +312,8 @@ def generate_subcohort_plot(
     )
     
     # 2. Then add base cohort curve (foreground layer)
-    add_base_cohort_curve(fig, base_scores, plot_params)
+    # 2025-09-18 - mbreese - removed curve from plot
+    # add_base_cohort_curve(fig, base_scores, plot_params)
     
     # 3. Add odds ratio if requested (top layer)
     if plot_params["display_or"] and len(subcohort_data) == 2:

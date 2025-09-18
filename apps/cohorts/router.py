@@ -73,6 +73,7 @@ async def import_cohorts(request: Request):
     response_samples = None
     attempts = 0
     while not response_samples or (response_samples.status_code != 200 and attempts < 3):
+        print(f"Requesting API call: {samples_url}")
         response_samples = requests.get(samples_url, headers=headers)
         attempts += 1
     

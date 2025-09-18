@@ -40,9 +40,10 @@ $(document).ready(function() {
     // Handle PGS selection change
     $('#pgsId').on('change', function() {
         const pgsId = $(this).val();
-        if (pgsId) {
-            fetchScoreTypes(pgsId);
-        }
+        // 2025-09-18 - mbreese - Hard code score type
+        // if (pgsId) {
+        //     fetchScoreTypes(pgsId);
+        // }
     });
     
     // Generate button handler

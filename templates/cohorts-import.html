@@ -7,27 +7,36 @@
 	<div class="col-md-6 mb-6">
         <div class="card shadow mb-6">
 
-	{% if error %}
             <div class="card-header">
-				Error attempting to import cohort: {{cohort_name}} ({{ cohort_id }}) from {{ dataset }}
+				<h3 class="card-title">Cohort Import</h3>
             </div>
+	{% if error %}
             <div class="card-body">
-			{{error}}
+                <p class="card-text">
+				Importing cohort: {{cohort_name}} ({{ cohort_id }}) from {{ dataset }}<br/>
+					<div class="alert alert-danger">
+						{{error}}
+					</div>
+				</p>
 			</div>
 	{% else %}
-			<div class="card-header">
-				Imported cohort: {{cohort_name}} ({{ cohort_id }}) from {{ dataset }}
-            </div>
             <div class="card-body">
-				Expected number of samples: {{ sample_id_count }}<br/>
-				Number of valid samples: {{ valid_sample_id_count }}<br/>
+                <p class="card-text">
+				Importing cohort: {{cohort_name}} ({{ cohort_id }}) from {{ dataset }}
+				<br/>
+				<br/>
+				Samples in cohort: {{ sample_id_count }}<br/>
+				Valid samples in PGS DB: {{ valid_sample_id_count }}
+				</p>
             </div>
 	{% endif %}
 
 	
 	</div>
-	<div>
-	<a href="/cohorts">View cohorts</a>
+	<div class="col-md-6 mb-6">
+		<br/>
+		<br/>
+		<a href="/cohorts">View cohorts</a>
 	</div>
 </div>
 </div>
