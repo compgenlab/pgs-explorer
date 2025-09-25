@@ -14,24 +14,32 @@ class SessionManager:
     
     @staticmethod
     def _get_session_id_from_request(request: Request) -> Optional[str]:
-        """Get session ID from cookie."""
-        return request.cookies.get(SESSION_COOKIE_NAME)
+        return request.session["session_id"]
+
+    #     """Get session ID from cookie."""
+    #     return request.cookies.get(SESSION_COOKIE_NAME)
     
     @staticmethod
     def _get_or_create_session(request: Request) -> Dict[str, Any]:
         """Get existing session or create new one."""
         session_id = SessionManager._get_session_id_from_request(request)
-        
+
+        # print(f"Current session: {session_id}")
         if session_id:
             session = db.active_db.sessions.get_session(session_id)
             if session:
                 # Update last_activity whenever session is accessed
+                # print("Session found!")
                 db.active_db.sessions.update_last_activity(session_id)
                 return session
+            # print("Session not found")
         
         # Create new session
-        session_id = secrets.token_urlsafe(32)
+        if not session_id:
+            session_id = secrets.token_urlsafe(32)
+            print(f"New session: {session_id}")
         user_id = secrets.token_urlsafe(16)
+        # print(f"Created new user_id2: {user_id}")
         session_data = {
             "created_at": datetime.now().isoformat(),
             "preferences": {},
@@ -93,18 +101,22 @@ class SessionManager:
         
         # Use request.session to get/set a simple session_id
         session_id = request.session.get("session_id")
+        # print(f"get_or_create_user_id => {session_id}")
         
         if not session_id:
             # Create new session_id in cookie
             session_id = secrets.token_urlsafe(32)
             request.session["session_id"] = session_id
+            print(f"get_or_create_user_id - creating new sessionid {session_id}")
         
         # Look up actual data in database using this session_id
         session_record = db.active_db.sessions.get_session(session_id)
+        # print(f"get_or_create_user_id - record {session_record}")
         
         if not session_record:
             # Create new database record
             user_id = secrets.token_urlsafe(16)
+            # print(f"Created new user_id1: {user_id}")
             session_data = {
                 "created_at": datetime.now().isoformat(),
                 "preferences": {},

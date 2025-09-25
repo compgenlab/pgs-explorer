@@ -4,5 +4,5 @@ database:
 
 session:
   secret_key: "your-default-secret-key"
-  cookie_name: "pgs_explorer_session"
+  cookie_name: "pgsexp_sid"
   max_age: 604800  # 7 days in seconds

@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Request, Response
+from fastapi.responses import JSONResponse
 from typing import Dict, Any
 from .service import SessionManager, SESSION_COOKIE_NAME, SESSION_MAX_AGE
 from database import db
@@ -12,16 +13,17 @@ async def get_session_info(request: Request, response: Response) -> Dict[str, An
     session_id = SessionManager.get_session_id(request)
     session_data = SessionManager.get_session_data(request)
     
-    # Set session cookie if not present
-    if not request.cookies.get(SESSION_COOKIE_NAME):
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=session_id,
-            max_age=SESSION_MAX_AGE,
-            httponly=True,
-            samesite="lax",
-            secure=False  # Set to True in production with HTTPS
-        )
+    # # Set session cookie if not present
+    # if not request.cookies.get(SESSION_COOKIE_NAME):
+    #     print("creating new cookie???")
+    #     response.set_cookie(
+    #         key=SESSION_COOKIE_NAME,
+    #         value=session_id,
+    #         max_age=SESSION_MAX_AGE,
+    #         httponly=False,
+    #         samesite="lax",
+    #         secure=False  # Set to True in production with HTTPS
+    #     )
     
     return {
         "user_id": user_id,
@@ -47,7 +49,12 @@ async def clear_session(request: Request, response: Response) -> Dict[str, Any]:
     """Clear the current session."""
     SessionManager.clear_session(request)
     response.delete_cookie(SESSION_COOKIE_NAME)
-    return {"status": "success", "message": "Session cleared"}
+
+    response = JSONResponse({"status": "success", "message": "Session cleared"})
+    response.delete_cookie(SESSION_COOKIE_NAME)
+    return response
+
+    # return {"status": "success", "message": "Session cleared"}
 
 @router.get("/debug")
 async def debug_session(request: Request):
@@ -64,7 +71,7 @@ async def debug_session(request: Request):
 async def clear_all_session_data(request: Request, response: Response) -> Dict[str, Any]:
     """Clear all session data including cohorts and tasks."""
     user_id = SessionManager.get_or_create_user_id(request)
-    
+
     # Delete user's tasks
     deleted_tasks = db.active_db.tasks.delete_user_tasks(user_id)
     
@@ -74,8 +81,19 @@ async def clear_all_session_data(request: Request, response: Response) -> Dict[s
     # Clear session
     SessionManager.clear_session(request)
     response.delete_cookie(SESSION_COOKIE_NAME)
-    
-    return {
+
+    resp = JSONResponse({
         "status": "success", 
         "message": f"Session cleared: {deleted_tasks} tasks and {deleted_cohorts} cohorts deleted"
-    }
+    })
+
+    # print(resp.headers)
+    resp.delete_cookie(SESSION_COOKIE_NAME)
+    # print(resp.headers)
+
+    return resp
+
+    # return {
+    #     "status": "success", 
+    #     "message": f"Session cleared: {deleted_tasks} tasks and {deleted_cohorts} cohorts deleted"
+    # }
