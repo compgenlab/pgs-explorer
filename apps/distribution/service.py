@@ -26,7 +26,7 @@ def process_distribution(request_data: Dict[str, Any]) -> str:
         # Check cache
         existing, html_path, json_path = process_cache_request(request_data)
         if existing:
-            return f"/{html_path}"
+            return f"{html_path}"
         
         # Route to appropriate visualization
         analysis_type = request_data.get("analysis_type")

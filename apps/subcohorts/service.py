@@ -1,6 +1,7 @@
 import os
 import json
 import uuid
+import traceback
 import numpy as np
 from typing import List, Dict, Any, Tuple
 from scipy import stats
@@ -47,6 +48,7 @@ def process_subcohort_plot(request_data: Dict[str, Any]) -> str:
         
     except Exception as e:
         print(f"Error generating subcohort plot: {str(e)}")
+        print(traceback.format_exc())
         raise e
 
 def extract_plot_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -108,7 +110,10 @@ def get_cohort_data(
     """Retrieve score data for union base cohort and two subcohorts from existing cohorts."""
     # Get all scores for this PGS ID
     score_dict = fetch_pgs_scores(pgs_id, score_type, user_id)
-    
+
+    cohort_1_name = db.active_db.get_omni_cohort(cohort_1, user_id=user_id)["cohort_name"]
+    cohort_2_name = db.active_db.get_omni_cohort(cohort_2, user_id=user_id)["cohort_name"]
+
     # Get sample IDs for both cohorts
     cohort_1_sample_ids = db.active_db.get_sample_ids_by_cohort(cohort_1, user_id=user_id)
     cohort_2_sample_ids = db.active_db.get_sample_ids_by_cohort(cohort_2, user_id=user_id)
@@ -128,7 +133,7 @@ def get_cohort_data(
     
     # Process cohort_1 as first subcohort
     cohort_1_data = process_cohort_as_subcohort(
-        cohort_1, cohort_1_sample_ids, score_dict, base_scores, colors[0]
+        cohort_1, cohort_1_name, cohort_1_sample_ids, score_dict, base_scores, colors[0]
     )
     if cohort_1_data:
         subcohort_data.append(cohort_1_data["subcohort_info"])
@@ -136,7 +141,7 @@ def get_cohort_data(
     
     # Process cohort_2 as second subcohort
     cohort_2_data = process_cohort_as_subcohort(
-        cohort_2, cohort_2_sample_ids, score_dict, base_scores, colors[1]
+        cohort_2, cohort_2_name, cohort_2_sample_ids, score_dict, base_scores, colors[1]
     )
     if cohort_2_data:
         subcohort_data.append(cohort_2_data["subcohort_info"])
@@ -155,6 +160,7 @@ def fetch_cohort_scores_from_sample_ids(sample_ids: List[str], score_dict: Dict[
     return [sample["SCORE"] for sample in valid_samples]
 
 def process_cohort_as_subcohort(
+    cohort_id: str,
     cohort_name: str,
     sample_ids: List[str],
     score_dict: Dict[str, float], 
@@ -166,17 +172,18 @@ def process_cohort_as_subcohort(
     valid_samples = filter_valid_samples(sample_ids, score_dict)
     
     if not valid_samples:
-        print(f"Warning: No valid samples found for cohort '{cohort_name}'")
+        print(f"Warning: No valid samples found for cohort '{cohort_id}'")
         return None
     
     # Extract scores
     subcohort_scores = [sample["SCORE"] for sample in valid_samples]
     
     # Create table entries with percentiles
-    table_entries = create_table_entries(valid_samples, base_scores, cohort_name)
+    table_entries = create_table_entries(valid_samples, base_scores, cohort_id)
     
     return {
         "subcohort_info": {
+            "id": cohort_id,
             "name": cohort_name,
             "color": color,
             "values": subcohort_scores
@@ -256,10 +263,11 @@ def process_single_subcohort(
     subcohort_scores = [sample["SCORE"] for sample in valid_samples]
     
     # Create table entries with percentiles
-    table_entries = create_table_entries(valid_samples, base_scores, subcohort["name"])
+    table_entries = create_table_entries(valid_samples, base_scores, subcohort["id"])
     
     return {
         "subcohort_info": {
+            "id": subcohort["id"],
             "name": subcohort["name"],
             "color": subcohort["color"],
             "values": subcohort_scores
@@ -270,7 +278,7 @@ def process_single_subcohort(
 def get_subcohort_sample_ids(subcohort: Dict[str, Any]) -> List[str]:
     """Get sample IDs for a subcohort."""
     if "sample_ids" not in subcohort:
-        return db.active_db.ancestry.sample_ids_by_cohort(subcohort["name"])
+        return db.active_db.ancestry.sample_ids_by_cohort(subcohort["id"])
     return subcohort["sample_ids"]
 
 def create_table_entries(
@@ -298,6 +306,10 @@ def generate_subcohort_plot(
     plot_params: Dict[str, Any]
 ) -> go.Figure:
     """Generate the subcohort comparison plot with optional OR analysis."""
+
+    print(subcohort_data)
+    print(dir(subcohort_data))
+
     # Create base figure
     fig = create_base_figure(plot_params["display_or"])
     
@@ -327,8 +339,12 @@ def create_base_figure(display_or: bool) -> go.Figure:
 
 def configure_plot_layout(fig: go.Figure, plot_params: Dict[str, Any]) -> None:
     """Configure the plot layout and styling."""
-    title = plot_params["plot_title"] or f"Distribution of {plot_params['pgs_id']} - {plot_params['score_type']}"
-    
+
+    cohort1 = db.active_db.get_omni_cohort(plot_params["cohort_1"], plot_params["user_id"])
+    cohort2 = db.active_db.get_omni_cohort(plot_params["cohort_2"], plot_params["user_id"])
+
+    title = plot_params["plot_title"] or f"{cohort1["cohort_name"]} vs {cohort2["cohort_name"]} - {plot_params['pgs_id']}"
+    print(f"Using title => {title}")
     fig.update_layout(
         title=title,
         xaxis_title="Score",
@@ -351,7 +367,10 @@ def add_base_cohort_curve(fig: go.Figure, base_scores: List[float], plot_params:
     kde_data = calculate_kde(base_scores)
     
     # Create a meaningful name for the union
-    base_name = f"{plot_params['cohort_1']} ∪ {plot_params['cohort_2']}"
+    cohort1 = db.active_db.get_omni_cohort(plot_params["cohort_1"], plot_params["user_id"])
+    cohort2 = db.active_db.get_omni_cohort(plot_params["cohort_2"], plot_params["user_id"])
+
+    base_name = f"{cohort1['cohort_name']} ∪ {cohort2['cohort_name']}"
     
     fig.add_trace(
         go.Scatter(
@@ -416,6 +435,9 @@ def add_single_histogram(
     # Calculate bin centers
     bin_centers = [(bins[i] + bins[i+1])/2 for i in range(len(bins)-1)]
     
+    print(dir(subcohort))
+    #cohort1 = db.active_db.get_omni_cohort(plot_params["cohort_1"], plot_params["user_id"])
+
     fig.add_trace(
         go.Bar(
             x=bin_centers,

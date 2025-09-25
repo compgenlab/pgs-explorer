@@ -70,7 +70,35 @@ class Database:
             all_cohorts.extend(formatted_custom)
         
         return all_cohorts
-    
+
+    def get_omni_cohort(self, cohort_id: str, user_id: str = None):
+        """Get any cohort type (ancestry or custom)."""
+        
+        # Handle "ALL" case
+        if cohort_id == "ALL":
+            return {
+                    "name": "ALL",
+                    "id": "ALL",
+                }
+        
+        # Try custom cohort first (if user_id provided)
+        if user_id:
+            print(f"Looking for custom cohort... {cohort_id}")
+            custom_cohort = self.cohorts.get_cohort(cohort_id, user_id)
+            if custom_cohort:
+                return custom_cohort
+        
+        # Try ancestry cohort
+        try:
+            print(f"Looking for common cohort... {cohort_id}")
+            return self.ancestry.get_cohort(cohort_id)
+        except ValueError:
+            pass
+        
+        # If nothing found, raise error
+        raise ValueError(f"Cohort '{cohort_id}' not found")
+
+
     def get_sample_ids_by_cohort(self, cohort: str, user_id: str = None):
         """Get sample IDs for any cohort type (ancestry or custom)."""
         

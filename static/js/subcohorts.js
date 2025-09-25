@@ -433,7 +433,8 @@ $(document).ready(function() {
             score_type: scoreType,
             cohort_1: cohort1,  // Changed from base_cohort
             cohort_2: cohort2,  // New field
-            plot_title: $('#plotTitle').val().trim() || `${cohort1} vs ${cohort2} - ${pgsId}`,
+//            plot_title: $('#plotTitle').val().trim() || `${cohort1} vs ${cohort2} - ${pgsId}`,
+            plot_title: $('#plotTitle').val().trim() || "",
             normalize_bins: $('#normalizeBins').is(':checked'),
             display_or: $('#displayOR').is(':checked'),
             or_calculation_type: getSelectedORCalculationType(),

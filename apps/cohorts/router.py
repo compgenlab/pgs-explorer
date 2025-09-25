@@ -72,9 +72,9 @@ async def import_cohorts(request: Request):
 
     response_samples = None
     attempts = 0
-    while not response_samples or (response_samples.status_code != 200 and attempts < 3):
+    while attempts < 3 and (not response_samples or response_samples.status_code != 200):
         print(f"Requesting API call: {samples_url}")
-        response_samples = requests.get(samples_url, headers=headers)
+        response_samples = requests.get(samples_url, headers=headers, verify=False) # verify=False is temporary until api.axin.sca.iu.edu is working.
         attempts += 1
     
     if response_samples and response_samples.status_code == 200:
@@ -83,8 +83,8 @@ async def import_cohorts(request: Request):
 
         response_cohort = None
         attempts = 0
-        while not response_cohort or (response_cohort.status_code != 200 and attempts < 3):
-            response_cohort = requests.get(cohort_url, headers=headers)
+        while attempts < 3 and (not response_cohort or response_cohort.status_code != 200):
+            response_cohort = requests.get(cohort_url, headers=headers, verify=False) # verify=False is temporary until api.axin.sca.iu.edu is working.
             attempts += 1
 
         if response_cohort and response_cohort.status_code == 200:

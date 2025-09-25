@@ -642,8 +642,8 @@ $(document).ready(function() {
     function generateDistribution(taskName = '') {
         const analysisType = $('#analysisType').val();
         const chartType = $('input[name="chartType"]:checked').val();
-        // const plotTitle = chartType === 'density' ? 'Density Plot' : 
-        //                 (chartType === 'histogram' ? 'Histogram' : 'Box Plot');
+        const defPlotTitle = chartType === 'density' ? 'Density Plot' : 
+                        (chartType === 'histogram' ? 'Histogram' : 'Box Plot');
         
         // Show loading spinner
         $('#plotPlaceholder').remove();
@@ -652,9 +652,11 @@ $(document).ready(function() {
         $('#distributionContainer').find('iframe').remove(); // Remove any existing iframe
 
         // Update plot title
-        $('#plotTitle').text(plotTitle);
-        const plotTitle = $('#plotTitle').val()
-        console.log(plotTitle)
+        var plotTitle = $('#plotTitle').val()
+        if (plotTitle=="") {
+            $('#plotTitle').text(defPlotTitle);
+            plotTitle = $('#plotTitle').val()
+        }
         if (analysisType === 'cohort') {
             // Get vars and validate
             const pgsId = $('#pgsId').val();
@@ -919,6 +921,8 @@ $(document).ready(function() {
                         $('#loadingSpinner').hide();
                         
                         if (taskType === 'distribution') {
+                            // console.log(response)
+
                             // Create iframe to display the Plotly HTML
                             const iframe = $('<iframe>')
                                 .attr('src', response.result_path)
