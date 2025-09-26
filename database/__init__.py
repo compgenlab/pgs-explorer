@@ -7,7 +7,7 @@ from .repositories.task_repository import TaskRepository
 from .repositories.session_repository import SessionRepository
 from .repositories.cohort_repository import CohortRepository
 from .repositories.temporary_score_repository import TemporaryScoreRepository
-from apps.core.config import DB_PATH, TASK_DB_PATH
+from apps.core.config import DB_PATH, PGS_DB_PATH, TASK_DB_PATH
 import numpy as np
 import os
 import sqlite3
@@ -24,9 +24,9 @@ class Database:
         Parameters:
         -----------
         db_path : str, optional
-            Path to the database. Defaults to DB_PATH if not provided
+            Path to the database. Defaults to PGS_DB_PATH if not provided
         """
-        self.db_path = db_path or DB_PATH
+        self.db_path = db_path or PGS_DB_PATH
         self.task_db_path = task_db_path or TASK_DB_PATH
 
         self.connection = DatabaseConnection(self.db_path)
@@ -638,6 +638,7 @@ class DatabaseManager:
         valid_pairs = []
         
         for subdir in self._get_subdirectories(db_directory):
+            print(f"Searching dir: {subdir} for DB")
             db_files = self._find_db_files(subdir)
             pgs_db = self._find_pgs_database(db_files, subdir)
             if pgs_db:
@@ -967,7 +968,8 @@ class DatabaseManager:
 
 # Create a default instance
 # TODO: pass config options here.
-db = DatabaseManager('/data2/mbreese/working/pgs-db')
+
+db = DatabaseManager(DB_PATH)
 
 # FastAPI dependency functions
 async def get_db():

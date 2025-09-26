@@ -12,6 +12,9 @@ venv/bin/pip install -r requirements.txt
 }
 
 run(){
+if [ ! -d temp/ ]; then
+	mkdir temp
+fi
 venv/bin/python3 -m uvicorn app:app --host $HOST --port $PORT
 }
 
