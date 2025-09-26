@@ -554,8 +554,9 @@ $(document).ready(function() {
         }
         
         const checkStatus = function() {
+            const currentTimeInMilliseconds = Date.now();
             $.ajax({
-                url: `/api/task_status/${taskId}`,
+                url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
                 type: 'GET',
                 success: function(response) {
                     // Update status display
@@ -649,8 +650,9 @@ $(document).ready(function() {
 
     // Function to load and display task data
     function loadTaskData(taskId) {
+        const currentTimeInMilliseconds = Date.now();
         $.ajax({
-            url: `/api/task_status/${taskId}`,
+            url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
             type: 'GET',
             success: function(task) {
             if (task.status === 'completed' && task.result_path) {
