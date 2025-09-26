@@ -221,8 +221,9 @@ function nextPage() {
 
 // Function to show task details
 function showTaskDetails(taskId) {
+  const currentTimeInMilliseconds = Date.now();
   $.ajax({
-    url: `/api/task_status/${taskId}`,
+    url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
     type: 'GET',
     success: function(task) {
       $('#detailsTaskId').text(task.task_id);
