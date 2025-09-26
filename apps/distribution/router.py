@@ -24,7 +24,9 @@ async def generate_distribution(
     user_id = SessionManager.get_or_create_user_id(request)
     request_to_pass = distribution_request.dict()
     request_to_pass["user_id"] = user_id
+
     print(f"User id: {user_id}")
+    print(f"dist req: {distribution_request}")
 
     # Track this activity
     SessionManager.track_user_activity(
@@ -33,7 +35,7 @@ async def generate_distribution(
         {
             "name": distribution_request.name,
             "pgs_ids_count": len(getattr(distribution_request, 'pgs_ids', [])),
-            "cohort": getattr(distribution_request, 'cohort', 'unknown')
+            "cohort": getattr(distribution_request, 'cohort', 'unknown'),
         }
     )
     

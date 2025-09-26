@@ -307,8 +307,8 @@ def generate_subcohort_plot(
 ) -> go.Figure:
     """Generate the subcohort comparison plot with optional OR analysis."""
 
-    print(subcohort_data)
-    print(dir(subcohort_data))
+    # print(subcohort_data)
+    # print(dir(subcohort_data))
 
     # Create base figure
     fig = create_base_figure(plot_params["display_or"])
@@ -435,7 +435,7 @@ def add_single_histogram(
     # Calculate bin centers
     bin_centers = [(bins[i] + bins[i+1])/2 for i in range(len(bins)-1)]
     
-    print(dir(subcohort))
+    # print(dir(subcohort))
     #cohort1 = db.active_db.get_omni_cohort(plot_params["cohort_1"], plot_params["user_id"])
 
     fig.add_trace(

@@ -27,7 +27,7 @@
         </div>
     </div>
 </div>
-
+<div class="alert-container" id="alertContainer"></div>
 <div class="row">
     <div class="col-md-3">
         <div class="card shadow mb-4">
@@ -172,8 +172,10 @@
                 
                 <hr>
                 
+                <div id="pgsListStatus" class="mb-3" style="max-height: 200px; overflow-y: auto; padding: 10px;">
+                </div>
                 <h6 class="mb-3">Active PGS IDs <span class="text-muted small" id="pgsCounter">(0)</span></h6>
-                <div id="pgsList" class="mb-3" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px;">
+                <div id="pgsList" class="mb-3" style="overflow-y: auto; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px;">
                     <div class="text-center text-muted py-3" id="noPgs">
                         No PGS IDs added yet
                     </div>
@@ -477,7 +479,6 @@
     </div>
 </div>
 
-<div class="alert-container" id="alertContainer"></div>
 {% endblock %}
 
 {% block scripts %}

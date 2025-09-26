@@ -2,13 +2,13 @@ from pydantic import BaseModel
 from typing import List, Optional
 
 class CohortRequest(BaseModel):
-    sample_ids: List[str]
+    # sample_ids: List[str]
     color: str
     name: Optional[str] = None
+    id: Optional[str] = None
 
 class ScoreComparisonRequest(BaseModel):
     pgs_ids: List[str]
-    sample_ids: List[str]
     colors: List[str]
     names: List[str]
 
@@ -23,7 +23,7 @@ class DistributionRequest(BaseModel):
     cohorts: Optional[List[CohortRequest]] = None
     
     # For score comparison
-    cohort_name: Optional[str] = None
+    cohort_id: Optional[str] = None
     pgs_comparison: Optional[ScoreComparisonRequest] = None
 
     # Job name
