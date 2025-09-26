@@ -138,6 +138,10 @@ async def list_cohorts(request: Request):
     """List user's cohorts."""
     user_id = SessionManager.get_or_create_user_id(request)
     cohorts = db.active_db.cohorts.get_user_cohorts(user_id)
+    for c in cohorts:
+        if 'sample_ids' in c:
+            c['sample_id_count'] = len(c['sample_ids'])
+            del c['sample_ids']
     return {"cohorts": cohorts}
 
 @router.delete("/api/cohorts/{cohort_id}")

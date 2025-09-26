@@ -24,6 +24,7 @@ def process_distribution(request_data: Dict[str, Any]) -> str:
     """
     try:
         # Check cache
+        print(f"req-data: {request_data}")
         existing, html_path, json_path = process_cache_request(request_data)
         if existing:
             return f"{html_path}"
@@ -73,7 +74,7 @@ def extract_score_parameters(request_data: Dict[str, Any]) -> Dict[str, Any]:
         "chart_type": request_data.get("chart_type", ""),
         "plot_title": request_data.get("plot_title", ""),
         "pgs_ids": pgs_comparison.get("pgs_ids", []),
-        "sample_ids": pgs_comparison.get("sample_ids", []),
+        "cohort_id": request_data.get("cohort_id", ""),
         "colors": pgs_comparison.get("colors", []),
         "display_names": pgs_comparison.get("names", []),
         "user_id": request_data.get("user_id", "")
@@ -89,12 +90,14 @@ def validate_score_parameters(params: Dict[str, Any]) -> None:
 def fetch_pgs_comparison_data(params: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Fetch score data for PGS comparison."""
     result = []
-    print(params.keys())
+    print("PGS comp: params[] => ", params)
+    sample_ids = db.active_db.get_sample_ids_by_cohort(params["cohort_id"], params["user_id"])
+    print(len(sample_ids), "samples found for cohort:", params["cohort_id"])
     for pgs_id in params["pgs_ids"]:
         scores_dict = db.active_db.get_scores_for_pgs(
             pgs_id, 
             params["score_type"], 
-            params["sample_ids"] if params["sample_ids"] else None,
+            sample_ids,
             user_id=params["user_id"]
         )
         
@@ -348,7 +351,7 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
     # print(f"DEBUG: Cohorts: {params['cohorts']}")
     
     # Prepare cohorts with sample_ids
-    prepared_cohorts = prepare_cohorts_with_sample_ids(params["cohorts"])
+    prepared_cohorts = prepare_cohorts_with_sample_ids(params["cohorts"], params["user_id"])
     print(f"DEBUG: Prepared cohorts count: {len(prepared_cohorts)}")
     for cohort in prepared_cohorts:
         print(f"DEBUG: Cohort '{cohort['name']}' has {len(cohort.get('sample_ids', []))} samples")
@@ -371,7 +374,7 @@ def generate_cohort_visualization(request_data: Dict[str, Any], html_path: str, 
     # Save outputs
     save_visualization_outputs(fig, cohort_data, html_path, json_path, "cohorts")
 
-def prepare_cohorts_with_sample_ids(cohorts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def prepare_cohorts_with_sample_ids(cohorts: List[Dict[str, Any]], user_id: str) -> List[Dict[str, Any]]:
     """
     Ensure all cohorts have their sample_ids populated.
     
@@ -389,15 +392,15 @@ def prepare_cohorts_with_sample_ids(cohorts: List[Dict[str, Any]]) -> List[Dict[
     
     for cohort in cohorts:
         # Skip invalid cohorts
-        if "name" not in cohort:
+        if "id" not in cohort:
             continue
         
         # Copy cohort to avoid modifying original
         cohort_copy = cohort.copy()
         
         # If sample_ids not provided and it's not the "ALL" cohort, fetch them
-        if "sample_ids" not in cohort_copy and cohort_copy["name"] != "ALL":
-            cohort_copy["sample_ids"] = db.active_db.sample_ids_by_cohort(cohort_copy["name"])
+        if "sample_ids" not in cohort_copy:
+            cohort_copy["sample_ids"] = db.active_db.get_sample_ids_by_cohort(cohort_copy["id"], user_id)
         
         prepared_cohorts.append(cohort_copy)
     
@@ -496,7 +499,7 @@ def save_visualization_outputs(fig: go.Figure, data: Any, html_path: str,
     # Save HTML
     fig.write_html(html_path)
     
-    # Save JSON data
-    data_matrix = {data_key: data}
-    with open(json_path, 'w') as f:
-        json.dump(data_matrix, f)
+    # # Save JSON data
+    # data_matrix = {data_key: data}
+    # with open(json_path, 'w') as f:
+    #     json.dump(data_matrix, f)

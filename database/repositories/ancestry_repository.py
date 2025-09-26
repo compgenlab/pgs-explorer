@@ -3,6 +3,9 @@ import json
 from typing import List, Dict, Any
 
 class AncestryRepository(BaseRepository):
+    def get_cohort_sample_count(self, cohort=None): 
+        return len(self.get_sample_ids_by_cohort(cohort))
+
     def get_sample_ids_by_cohort(self, cohort=None):
         """
         Fetch sample IDs for a specific cohort

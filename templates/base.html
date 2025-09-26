@@ -433,7 +433,7 @@
             $.ajax({
                 url: '/api/list_tasks',
                 type: 'GET',
-                data: { limit: 5 },
+                data: { limit: 10 },
                 success: function(response) {
                     const $dropdown = $('#recentRequestsList');
                     $dropdown.empty();
@@ -526,6 +526,11 @@
                                     <div class="card-body" id="sessionStats">
                                         <div class="text-center">
                                             <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                                        </div>
+                                    </div>
+                                    <div class="card-body">
+                                        <div class="text-center">
+                                            <a class="btn btn-primary" href="/tasks">View all tasks</a>
                                         </div>
                                     </div>
                                 </div>
@@ -641,7 +646,7 @@
                         $('#confirmClearModal').modal('hide');
                         $('#sessionInfoModal').modal('hide');
                         showNotification('Session cleared successfully. The page will reload.', 'success');
-                        // setTimeout(() => window.location.reload(), 1500);
+                        setTimeout(() => window.location.reload(), 1500);
                     },
                     error: function() {
                         showNotification('Error clearing session. Please try again.', 'error');

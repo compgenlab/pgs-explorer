@@ -77,15 +77,15 @@ $(document).ready(function() {
         applyPercentileFilter();
     });
     
-    // Download SVG button handler
-    $('#downloadSvgBtn').on('click', function() {
-        downloadPlotAsSvg();
-    });
+    // // Download SVG button handler
+    // $('#downloadSvgBtn').on('click', function() {
+    //     downloadPlotAsSvg();
+    // });
     
-    // Download table button handler
-    $('#downloadTableBtn').on('click', function() {
-        downloadTableAsCsv();
-    });
+    // // Download table button handler
+    // $('#downloadTableBtn').on('click', function() {
+    //     downloadTableAsCsv();
+    // });
     
     // Show/hide OR options when checkbox is toggled
     $('#displayOR').change(function() {
@@ -288,7 +288,7 @@ $(document).ready(function() {
                             cohort.sample_ids = [];
                         }
                         
-                        const sampleCount = cohort.sample_ids.length;
+                        const sampleCount = cohort.sample_id_count;
                         const optionText = `${cohort.name} (${sampleCount} samples)`;
                         const optionHtml = `<option value="${cohort.id}">${optionText}</option>`;
                         
@@ -320,7 +320,7 @@ $(document).ready(function() {
                             id: index + 1,
                             name: cohort.name,
                             color: color,
-                            sampleIds: cohort.sample_ids,
+                            // sampleIds: cohort.sample_ids,
                             active: true,
                             permanent: true
                         };
