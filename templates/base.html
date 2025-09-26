@@ -430,10 +430,11 @@
         
         // Function to update the recent requests dropdown
         function updateRecentRequestsDropdown() {
+            const currentTimeInMilliseconds = Date.now();
             $.ajax({
                 url: '/api/list_tasks',
                 type: 'GET',
-                data: { limit: 10 },
+                data: { limit: 10, ts: currentTimeInMilliseconds },
                 success: function(response) {
                     const $dropdown = $('#recentRequestsList');
                     $dropdown.empty();
@@ -553,9 +554,11 @@
                 type: 'GET',
                 success: function(data) {
                     // Get task counts
+                    const currentTimeInMilliseconds = Date.now();
                     $.ajax({
                         url: '/api/list_tasks',
                         type: 'GET',
+                        data: { ts: currentTimeInMilliseconds },
                         success: function(tasks) {
                             // Get cohort counts
                             $.ajax({
