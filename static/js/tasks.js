@@ -62,7 +62,8 @@ $(document).ready(function() {
 
 // Function to load tasks
 function loadTasks() {
-  let url = `/api/list_tasks?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}`;
+  const currentTimeInMilliseconds = Date.now();
+  let url = `/api/list_tasks?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}&ts=${currentTimeInMilliseconds}`;
   
   if (currentTaskType !== 'all') {
     url += `&task_type=${currentTaskType}`;
