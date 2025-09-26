@@ -927,12 +927,13 @@ class DatabaseManager:
                 
                 cursor.execute('''
                     CREATE TABLE user_cohorts (
-                        cohort_id TEXT PRIMARY KEY,
+                        cohort_id TEXT,
                         user_id TEXT NOT NULL,
                         cohort_name TEXT NOT NULL,
                         sample_ids TEXT NOT NULL,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES user_sessions(user_id)
+                        FOREIGN KEY (user_id) REFERENCES user_sessions(user_id),
+                        PRIMARY KEY(cohort_id, user_id)
                     )
                 ''')
                 
