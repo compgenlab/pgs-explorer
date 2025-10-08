@@ -14,7 +14,10 @@ class SessionManager:
     
     @staticmethod
     def _get_session_id_from_request(request: Request) -> Optional[str]:
-        return request.session["session_id"]
+        if "session_id" in request.session:
+            return request.session["session_id"]
+        session = SessionManager._get_or_create_session(request)
+        return session["session_id"]
 
     #     """Get session ID from cookie."""
     #     return request.cookies.get(SESSION_COOKIE_NAME)
