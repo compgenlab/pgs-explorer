@@ -7,7 +7,7 @@ from .repositories.task_repository import TaskRepository
 from .repositories.session_repository import SessionRepository
 from .repositories.cohort_repository import CohortRepository
 from .repositories.temporary_score_repository import TemporaryScoreRepository
-from apps.core.config import DB_PATH, TASK_DB_PATH
+from apps.core.config import DB_PATH, PGS_DB_PATH, TASK_DB_PATH
 import numpy as np
 import os
 import sqlite3
@@ -24,9 +24,9 @@ class Database:
         Parameters:
         -----------
         db_path : str, optional
-            Path to the database. Defaults to DB_PATH if not provided
+            Path to the database. Defaults to PGS_DB_PATH if not provided
         """
-        self.db_path = db_path or DB_PATH
+        self.db_path = db_path or PGS_DB_PATH
         self.task_db_path = task_db_path or TASK_DB_PATH
 
         self.connection = DatabaseConnection(self.db_path)
@@ -61,6 +61,7 @@ class Database:
             formatted_custom = [
                 {
                     "name": cohort["cohort_name"],
+                    "id": cohort["cohort_id"],
                     "sample_ids": cohort["sample_ids"]
                 }
                 for cohort in custom_cohorts
@@ -69,7 +70,35 @@ class Database:
             all_cohorts.extend(formatted_custom)
         
         return all_cohorts
-    
+
+    def get_omni_cohort(self, cohort_id: str, user_id: str = None):
+        """Get any cohort type (ancestry or custom)."""
+        
+        # Handle "ALL" case
+        if cohort_id == "ALL":
+            return {
+                    "name": "ALL",
+                    "id": "ALL",
+                }
+        
+        # Try custom cohort first (if user_id provided)
+        if user_id:
+            print(f"Looking for custom cohort... {cohort_id}")
+            custom_cohort = self.cohorts.get_cohort(cohort_id, user_id)
+            if custom_cohort:
+                return custom_cohort
+        
+        # Try ancestry cohort
+        try:
+            print(f"Looking for common cohort... {cohort_id}")
+            return self.ancestry.get_cohort(cohort_id)
+        except ValueError:
+            pass
+        
+        # If nothing found, raise error
+        raise ValueError(f"Cohort '{cohort_id}' not found")
+
+
     def get_sample_ids_by_cohort(self, cohort: str, user_id: str = None):
         """Get sample IDs for any cohort type (ancestry or custom)."""
         
@@ -417,6 +446,7 @@ class Database:
 
 class DatabaseManager: 
     def __init__(self, db_directory=None):
+        # TODO: make this configurable
         self.db_directory = db_directory or '/data/dev/db/'
         self.all_databases = self.initialize_all_dbs(self.db_directory)
         self.active_db = self.all_databases[0]
@@ -608,6 +638,7 @@ class DatabaseManager:
         valid_pairs = []
         
         for subdir in self._get_subdirectories(db_directory):
+            print(f"Searching dir: {subdir} for DB")
             db_files = self._find_db_files(subdir)
             pgs_db = self._find_pgs_database(db_files, subdir)
             if pgs_db:
@@ -896,12 +927,13 @@ class DatabaseManager:
                 
                 cursor.execute('''
                     CREATE TABLE user_cohorts (
-                        cohort_id TEXT PRIMARY KEY,
+                        cohort_id TEXT,
                         user_id TEXT NOT NULL,
                         cohort_name TEXT NOT NULL,
                         sample_ids TEXT NOT NULL,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES user_sessions(user_id)
+                        FOREIGN KEY (user_id) REFERENCES user_sessions(user_id),
+                        PRIMARY KEY(cohort_id, user_id)
                     )
                 ''')
                 
@@ -936,7 +968,9 @@ class DatabaseManager:
             return False
 
 # Create a default instance
-db = DatabaseManager()
+# TODO: pass config options here.
+
+db = DatabaseManager(DB_PATH)
 
 # FastAPI dependency functions
 async def get_db():

@@ -1,4 +1,4 @@
-temp/
+temp/*
 temp_copy/
 tests/
 .DStore
@@ -8,3 +8,4 @@ __pycache__/
 *$py.class
 server.log
 __pycache__
+config.yaml

@@ -27,6 +27,7 @@
     </div>
 </div>
 
+<div class="alert-container" id="alertContainer"></div>
 
 <div class="row">
     <div class="col-md-3">
@@ -42,23 +43,25 @@
                         <option value="" selected disabled>Select PGS ID</option>
                     </select>
                 </div>
-                
+<!-- 2025-09-18 - mbreese - Hard code znorm2 for now until a better mechanism can be found. -->
+                <input type="hidden" id="scoreType" value="Z_norm2"/>
+<!--        
                 <div class="mb-3">
                     <label for="scoreType" class="form-label">Score Type</label>
                     <select class="form-select" id="scoreType" required>
                         <option value="" selected disabled>Select Score Type</option>
                     </select>
                 </div>
-                
+            -->                
                 <div class="mb-3">
-                    <label for="cohort1" class="form-label">Cohort 1</label>
+                    <label for="cohort1" class="form-label">Cohort 1 (case)</label>
                     <select class="form-select" id="cohort1" required>
                         <option value="" selected disabled>Select Cohort 1</option>
                     </select>
                 </div>
                 
                 <div class="mb-3">
-                    <label for="cohort2" class="form-label">Cohort 2</label>
+                    <label for="cohort2" class="form-label">Cohort 2 (control)</label>
                     <select class="form-select" id="cohort2" required>
                         <option value="" selected disabled>Select Cohort 2</option>
                     </select>
@@ -73,34 +76,21 @@
                     <label class="form-check-label" for="normalizeBins">Normalize Bins?</label>
                     <div class="form-text">Normalizes bin heights for better comparison.</div>
                 </div>
-                <div class="d-grid">
-                    <button type="button" class="btn btn-primary" id="generateButton">
-                        <i class="fas fa-chart-area me-1"></i> Generate Plot
-                    </button>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Odds-Ratio panel -->
-        <div class="card shadow mb-3">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    Odds Ratio Analysis
-                    <button class="btn btn-sm btn-outline-info ms-2" type="button" data-bs-toggle="modal" data-bs-target="#oddsRatioHelpModal">
-                        <i class="fas fa-question-circle"></i>
-                    </button>
-                </h5>
-            </div>
-            <div class="card-body">
                 <div class="mb-3">
+                    <label class="form-label">Odds Ratio</label>
                     <div class="form-check form-switch">
                         <input class="form-check-input" type="checkbox" id="displayOR" name="displayOR">
                         <label class="form-check-label" for="displayOR">Calculate Odds Ratio?</label>
+
+                        <button class="btn btn-sm ms-2" type="button" data-bs-toggle="modal" data-bs-target="#oddsRatioHelpModal">
+                            <i class="fas fa-question-circle text-info"></i>
+                        </button>
+
                         <div class="form-text">Compare risk between the two selected cohorts.</div>
                     </div>
                 </div>
                 
-                <div id="orOptionsContainer" class="mb-3" style="display: none;">
+                <div id="orOptionsContainer" class="mb-3" style="display: none; padding-left: 32px;">
                     <!-- Option 1: Single Threshold -->
                     <div class="form-check mb-3">
                         <input class="form-check-input" type="radio" name="orCalculationType" id="orByThreshold" value="threshold" checked>
@@ -159,6 +149,11 @@
                             value="10" min="2" max="20" step="1">
                         <div class="form-text">Divides scores into equal-sized risk categories</div>
                     </div>
+                </div>
+                <div class="d-grid">
+                    <button type="button" class="btn btn-primary" id="generateButton">
+                        <i class="fas fa-chart-area me-1"></i> Generate Plot
+                    </button>
                 </div>
             </div>
         </div>
@@ -479,7 +474,6 @@
     </div>
 </div>
 
-<div class="alert-container" id="alertContainer"></div>
 
 <script>
 // Initialize tooltips

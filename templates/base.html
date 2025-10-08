@@ -18,12 +18,15 @@
     <!-- Custom CSS -->
     <link rel="stylesheet" href="/static/css/styles.css">
     
-    <link rel="icon" type="image/x-icon" href="/data/dev/pgs-explorer/static/images/favicon.ico">
+    <link rel="icon" type="image/x-icon" href="/static/images/favicon.ico">
 
     {% block head %}{% endblock %}
 </head>
 <body>
-    <!-- Navigation Bar -->
+<div class="alert alert-warning" role="alert">
+	<b>Note: This site is under active development</b>
+</div>
+	<!-- Navigation Bar -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
             <a class="navbar-brand" href="/">
@@ -49,14 +52,26 @@
                             <i class="fas fa-users me-1"></i> Case vs Control
                         </a>
                     </li>
+<!--
                     <li class="nav-item">
                         <a class="nav-link {% if request.url.path == '/multivariate' %}active{% endif %}" href="/multivariate">
                             <i class="fas fa-th me-1"></i> Multivariate
                         </a>
                     </li>
+-->
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.url.path == '/cohorts' %}active{% endif %}" href="/cohorts">
+                            <i class="fas fa-th me-1"></i> Cohorts
+                        </a>
+                    </li>
+                        <li>
+                            <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#sessionInfoModal">
+                                <i class="fas fa-user-circle me-2"></i>Session Info
+                            </a>
+                        </li>
                 </ul>
                 
-                <!-- Database Selector -->
+                <!-- Database Selector - ->
                 <div class="ms-auto me-3">
                     <div class="dropdown">
                         <button class="btn btn-outline-light btn-sm dropdown-toggle" type="button" id="databaseDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -68,11 +83,12 @@
                         </ul>
                     </div>
                 </div>
+                -->
             </div>
             
             <!-- Right side buttons -->
             <div class="d-flex">
-                <!-- Tools Dropdown -->
+             <!-- 
                 <div class="dropdown me-2">
                     <button class="btn btn-outline-light dropdown-toggle" type="button" id="toolsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
                         <i class="fas fa-tools me-1"></i>Tools
@@ -97,7 +113,7 @@
                         </li>
                     </ul>
                 </div>
-                
+            -->
                 <!-- Recent Requests -->
                 <div class="dropdown">
                     <button class="btn btn-outline-light dropdown-toggle" type="button" id="recentRequestsDropdown" data-bs-toggle="dropdown" aria-expanded="false">
@@ -270,6 +286,7 @@
         // Database management functions
         let currentActiveDb = null;
         
+        /*
         function loadDatabaseList() {
             $.ajax({
                 url: '/api/db_list',
@@ -350,7 +367,7 @@
                 }
             });
         }
-        
+        */
         function reloadPageData() {
             // Reload PGS list if function exists
             if (typeof fetchPgsList === 'function') {
@@ -413,10 +430,11 @@
         
         // Function to update the recent requests dropdown
         function updateRecentRequestsDropdown() {
+            const currentTimeInMilliseconds = Date.now();
             $.ajax({
                 url: '/api/list_tasks',
                 type: 'GET',
-                data: { limit: 5 },
+                data: { limit: 10, ts: currentTimeInMilliseconds },
                 success: function(response) {
                     const $dropdown = $('#recentRequestsList');
                     $dropdown.empty();
@@ -511,6 +529,11 @@
                                             <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
                                         </div>
                                     </div>
+                                    <div class="card-body">
+                                        <div class="text-center">
+                                            <a class="btn btn-primary" href="/tasks">View all tasks</a>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -531,9 +554,11 @@
                 type: 'GET',
                 success: function(data) {
                     // Get task counts
+                    const currentTimeInMilliseconds = Date.now();
                     $.ajax({
                         url: '/api/list_tasks',
                         type: 'GET',
+                        data: { ts: currentTimeInMilliseconds },
                         success: function(tasks) {
                             // Get cohort counts
                             $.ajax({
@@ -794,7 +819,7 @@
 
         // Initialize on page load
         $(document).ready(function() {
-            loadDatabaseList();
+            // loadDatabaseList();
             updateRecentRequestsDropdown();
             setInterval(updateRecentRequestsDropdown, 10000);
         });

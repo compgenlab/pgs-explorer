@@ -3,8 +3,42 @@
 {% block title %}PGS Visualizer - Import Cohorts{% endblock %}
 
 {% block content %}
-<div class="row mb-4">
-	Cohort importing is not yet available.
+<div class="row">
+	<div class="col-md-6 mb-6">
+        <div class="card shadow mb-6">
+
+            <div class="card-header">
+				<h3 class="card-title">Cohort Import</h3>
+            </div>
+	{% if error %}
+            <div class="card-body">
+                <p class="card-text">
+				Importing cohort: {{cohort_name}} ({{ cohort_id }}) from {{ dataset }}<br/>
+					<div class="alert alert-danger">
+						{{error}}
+					</div>
+				</p>
+			</div>
+	{% else %}
+            <div class="card-body">
+                <p class="card-text">
+				Importing cohort: {{cohort_name}} ({{ cohort_id }}) from {{ dataset }}
+				<br/>
+				<br/>
+				Samples in cohort: {{ sample_id_count }}<br/>
+				Valid samples in PGS DB: {{ valid_sample_id_count }}
+				</p>
+            </div>
+	{% endif %}
+
+	
+	</div>
+	<div class="col-md-6 mb-6">
+		<br/>
+		<br/>
+		<a href="/cohorts">View cohorts</a>
+	</div>
+</div>
 </div>
 {% endblock %}
 

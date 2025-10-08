@@ -62,7 +62,8 @@ $(document).ready(function() {
 
 // Function to load tasks
 function loadTasks() {
-  let url = `/api/list_tasks?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}`;
+  const currentTimeInMilliseconds = Date.now();
+  let url = `/api/list_tasks?limit=${pageSize}&offset=${(currentPage - 1) * pageSize}&ts=${currentTimeInMilliseconds}`;
   
   if (currentTaskType !== 'all') {
     url += `&task_type=${currentTaskType}`;
@@ -221,8 +222,9 @@ function nextPage() {
 
 // Function to show task details
 function showTaskDetails(taskId) {
+  const currentTimeInMilliseconds = Date.now();
   $.ajax({
-    url: `/api/task_status/${taskId}`,
+    url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
     type: 'GET',
     success: function(task) {
       $('#detailsTaskId').text(task.task_id);

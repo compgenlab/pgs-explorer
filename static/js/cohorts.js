@@ -1,4 +1,4 @@
-document.getElementById('cohortForm').addEventListener('submit', async (e) => {
+/*document.getElementById('cohortForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     
     const name = document.getElementById('cohortName').value;
@@ -34,7 +34,7 @@ document.getElementById('cohortForm').addEventListener('submit', async (e) => {
         showAlert('Error creating cohort. Please try again.', 'danger');
     }
 });
-
+*/
 async function deleteCohort(cohortId, cohortName) {
     if (confirm(`Are you sure you want to delete the cohort "${cohortName}"?`)) {
         try {

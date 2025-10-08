@@ -40,9 +40,10 @@ $(document).ready(function() {
     // Handle PGS selection change
     $('#pgsId').on('change', function() {
         const pgsId = $(this).val();
-        if (pgsId) {
-            fetchScoreTypes(pgsId);
-        }
+        // 2025-09-18 - mbreese - Hard code score type
+        // if (pgsId) {
+        //     fetchScoreTypes(pgsId);
+        // }
     });
     
     // Generate button handler
@@ -76,15 +77,15 @@ $(document).ready(function() {
         applyPercentileFilter();
     });
     
-    // Download SVG button handler
-    $('#downloadSvgBtn').on('click', function() {
-        downloadPlotAsSvg();
-    });
+    // // Download SVG button handler
+    // $('#downloadSvgBtn').on('click', function() {
+    //     downloadPlotAsSvg();
+    // });
     
-    // Download table button handler
-    $('#downloadTableBtn').on('click', function() {
-        downloadTableAsCsv();
-    });
+    // // Download table button handler
+    // $('#downloadTableBtn').on('click', function() {
+    //     downloadTableAsCsv();
+    // });
     
     // Show/hide OR options when checkbox is toggled
     $('#displayOR').change(function() {
@@ -287,11 +288,11 @@ $(document).ready(function() {
                             cohort.sample_ids = [];
                         }
                         
-                        const sampleCount = cohort.sample_ids.length;
+                        const sampleCount = cohort.sample_id_count;
                         const optionText = `${cohort.name} (${sampleCount} samples)`;
-                        const optionHtml = `<option value="${cohort.name}">${optionText}</option>`;
+                        const optionHtml = `<option value="${cohort.id}">${optionText}</option>`;
                         
-                        console.log(`DEBUG: Creating option - Value: "${cohort.name}", Text: "${optionText}"`);
+                        console.log(`DEBUG: Creating option - Value: "${cohort.id}", Text: "${optionText}"`);
                         console.log(`DEBUG: Option HTML: ${optionHtml}`);
                         
                         // Add to both dropdowns
@@ -319,7 +320,7 @@ $(document).ready(function() {
                             id: index + 1,
                             name: cohort.name,
                             color: color,
-                            sampleIds: cohort.sample_ids,
+                            // sampleIds: cohort.sample_ids,
                             active: true,
                             permanent: true
                         };
@@ -432,7 +433,8 @@ $(document).ready(function() {
             score_type: scoreType,
             cohort_1: cohort1,  // Changed from base_cohort
             cohort_2: cohort2,  // New field
-            plot_title: $('#plotTitle').val().trim() || `${cohort1} vs ${cohort2} - ${pgsId}`,
+//            plot_title: $('#plotTitle').val().trim() || `${cohort1} vs ${cohort2} - ${pgsId}`,
+            plot_title: $('#plotTitle').val().trim() || "",
             normalize_bins: $('#normalizeBins').is(':checked'),
             display_or: $('#displayOR').is(':checked'),
             or_calculation_type: getSelectedORCalculationType(),
@@ -552,8 +554,9 @@ $(document).ready(function() {
         }
         
         const checkStatus = function() {
+            const currentTimeInMilliseconds = Date.now();
             $.ajax({
-                url: `/api/task_status/${taskId}`,
+                url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
                 type: 'GET',
                 success: function(response) {
                     // Update status display
@@ -647,8 +650,9 @@ $(document).ready(function() {
 
     // Function to load and display task data
     function loadTaskData(taskId) {
+        const currentTimeInMilliseconds = Date.now();
         $.ajax({
-            url: `/api/task_status/${taskId}`,
+            url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
             type: 'GET',
             success: function(task) {
             if (task.status === 'completed' && task.result_path) {

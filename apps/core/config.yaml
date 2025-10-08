@@ -1,8 +1,0 @@
-database:
-  pgs_db_path: "/data/dev/db/pgs_data.db"
-  tasks_db_path: "/data/dev/db/tasks.db"
-
-session:
-  secret_key: "your-default-secret-key"
-  cookie_name: "pgs_explorer_session"
-  max_age: 604800  # 7 days in seconds

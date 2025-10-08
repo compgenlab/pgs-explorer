@@ -50,16 +50,16 @@ def get_score_types_for_pgs(request: Request, pgs_id: str):
     
     return {"score_types": score_types}
 
-@router.get("/api/pgs_data/{pgs_id}")
-def get_pgs_data(request: Request, pgs_id: str):
-    """Fetches sample scores from both permanent and temporary sources for a given PGS_ID."""
-    user_id = SessionManager.get_or_create_user_id(request)
-    scores_data = db.active_db.get_all_scores_for_pgs(pgs_id, user_id)
+# @router.get("/api/pgs_data/{pgs_id}")
+# def get_pgs_data(request: Request, pgs_id: str):
+#     """Fetches sample scores from both permanent and temporary sources for a given PGS_ID."""
+#     user_id = SessionManager.get_or_create_user_id(request)
+#     scores_data = db.active_db.get_all_scores_for_pgs(pgs_id, user_id)
     
-    if not scores_data:
-        raise HTTPException(status_code=404, detail=f"No scores found for PGS_ID '{pgs_id}'")
+#     if not scores_data:
+#         raise HTTPException(status_code=404, detail=f"No scores found for PGS_ID '{pgs_id}'")
     
-    return {"scores": scores_data}
+#     return {"scores": scores_data}
 
 @router.get("/api/permanent_cohorts")
 async def get_permanent_cohorts(request: Request):
@@ -72,8 +72,10 @@ async def get_permanent_cohorts(request: Request):
         cohorts = db.active_db.get_all_cohorts(user_id)
         
         # Add "ALL" as the first option
-        cohort_list = [{"name": "ALL", "sample_ids": []}]
-        cohort_list.extend(cohorts)
+        cohort_list = [{"name": "ALL", "id": "ALL", "sample_id_count": db.active_db.ancestry.get_cohort_sample_count()}]
+        for cohort in cohorts:
+            cohort_list.append({"name": cohort["name"], "id": cohort["id"], "sample_id_count": len(cohort["sample_ids"])})
+        # cohort_list.extend(cohorts)
         
         return {"cohorts": cohort_list}
     
@@ -81,72 +83,72 @@ async def get_permanent_cohorts(request: Request):
         print(f"Error retrieving populations from database: {e}")
         return {"cohorts": []}
 
-@router.get("/api/switch_active_db")
-async def switch_active_db(db_path):
-    try:
-        db.switch_active_db(db_path)
-        return True
-    except Exception as e: 
-        print(f"Error switching the active database: {e}")
-        return False
+# @router.get("/api/switch_active_db")
+# async def switch_active_db(db_path):
+#     try:
+#         db.switch_active_db(db_path)
+#         return True
+#     except Exception as e: 
+#         print(f"Error switching the active database: {e}")
+#         return False
 
-@router.get("/api/db_list")
-async def get_db_list():
-    try:
-        db_list = [x.db_path for x in db.all_databases]
-        return db_list
-    except Exception as e:
-        print(f"Error getting database list: {e}")
-        return []
+# @router.get("/api/db_list")
+# async def get_db_list():
+#     try:
+#         db_list = [x.db_path for x in db.all_databases]
+#         return db_list
+#     except Exception as e:
+#         print(f"Error getting database list: {e}")
+#         return []
 
 
-@router.post("/api/create_database")
-async def create_database(
-    database_name: str = Form(...),
-    scores_file: UploadFile = File(...),
-    metadata_file: UploadFile = File(None)
-):
-    try:
-        # Validate database name
-        if not database_name or not database_name.replace('_', '').replace('-', '').isalnum():
-            raise HTTPException(status_code=400, detail="Invalid database name. Use only letters, numbers, hyphens, and underscores.")
+# @router.post("/api/create_database")
+# async def create_database(
+#     database_name: str = Form(...),
+#     scores_file: UploadFile = File(...),
+#     metadata_file: UploadFile = File(None)
+# ):
+#     try:
+#         # Validate database name
+#         if not database_name or not database_name.replace('_', '').replace('-', '').isalnum():
+#             raise HTTPException(status_code=400, detail="Invalid database name. Use only letters, numbers, hyphens, and underscores.")
         
-        # Create upload directory on the server
-        upload_dir = Path("data/dev/db")
-        upload_dir.mkdir(parents=True, exist_ok=True)
+#         # Create upload directory on the server
+#         upload_dir = Path("data/dev/db")
+#         upload_dir.mkdir(parents=True, exist_ok=True)
         
-        # Backend saves the uploaded scores file
-        scores_file_path = upload_dir / scores_file.filename
-        with open(scores_file_path, "wb") as f:
-            content = await scores_file.read()
-            f.write(content)
+#         # Backend saves the uploaded scores file
+#         scores_file_path = upload_dir / scores_file.filename
+#         with open(scores_file_path, "wb") as f:
+#             content = await scores_file.read()
+#             f.write(content)
         
-        # Backend saves the uploaded metadata file if provided
-        metadata_file_path = None
-        if metadata_file and metadata_file.filename:
-            metadata_file_path = upload_dir / metadata_file.filename
-            with open(metadata_file_path, "wb") as f:
-                content = await metadata_file.read()
-                f.write(content)
+#         # Backend saves the uploaded metadata file if provided
+#         metadata_file_path = None
+#         if metadata_file and metadata_file.filename:
+#             metadata_file_path = upload_dir / metadata_file.filename
+#             with open(metadata_file_path, "wb") as f:
+#                 content = await metadata_file.read()
+#                 f.write(content)
         
-        # Use the saved file paths to create database
-        new_db_path = db.add_new_database(
-            scores_file_path=str(scores_file_path),
-            database_name=database_name,
-            metadata_csv_path=str(metadata_file_path) if metadata_file_path else None
-        )
+#         # Use the saved file paths to create database
+#         new_db_path = db.add_new_database(
+#             scores_file_path=str(scores_file_path),
+#             database_name=database_name,
+#             metadata_csv_path=str(metadata_file_path) if metadata_file_path else None
+#         )
         
-        if new_db_path:
-            return {
-                "success": True,
-                "database_name": database_name,
-                "database_path": new_db_path
-            }
-        else:
-            raise HTTPException(status_code=500, detail="Failed to create database")
+#         if new_db_path:
+#             return {
+#                 "success": True,
+#                 "database_name": database_name,
+#                 "database_path": new_db_path
+#             }
+#         else:
+#             raise HTTPException(status_code=500, detail="Failed to create database")
     
-    except HTTPException:
-        raise
-    except Exception as e:
-        print(f"Error creating database: {e}")
-        raise HTTPException(status_code=500, detail=f"Error creating database: {str(e)}")
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         print(f"Error creating database: {e}")
+#         raise HTTPException(status_code=500, detail=f"Error creating database: {str(e)}")

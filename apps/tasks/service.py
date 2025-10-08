@@ -79,6 +79,8 @@ async def process_image_request(
     task_id = str(uuid.uuid4())
     created_at = datetime.now().isoformat()
     
+    print(f"submitting image task {task_id} => {request_data}")
+
     # Store task in database with user_id
     db.active_db.tasks.create_task(
         task_id=task_id,

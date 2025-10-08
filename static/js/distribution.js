@@ -146,7 +146,7 @@ $(document).ready(function() {
         // Create a link to download the file
         const link = document.createElement('a');
         link.href = filePath;
-        link.download = `heatmap_${$('#scoreType').val()}_${new Date().toISOString().slice(0, 10)}.html`;
+        link.download = `dist_${$('#scoreType').val()}_${new Date().toISOString().slice(0, 10)}.html`;
         link.click();
     });
 
@@ -264,7 +264,8 @@ $(document).ready(function() {
     // Process PGS ids
     async function processPgsIds(pgsIds) {
         // Show loading indicator
-        $('#pgsList').html('<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p>Validating PGS IDs...</p></div>');
+        $('#pgsListStatus').show();
+        $('#pgsListStatus').html('<div class="text-center"><div class="spinner-border text-primary" role="status"></div><p>Validating PGS IDs...</p></div>');
         
         const validPgsIds = [];
         const invalidPgsIds = [];
@@ -302,8 +303,13 @@ $(document).ready(function() {
         // Show results
         if (invalidPgsIds.length > 0) {
             showAlert(`Added ${validPgsIds.length} PGS IDs. ${invalidPgsIds.length} invalid IDs: ${invalidPgsIds.join(', ')}`, 'warning');
+            $('#pgsListStatus').html(`<div class="alert alert-danger">Invalid PGS IDs found: ${invalidPgsIds.join(', ')}</div>`);
         } else {
             showAlert(`Added ${validPgsIds.length} PGS IDs successfully`, 'success');
+            $('#pgsListStatus').html('');
+            $('#pgsListStatus').hide();
+            
+
         }
         
         // Clear input
@@ -477,7 +483,7 @@ $(document).ready(function() {
                     // Populate cohorts for regular cohort management
                     data.cohorts.forEach(function(cohort, index) {
                         const color = PRESET_COLORS[index % PRESET_COLORS.length];
-                        addPermanentCohort(cohort.name, cohort.sample_ids, color);
+                        addPermanentCohort(cohort.name, cohort.id, cohort.sample_id_count, color);
                     });
                     
                     // Populate cohort dropdown for PGS comparison mode
@@ -486,7 +492,7 @@ $(document).ready(function() {
                     cohortSelect.append('<option value="" selected disabled>Select Cohort</option>');
                     
                     data.cohorts.forEach(function(cohort) {
-                        cohortSelect.append(`<option value="${cohort.name}" data-samples="${cohort.sample_ids.length}">${cohort.name} (${cohort.sample_ids.length} samples)</option>`);
+                        cohortSelect.append(`<option value="${cohort.id}" data-samples="${cohort.sample_id_count}">${cohort.name} (${cohort.sample_id_count} samples)</option>`);
                     });
                     
                     // Hide "no cohorts" message since we have permanent cohorts
@@ -500,11 +506,11 @@ $(document).ready(function() {
     }
     
     // Adds permanent cohort items
-    function addPermanentCohort(name, sampleIds, color) {
+    function addPermanentCohort(name, cohort_id, sample_id_count, color) {
         const cohortId = cohorts.length + 1;
         
         // Create cohort entry
-        const cohortItem = createCohortItem(cohortId, name, color, sampleIds, true);
+        const cohortItem = createCohortItem(cohortId, name, cohort_id, color, sample_id_count, true);
         $('#cohortsList').append(cohortItem);
         
         // Add to cohorts array
@@ -512,60 +518,61 @@ $(document).ready(function() {
             id: cohortId,
             name: name,
             color: color,
-            sampleIds: sampleIds,
+            sample_id_count: sample_id_count,
+            cohort_id: cohort_id,
             active: true,
             permanent: true
         });
     }
 
-    // Adds page-specific cohort 
-    function addCohort() {
-        const cohortName = $('#cohortName').val() || `Cohort ${cohorts.length + 1}`;
-        const cohortColor = $('#cohortColor').val();
-        const sampleIdsText = $('#sampleIdsInput').val().trim();
+    // // Adds page-specific cohort 
+    // function addCohort() {
+    //     const cohortName = $('#cohortName').val() || `Cohort ${cohorts.length + 1}`;
+    //     const cohortColor = $('#cohortColor').val();
+    //     const sampleIdsText = $('#sampleIdsInput').val().trim();
         
-        if (!sampleIdsText) {
-            showAlert('Please enter at least one sample ID', 'warning');
-            return;
-        }
+    //     if (!sampleIdsText) {
+    //         showAlert('Please enter at least one sample ID', 'warning');
+    //         return;
+    //     }
         
-        const sampleIds = sampleIdsText.split('\n').map(id => id.trim()).filter(id => id);
+    //     const sampleIds = sampleIdsText.split('\n').map(id => id.trim()).filter(id => id);
         
-        if (sampleIds.length === 0) {
-            showAlert('Please enter valid sample IDs', 'warning');
-            return;
-        }
+    //     if (sampleIds.length === 0) {
+    //         showAlert('Please enter valid sample IDs', 'warning');
+    //         return;
+    //     }
         
-        const cohortId = cohorts.length + 1;
+    //     const cohortId = cohorts.length + 1;
         
-        // Create cohort entry
-        const cohortItem = createCohortItem(cohortId, cohortName, cohortColor, sampleIds, false);
-        $('#cohortsList').append(cohortItem);
+    //     // Create cohort entry
+    //     const cohortItem = createCohortItem(cohortId, cohortName, cohortColor, sampleIds, false);
+    //     $('#cohortsList').append(cohortItem);
         
-        // Hide "no cohorts" message if visible
-        $('#noCohorts').hide();
+    //     // Hide "no cohorts" message if visible
+    //     $('#noCohorts').hide();
         
-        // Add to cohorts array
-        cohorts.push({
-            id: cohortId,
-            name: cohortName,
-            color: cohortColor,
-            sampleIds: sampleIds,
-            active: true,
-            permanent: false
-        });
+    //     // Add to cohorts array
+    //     cohorts.push({
+    //         id: cohortId,
+    //         name: cohortName,
+    //         color: cohortColor,
+    //         sampleIds: sampleIds,
+    //         active: true,
+    //         permanent: false
+    //     });
         
-        // Reset inputs
-        $('#cohortName').val('');
-        $('#sampleIdsInput').val('');
-        $('#cohortColor').val(PRESET_COLORS[cohortId % PRESET_COLORS.length]);
-        $('#colorPreview').css('background-color', $('#cohortColor').val());
+    //     // Reset inputs
+    //     $('#cohortName').val('');
+    //     $('#sampleIdsInput').val('');
+    //     $('#cohortColor').val(PRESET_COLORS[cohortId % PRESET_COLORS.length]);
+    //     $('#colorPreview').css('background-color', $('#cohortColor').val());
         
-        showAlert(`Added cohort "${cohortName}" with ${sampleIds.length} samples`, 'success');
-    }
+    //     showAlert(`Added cohort "${cohortName}" with ${sampleIds.length} samples`, 'success');
+    // }
     
     // Stores page-specific cohort information
-    function createCohortItem(id, name, color, sampleIds, isPermanent) {
+    function createCohortItem(id, name, cohort_id, color, sample_id_count, isPermanent) {
         const cohortDiv = document.createElement('div');
         cohortDiv.className = 'cohort-row';
         cohortDiv.dataset.cohortId = id;
@@ -587,7 +594,7 @@ $(document).ready(function() {
                 </div>
             </div>
             <div class="d-flex justify-content-between align-items-center">
-                <small class="text-muted">${sampleIds.length} samples</small>
+                <small class="text-muted">${sample_id_count} samples</small>
                 <div class="form-check form-switch">
                     <input class="form-check-input cohort-toggle" type="checkbox" id="cohortActive${id}" data-cohort-id="${id}" checked>
                     <label class="form-check-label" for="cohortActive${id}">Active</label>
@@ -642,8 +649,8 @@ $(document).ready(function() {
     function generateDistribution(taskName = '') {
         const analysisType = $('#analysisType').val();
         const chartType = $('input[name="chartType"]:checked').val();
-        // const plotTitle = chartType === 'density' ? 'Density Plot' : 
-        //                 (chartType === 'histogram' ? 'Histogram' : 'Box Plot');
+        const defPlotTitle = chartType === 'density' ? 'Density Plot' : 
+                        (chartType === 'histogram' ? 'Histogram' : 'Box Plot');
         
         // Show loading spinner
         $('#plotPlaceholder').remove();
@@ -652,9 +659,11 @@ $(document).ready(function() {
         $('#distributionContainer').find('iframe').remove(); // Remove any existing iframe
 
         // Update plot title
-        $('#plotTitle').text(plotTitle);
-        const plotTitle = $('#plotTitle').val()
-        console.log(plotTitle)
+        var plotTitle = $('#plotTitle').val()
+        if (plotTitle=="") {
+            $('#plotTitle').text(defPlotTitle);
+            plotTitle = $('#plotTitle').val()
+        }
         if (analysisType === 'cohort') {
             // Get vars and validate
             const pgsId = $('#pgsId').val();
@@ -684,9 +693,9 @@ $(document).ready(function() {
                 cohorts: cohorts
                     .filter(c => c.active)
                     .map(c => ({
-                        sample_ids: c.sampleIds,
                         color: c.color,
-                        name: c.name
+                        name: c.name,
+                        id: c.cohort_id
                     })),
                 name: taskName // Add task name
             };
@@ -698,6 +707,7 @@ $(document).ready(function() {
                 contentType: 'application/json',
                 data: JSON.stringify(requestData),
                 success: function(response) {
+
                     // Check if we received a task ID (background task) or direct file path
                     if (response.task_id) {
                         const taskId = response.task_id;
@@ -739,6 +749,7 @@ $(document).ready(function() {
                     $('#plotPlaceholder').show();
                     
                     try {
+                        console.log(xhr);
                         const response = JSON.parse(xhr.responseText);
                         showAlert(response.detail || 'Error generating plot', 'danger');
                     } catch (e) {
@@ -747,11 +758,11 @@ $(document).ready(function() {
                 }
             });
         } else {
-            const cohortName = $('#cohortForConfig').val();
+            const cohortId = $('#cohortForConfig').val();
             const scoreType = $('#scoreTypeForPgs').val();
             
             // Validation
-            if (!cohortName) {
+            if (!cohortId) {
                 showAlert('Please select a cohort', 'warning');
                 return;
             }
@@ -772,7 +783,7 @@ $(document).ready(function() {
                 url: '/api/permanent_cohorts',
                 type: 'GET',
                 success: function(cohortsData) {
-                    const selectedCohort = cohortsData.cohorts.find(c => c.name === cohortName);
+                    const selectedCohort = cohortsData.cohorts.find(c => c.id === cohortId);
                 
                     if (!selectedCohort) {
                         showAlert('Selected cohort not found', 'danger');
@@ -787,15 +798,15 @@ $(document).ready(function() {
                         chart_type: chartType,
                         plot_title: plotTitle,
                         score_type: scoreType,
-                        cohort_name: selectedCohort.name,
+                        cohort_id: selectedCohort.id,
                         pgs_comparison: {
                             pgs_ids: activePgsIds.map(p => p.id),
-                            sample_ids: selectedCohort.sample_ids,
                             colors: activePgsIds.map(p => p.color),
                             names: activePgsIds.map(p => p.id)
                         },
                         name: taskName // Add task name
                     };
+                    console.log(requestData);
                     
                     // Send API request to the endpoint
                     $.ajax({
@@ -900,8 +911,9 @@ $(document).ready(function() {
         }
         
         const checkStatus = function() {
+            const currentTimeInMilliseconds = Date.now();
             $.ajax({
-                url: `/api/task_status/${taskId}`,
+                url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
                 type: 'GET',
                 success: function(response) {
                     // Update status display
@@ -919,6 +931,8 @@ $(document).ready(function() {
                         $('#loadingSpinner').hide();
                         
                         if (taskType === 'distribution') {
+                            // console.log(response)
+
                             // Create iframe to display the Plotly HTML
                             const iframe = $('<iframe>')
                                 .attr('src', response.result_path)
@@ -999,8 +1013,9 @@ $(document).ready(function() {
 
     // Function to load and display task data
     function loadTaskData(taskId) {
+        const currentTimeInMilliseconds = Date.now();
         $.ajax({
-            url: `/api/task_status/${taskId}`,
+            url: `/api/task_status/${taskId}?${currentTimeInMilliseconds}`,
             type: 'GET',
             success: function(task) {
             if (task.status === 'completed' && task.result_path) {

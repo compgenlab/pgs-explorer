@@ -9,6 +9,8 @@ class DatabaseConnection:
         self.db_path = db_path
         self.is_task_db = is_task_db
         
+        print(f"Connecting to db: {db_path}")
+
         # Initialize the appropriate database
         if is_task_db:
             self._init_task_db()

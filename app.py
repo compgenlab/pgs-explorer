@@ -32,7 +32,7 @@ async def index(request: Request):
 
 # Include routers
 app.include_router(distribution_router)
-app.include_router(multivariate_router)
+#app.include_router(multivariate_router)
 app.include_router(subcohort_router)
 app.include_router(tasks_router)
 app.include_router(core_router)
