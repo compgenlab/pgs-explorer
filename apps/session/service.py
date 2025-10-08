@@ -55,6 +55,12 @@ class SessionManager:
         }
     
     @staticmethod
+    def _update_last_activity(request: Request) -> None:
+        """Update session in database."""
+        session = SessionManager._get_or_create_session(request)
+        db.active_db.sessions.update_last_activity(session["session_id"])
+    
+    @staticmethod
     def _update_session(session_id: str, session_data: Dict[str, Any]) -> None:
         """Update session in database."""
         db.active_db.sessions.update_session(session_id, session_data)
@@ -176,6 +182,14 @@ class SessionManager:
         SessionManager._update_session(session["session_id"], session_data)
 
 def add_session_middleware(app):
+    # Add session middleware (must be added before other middleware/routers)
+    @app.middleware("http")
+    async def add_process_time_header(request: Request, call_next):
+        # Code to execute before the request is processed by the route handler
+        SessionManager._update_last_activity(request)
+        response = await call_next(request)
+        return response
+
     """
     Add session middleware to the FastAPI app.
     
