@@ -475,8 +475,10 @@ $(document).ready(function() {
     ////////// COHORT FUNCTIONS //////////
     // Calls backend to pull stored permanent cohorts
     function loadPermanentCohorts() {
+        const currentTimeInMilliseconds = Date.now();
+        // Fetch cohort data first
         $.ajax({
-            url: '/api/permanent_cohorts',
+            url: `/api/permanent_cohorts?${currentTimeInMilliseconds}`,
             type: 'GET',
             success: function(data) {
                 if (data.cohorts && data.cohorts.length > 0) {
@@ -777,10 +779,10 @@ $(document).ready(function() {
                 showAlert('Please add at least one active PGS ID', 'warning');
                 return;
             }
-
+            const currentTimeInMilliseconds = Date.now();
             // Fetch cohort data first
             $.ajax({
-                url: '/api/permanent_cohorts',
+                url: `/api/permanent_cohorts?${currentTimeInMilliseconds}`,
                 type: 'GET',
                 success: function(cohortsData) {
                     const selectedCohort = cohortsData.cohorts.find(c => c.id === cohortId);
