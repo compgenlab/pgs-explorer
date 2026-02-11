@@ -32,6 +32,7 @@ $(document).ready(function() {
     // 3. Fetch PGS IDs and permanent cohorts on page load
     fetchPgsList();
     loadPermanentCohorts(); 
+    setupCohortAutoRefresh();
 
     ////////// EVENT LISTENERS //////////
     // Initialize color picker
@@ -473,32 +474,83 @@ $(document).ready(function() {
     }
 
     ////////// COHORT FUNCTIONS //////////
+    function setupCohortAutoRefresh() {
+        let lastRefreshAt = Date.now();
+
+        function refreshIfNeeded(force = false) {
+            const now = Date.now();
+            if (!force && now - lastRefreshAt < 5000) {
+                return;
+            }
+            lastRefreshAt = now;
+            loadPermanentCohorts();
+        }
+
+        $(window).on('focus', function() {
+            refreshIfNeeded();
+        });
+
+        $(window).on('pageshow', function() {
+            refreshIfNeeded(true);
+        });
+
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                refreshIfNeeded();
+            }
+        });
+
+        window.addEventListener('storage', function(event) {
+            if (event.key === 'cohorts_updated_at') {
+                refreshIfNeeded(true);
+            }
+        });
+    }
+
     // Calls backend to pull stored permanent cohorts
     function loadPermanentCohorts() {
+        const selectedConfigCohortId = $('#cohortForConfig').val();
+        const activeByCohortId = {};
+        cohorts.forEach(function(cohort) {
+            activeByCohortId[cohort.cohort_id] = cohort.active;
+        });
+
         const currentTimeInMilliseconds = Date.now();
-        // Fetch cohort data first
         $.ajax({
-            url: `/api/permanent_cohorts?${currentTimeInMilliseconds}`,
+            url: `/api/permanent_cohorts?ts=${currentTimeInMilliseconds}`,
             type: 'GET',
+            cache: false,
             success: function(data) {
+                cohorts = [];
+                $('#cohortsList').empty();
+
+                const cohortSelect = $('#cohortForConfig');
+                cohortSelect.empty();
+                cohortSelect.append('<option value="" selected disabled>Select Cohort</option>');
+
                 if (data.cohorts && data.cohorts.length > 0) {
-                    // Populate cohorts for regular cohort management
                     data.cohorts.forEach(function(cohort, index) {
                         const color = PRESET_COLORS[index % PRESET_COLORS.length];
                         addPermanentCohort(cohort.name, cohort.id, cohort.sample_id_count, color);
+
+                        if (activeByCohortId[cohort.id] === false) {
+                            const cohortRef = cohorts[cohorts.length - 1];
+                            cohortRef.active = false;
+                            $(`#cohortActive${cohortRef.id}`).prop('checked', false);
+                        }
                     });
-                    
-                    // Populate cohort dropdown for PGS comparison mode
-                    const cohortSelect = $('#cohortForConfig');
-                    cohortSelect.empty();
-                    cohortSelect.append('<option value="" selected disabled>Select Cohort</option>');
-                    
+
                     data.cohorts.forEach(function(cohort) {
                         cohortSelect.append(`<option value="${cohort.id}" data-samples="${cohort.sample_id_count}">${cohort.name} (${cohort.sample_id_count} samples)</option>`);
                     });
-                    
-                    // Hide "no cohorts" message since we have permanent cohorts
+
+                    if (selectedConfigCohortId && cohortSelect.find(`option[value="${selectedConfigCohortId}"]`).length) {
+                        cohortSelect.val(selectedConfigCohortId);
+                    }
+
                     $('#noCohorts').hide();
+                } else {
+                    $('#noCohorts').show();
                 }
             },
             error: function(xhr) {

@@ -42,3 +42,14 @@
 </div>
 {% endblock %}
 
+{% block scripts %}
+{% if import_success %}
+<script>
+    (function() {
+        const updatedAt = "{{ updated_at }}";
+        localStorage.setItem('cohorts_updated_at', updatedAt);
+        window.location.href = '/cohorts?imported=1';
+    })();
+</script>
+{% endif %}
+{% endblock %}

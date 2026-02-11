@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File, Form
+from fastapi.responses import JSONResponse
 import json
 from database import db
 import os 
@@ -77,11 +78,17 @@ async def get_permanent_cohorts(request: Request):
             cohort_list.append({"name": cohort["name"], "id": cohort["id"], "sample_id_count": len(cohort["sample_ids"])})
         # cohort_list.extend(cohorts)
         
-        return {"cohorts": cohort_list}
+        return JSONResponse(
+            {"cohorts": cohort_list},
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+        )
     
     except Exception as e:
         print(f"Error retrieving populations from database: {e}")
-        return {"cohorts": []}
+        return JSONResponse(
+            {"cohorts": []},
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+        )
 
 # @router.get("/api/switch_active_db")
 # async def switch_active_db(db_path):

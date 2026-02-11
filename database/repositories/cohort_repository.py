@@ -22,6 +22,7 @@ class CohortRepository(BaseRepository):
             WHERE user_id = ? 
             ORDER BY created_at DESC
         """
+        print("Getting cohorts for user_id:", user_id)  # Debug statement
         rows = self.execute_query(query, [user_id])
         
         return [
@@ -41,6 +42,7 @@ class CohortRepository(BaseRepository):
             FROM user_cohorts 
             WHERE cohort_id = ? AND user_id = ?
         """
+        print("Getting cohort for cohort_id:", cohort_id, "user_id:", user_id)  # Debug statement
         row = self.execute_query_single(query, [cohort_id, user_id])
         if row:
             return {

@@ -10,6 +10,7 @@ router = APIRouter(tags=["subcohorts"])
 
 @router.get("/subcohorts", response_class=HTMLResponse)
 async def subcohort_view(request: Request):
+    SessionManager.get_or_create_user_id(request)
     return templates.TemplateResponse("subcohorts.html", {"request": request})
 
 @router.post("/api/generate_subcohort_plot")

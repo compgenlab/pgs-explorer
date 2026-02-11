@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from apps.core.config import create_app, templates
 from apps.core.startup import register_startup_events
 from apps.session.service import add_session_middleware
+from apps.session.service import SessionManager
 
 from apps.distribution.router import router as distribution_router
 from apps.multivariate.router import router as multivariate_router
@@ -28,6 +29,7 @@ register_startup_events(app)
 # Root route 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
+    SessionManager.get_or_create_user_id(request)
     return templates.TemplateResponse("index.html", {"request": request})
 
 # Include routers

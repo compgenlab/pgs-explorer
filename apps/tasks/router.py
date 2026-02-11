@@ -9,6 +9,7 @@ router = APIRouter(tags=["tasks"])
 
 @router.get("/tasks", response_class=HTMLResponse)
 async def tasks_page(request: Request):
+    SessionManager.get_or_create_user_id(request)
     return templates.TemplateResponse("tasks.html", {"request": request})
 
 @router.get("/api/task_status/{task_id}")

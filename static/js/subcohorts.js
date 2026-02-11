@@ -35,6 +35,7 @@ $(document).ready(function() {
     // 3. Populate data on page load
     fetchPgsList()
     loadPermanentCohorts()
+    setupCohortAutoRefresh()
     
     ////////// EVENT LISTENERS //////////
     // Handle PGS selection change
@@ -188,159 +189,88 @@ $(document).ready(function() {
     }
 
     ////////// COHORT FUNCTIONS //////////
+    function setupCohortAutoRefresh() {
+        function refreshCohorts() {
+            loadPermanentCohorts();
+        }
+
+        $(window).on('focus', function() {
+            refreshCohorts();
+        });
+
+        $(window).on('pageshow', function() {
+            refreshCohorts();
+        });
+
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                refreshCohorts();
+            }
+        });
+
+        window.addEventListener('storage', function(event) {
+            if (event.key === 'cohorts_updated_at') {
+                refreshCohorts();
+            }
+        });
+
+        // Backstop refresh: some browser/tab flows do not emit reliable focus/storage events.
+        setInterval(refreshCohorts, 10000);
+    }
+
     function loadPermanentCohorts() {
-        console.log("DEBUG: Starting loadPermanentCohorts function");
-        
-        // First, let's check if the dropdown elements exist
-        console.log("DEBUG: Checking if dropdown elements exist...");
-        const cohort1Check = document.getElementById('cohort1');
-        const cohort2Check = document.getElementById('cohort2');
-        console.log("DEBUG: cohort1 element:", cohort1Check);
-        console.log("DEBUG: cohort2 element:", cohort2Check);
-        
+        const selectedCohort1 = $('#cohort1').val();
+        const selectedCohort2 = $('#cohort2').val();
+        const cohort1Select = $('#cohort1');
+        const cohort2Select = $('#cohort2');
+
         $.ajax({
-            url: '/api/permanent_cohorts',
+            url: `/api/permanent_cohorts?ts=${Date.now()}`,
             type: 'GET',
+            cache: false,
+            headers: { 'Cache-Control': 'no-store' },
             success: function(data) {
-                console.log("DEBUG: AJAX SUCCESS - Full cohorts response:", data);
-                console.log("DEBUG: Response type:", typeof data);
-                console.log("DEBUG: Response keys:", Object.keys(data));
-                
-                // Check if data has the expected structure
-                if (!data) {
-                    console.log("ERROR: No data received from API");
-                    showAlert('No data received from cohorts API', 'danger');
-                    return;
-                }
-                
-                if (!data.cohorts) {
-                    console.log("ERROR: No 'cohorts' property in response");
-                    console.log("DEBUG: Available properties:", Object.keys(data));
-                    showAlert('Invalid cohorts data structure', 'danger');
-                    return;
-                }
-                
-                console.log("DEBUG: Cohorts array:", data.cohorts);
-                console.log("DEBUG: Cohorts length:", data.cohorts.length);
-                console.log("DEBUG: Cohorts type:", Array.isArray(data.cohorts));
-                
-                if (data.cohorts && data.cohorts.length > 0) {
-                    // Debug each cohort
-                    data.cohorts.forEach(function(cohort, index) {
-                        console.log(`DEBUG: Cohort ${index}:`, cohort);
-                        console.log(`DEBUG: Cohort properties:`, Object.keys(cohort));
-                        console.log(`DEBUG: Cohort name: ${cohort.name}, samples: ${cohort.sample_ids ? cohort.sample_ids.length : 'no sample_ids'}`);
-                    });
-                    
-                    // Get both dropdown elements using jQuery
-                    console.log("DEBUG: Getting dropdown elements with jQuery...");
-                    const cohort1Select = $('#cohort1');
-                    const cohort2Select = $('#cohort2');
-                    
-                    console.log("DEBUG: Cohort1 jQuery object:", cohort1Select);
-                    console.log("DEBUG: Cohort1 length:", cohort1Select.length);
-                    console.log("DEBUG: Cohort1 element:", cohort1Select[0]);
-                    
-                    console.log("DEBUG: Cohort2 jQuery object:", cohort2Select);
-                    console.log("DEBUG: Cohort2 length:", cohort2Select.length);
-                    console.log("DEBUG: Cohort2 element:", cohort2Select[0]);
-                    
-                    if (cohort1Select.length === 0) {
-                        console.log("ERROR: #cohort1 dropdown not found in DOM!");
-                        showAlert('Cohort 1 dropdown element not found', 'danger');
+                const availableCohorts = Array.isArray(data && data.cohorts) ? data.cohorts : [];
+
+                cohort1Select.empty();
+                cohort2Select.empty();
+                cohort1Select.append('<option value="" selected disabled>Select First Cohort</option>');
+                cohort2Select.append('<option value="" selected disabled>Select Second Cohort</option>');
+
+                availableCohorts.forEach(function(cohort, index) {
+                    if (!cohort || !cohort.id || !cohort.name) {
                         return;
                     }
-                    
-                    if (cohort2Select.length === 0) {
-                        console.log("ERROR: #cohort2 dropdown not found in DOM!");
-                        showAlert('Cohort 2 dropdown element not found', 'danger');
-                        return;
-                    }
-                    
-                    console.log("DEBUG: Both dropdowns found, proceeding with population...");
-                    
-                    // Clear both dropdowns and add default options
-                    console.log("DEBUG: Clearing dropdowns...");
-                    cohort1Select.empty();
-                    cohort2Select.empty();
-                    
-                    console.log("DEBUG: Adding default options...");
-                    cohort1Select.append('<option value="" selected disabled>Select First Cohort</option>');
-                    cohort2Select.append('<option value="" selected disabled>Select Second Cohort</option>');
-                    
-                    console.log("DEBUG: Default options added. Current HTML:");
-                    console.log("Cohort1:", cohort1Select.html());
-                    console.log("Cohort2:", cohort2Select.html());
-                    
-                    // Populate both dropdowns with cohort data
-                    console.log("DEBUG: Starting to populate dropdowns with cohort data...");
-                    data.cohorts.forEach(function(cohort, index) {
-                        console.log(`DEBUG: Processing cohort ${index}: ${cohort.name}`);
-                        
-                        // Validate cohort data
-                        if (!cohort.name) {
-                            console.log(`WARNING: Cohort ${index} has no name, skipping`);
-                            return;
-                        }
-                        
-                        if (!cohort.sample_ids || !Array.isArray(cohort.sample_ids)) {
-                            console.log(`WARNING: Cohort ${index} has invalid sample_ids, using 0 count`);
-                            cohort.sample_ids = [];
-                        }
-                        
-                        const sampleCount = cohort.sample_id_count;
-                        const optionText = `${cohort.name} (${sampleCount} samples)`;
-                        const optionHtml = `<option value="${cohort.id}">${optionText}</option>`;
-                        
-                        console.log(`DEBUG: Creating option - Value: "${cohort.id}", Text: "${optionText}"`);
-                        console.log(`DEBUG: Option HTML: ${optionHtml}`);
-                        
-                        // Add to both dropdowns
-                        cohort1Select.append(optionHtml);
-                        cohort2Select.append(optionHtml);
-                        
-                        console.log(`DEBUG: Added option ${index} to both dropdowns`);
-                    });
-                    
-                    console.log("DEBUG: Finished populating dropdowns");
-                    console.log("DEBUG: Final cohort1 HTML:", cohort1Select.html());
-                    console.log("DEBUG: Final cohort2 HTML:", cohort2Select.html());
-                    console.log("DEBUG: Final cohort1 children count:", cohort1Select.children().length);
-                    console.log("DEBUG: Final cohort2 children count:", cohort2Select.children().length);
-                    
-                    // Setup validation
-                    console.log("DEBUG: Setting up cohort validation...");
-                    setupCohortValidation();
-                    
-                    // Store cohorts globally
-                    console.log("DEBUG: Storing cohorts globally...");
-                    cohorts = data.cohorts.map(function(cohort, index) {
-                        const color = PRESET_COLORS[index % PRESET_COLORS.length];
-                        return {
-                            id: index + 1,
-                            name: cohort.name,
-                            color: color,
-                            // sampleIds: cohort.sample_ids,
-                            active: true,
-                            permanent: true
-                        };
-                    });
-                    
-                    console.log("DEBUG: Successfully loaded", data.cohorts.length, "cohorts");
-                    showAlert(`Successfully loaded ${data.cohorts.length} cohorts`, 'success');
-                    
-                } else {
-                    console.log("DEBUG: No cohorts found or cohorts array is empty");
-                    showAlert('No cohorts available', 'warning');
+                    const sampleCount = cohort.sample_id_count || 0;
+                    const optionHtml = `<option value="${cohort.id}">${cohort.name} (${sampleCount} samples)</option>`;
+                    cohort1Select.append(optionHtml);
+                    cohort2Select.append(optionHtml);
+                });
+
+                if (selectedCohort1 && cohort1Select.find(`option[value="${selectedCohort1}"]`).length) {
+                    cohort1Select.val(selectedCohort1);
                 }
+                if (selectedCohort2 && cohort2Select.find(`option[value="${selectedCohort2}"]`).length) {
+                    cohort2Select.val(selectedCohort2);
+                }
+                if (cohort1Select.val() && cohort1Select.val() === cohort2Select.val()) {
+                    cohort2Select.val('');
+                }
+
+                setupCohortValidation();
+
+                cohorts = availableCohorts.map(function(cohort, index) {
+                    const color = PRESET_COLORS[index % PRESET_COLORS.length];
+                    return {
+                        id: index + 1,
+                        name: cohort.name,
+                        color: color,
+                        active: true,
+                        permanent: true
+                    };
+                });
             },
             error: function(xhr, status, error) {
-                console.log('ERROR: AJAX failed');
-                console.log('Status:', status);
-                console.log('Error:', error);
-                console.log('Response Status:', xhr.status);
-                console.log('Response Text:', xhr.responseText);
-                
                 showAlert(`Failed to load cohorts: ${status} - ${error}`, 'danger');
             }
         });
