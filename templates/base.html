@@ -502,6 +502,8 @@
             $.ajax({
                 url: '/api/session/info',
                 type: 'GET',
+                data: { ts: Date.now() },
+                cache: false,
                 success: function(data) {
                     const content = `
                         <div class="row">
@@ -512,6 +514,7 @@
                                     </div>
                                     <div class="card-body">
                                         <p><strong>User ID:</strong><br><code>${data.user_id}</code></p>
+                                        <p><strong>Session ID:</strong><br><code>${data.session_id || ''}</code></p>
                                         <p><strong>Created:</strong><br>${new Date(data.created_at).toLocaleString()}</p>
                                         ${data.last_activity ? `<p><strong>Last Activity:</strong><br>${new Date(data.last_activity).toLocaleString()}</p>` : ''}
                                     </div>

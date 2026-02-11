@@ -18,6 +18,7 @@ router = APIRouter(tags=["multivariate"])
 
 @router.get("/multivariate", response_class=HTMLResponse)
 async def multivariate_view(request: Request):
+    SessionManager.get_or_create_user_id(request)
     return templates.TemplateResponse("multivariate.html", {"request": request})
 
 @router.post("/api/generate_heatmap")

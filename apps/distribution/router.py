@@ -10,6 +10,7 @@ router = APIRouter(tags=["distribution"])
 
 @router.get("/distribution", response_class=HTMLResponse)
 async def distribution_view(request: Request):
+    SessionManager.get_or_create_user_id(request)
     return templates.TemplateResponse("distribution.html", {"request": request})
 
 @router.post("/api/generate_distribution")

@@ -39,6 +39,7 @@ class SessionManager:
         # Create new session
         if not session_id:
             session_id = secrets.token_urlsafe(32)
+            request.session["session_id"] = session_id
             print(f"New session: {session_id}")
         user_id = secrets.token_urlsafe(16)
         # print(f"Created new user_id2: {user_id}")
@@ -102,6 +103,8 @@ class SessionManager:
         session_id = SessionManager._get_session_id_from_request(request)
         if session_id:
             db.active_db.sessions.delete_session(session_id)
+        if "session_id" in request.session:
+            del request.session["session_id"]
     
     @staticmethod
     def get_or_create_user_id(request: Request) -> str:
@@ -139,8 +142,9 @@ class SessionManager:
     @staticmethod
     def get_session_id(request: Request) -> str:
         """Get the session ID, creating session if needed."""
-        session = SessionManager._get_or_create_session(request)
-        return session["session_id"]
+        if "session_id" not in request.session:
+            SessionManager.get_or_create_user_id(request)
+        return request.session.get("session_id", "")
     
     @staticmethod
     def save_user_preferences(request: Request, preferences: Dict[str, Any]) -> None:

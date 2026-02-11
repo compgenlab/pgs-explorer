@@ -1,6 +1,7 @@
 import uuid
+import time
 from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, JSONResponse
 from typing import List, Dict, Any
 from pydantic import BaseModel
 
@@ -56,6 +57,7 @@ async def create_cohort(request: Request, cohort_request: CreateCohortRequest):
 
 @router.get("/api/cohorts/import-biobank")
 async def import_cohorts(request: Request):
+    user_id = SessionManager.get_or_create_user_id(request)
     cohort_id = request.query_params.get("cohort_id")
     token = request.query_params.get("token")
     callback = request.query_params.get("api_base_url")
@@ -104,7 +106,6 @@ async def import_cohorts(request: Request):
     valid_sample_ids = sample_ids
 
     if not error:
-        user_id = SessionManager.get_or_create_user_id(request)
         existing_cohort = db.active_db.cohorts.get_cohort(cohort_id, user_id)
         
         print("Existing cohort: %s (None?: %s, not none?: %s)" % (existing_cohort, existing_cohort is None, not existing_cohort is None))
@@ -131,6 +132,8 @@ async def import_cohorts(request: Request):
         "valid_sample_id_count": len(valid_sample_ids),
         "dataset": dataset,
         "error": error,
+        "import_success": not bool(error),
+        "updated_at": int(time.time() * 1000),
         })
 
 @router.get("/api/cohorts")
@@ -142,7 +145,10 @@ async def list_cohorts(request: Request):
         if 'sample_ids' in c:
             c['sample_id_count'] = len(c['sample_ids'])
             del c['sample_ids']
-    return {"cohorts": cohorts}
+    return JSONResponse(
+        {"cohorts": cohorts},
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    )
 
 @router.delete("/api/cohorts/{cohort_id}")
 async def delete_cohort(request: Request, cohort_id: str):

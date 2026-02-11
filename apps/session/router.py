@@ -25,12 +25,16 @@ async def get_session_info(request: Request, response: Response) -> Dict[str, An
     #         secure=False  # Set to True in production with HTTPS
     #     )
     
-    return {
-        "user_id": user_id,
-        "created_at": session_data.get("created_at"),
-        "last_activity": session_data.get("last_activity"),
-        "preferences": SessionManager.get_user_preferences(request)
-    }
+    return JSONResponse(
+        {
+            "user_id": user_id,
+            "session_id": session_id,
+            "created_at": session_data.get("created_at"),
+            "last_activity": session_data.get("last_activity"),
+            "preferences": SessionManager.get_user_preferences(request)
+        },
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate, max-age=0"}
+    )
 
 @router.post("/preferences")
 async def update_preferences(request: Request, preferences: Dict[str, Any]) -> Dict[str, Any]:
@@ -47,12 +51,18 @@ async def get_recent_activities(request: Request) -> Dict[str, Any]:
 @router.post("/clear")
 async def clear_session(request: Request, response: Response) -> Dict[str, Any]:
     """Clear the current session."""
+    old_user_id = SessionManager.get_or_create_user_id(request)
     SessionManager.clear_session(request)
-    response.delete_cookie(SESSION_COOKIE_NAME)
+    new_user_id = SessionManager.get_or_create_user_id(request)
+    new_session_id = SessionManager.get_session_id(request)
 
-    response = JSONResponse({"status": "success", "message": "Session cleared"})
-    response.delete_cookie(SESSION_COOKIE_NAME)
-    return response
+    return JSONResponse({
+        "status": "success",
+        "message": "Session cleared and reset",
+        "old_user_id": old_user_id,
+        "new_user_id": new_user_id,
+        "new_session_id": new_session_id
+    })
 
     # return {"status": "success", "message": "Session cleared"}
 
@@ -70,26 +80,26 @@ async def debug_session(request: Request):
 @router.post("/clear-all")
 async def clear_all_session_data(request: Request, response: Response) -> Dict[str, Any]:
     """Clear all session data including cohorts and tasks."""
-    user_id = SessionManager.get_or_create_user_id(request)
+    old_user_id = SessionManager.get_or_create_user_id(request)
 
     # Delete user's tasks
-    deleted_tasks = db.active_db.tasks.delete_user_tasks(user_id)
+    deleted_tasks = db.active_db.tasks.delete_user_tasks(old_user_id)
     
     # Delete user's custom cohorts  
-    deleted_cohorts = db.active_db.cohorts.delete_user_cohorts(user_id)
+    deleted_cohorts = db.active_db.cohorts.delete_user_cohorts(old_user_id)
     
     # Clear session
     SessionManager.clear_session(request)
-    response.delete_cookie(SESSION_COOKIE_NAME)
+    new_user_id = SessionManager.get_or_create_user_id(request)
+    new_session_id = SessionManager.get_session_id(request)
 
     resp = JSONResponse({
         "status": "success", 
-        "message": f"Session cleared: {deleted_tasks} tasks and {deleted_cohorts} cohorts deleted"
+        "message": f"Session cleared: {deleted_tasks} tasks and {deleted_cohorts} cohorts deleted",
+        "old_user_id": old_user_id,
+        "new_user_id": new_user_id,
+        "new_session_id": new_session_id
     })
-
-    # print(resp.headers)
-    resp.delete_cookie(SESSION_COOKIE_NAME)
-    # print(resp.headers)
 
     return resp
 
