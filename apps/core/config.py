@@ -52,6 +52,8 @@ def update_config_env(config):
         config['database']['tasks_db_path'] = os.environ['TASKS_DB_PATH']
     if 'DB_PATH' in os.environ:
         config['database']['db_path'] = os.environ['DB_PATH']
+    if 'SESSION_SECRET_KEY' in os.environ:
+        config['session']['secret_key'] = os.environ['SESSION_SECRET_KEY']
 
     return config
 
