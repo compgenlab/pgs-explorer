@@ -32,8 +32,14 @@ $(document).ready(function() {
         "#999999"   // Gray
     ];
 
-    // 3. Populate data on page load
-    fetchPgsList()
+    // 3. Initialize PGS autocomplete and load permanent cohorts
+    const pgsAc = initPgsAutocomplete({
+        inputId:    'pgsIdSearch',
+        hiddenId:   'pgsId',
+        dropdownId: 'pgsIdDropdown'
+    });
+    // Expose refresh so base.html's reloadPageData() can call it after DB switch
+    window.fetchPgsList = function() { pgsAc.refresh(); };
     loadPermanentCohorts()
     setupCohortAutoRefresh()
     
@@ -168,24 +174,6 @@ $(document).ready(function() {
         `;
         
         $('#alertContainer').html(alert);
-    }
-
-    ////////// PGS FUNCTIONS //////////
-    // Get all PGS to populate dropdown
-    function fetchPgsList() {
-        $.get('/api/pgs_and_trait_list', function(data) {
-            const pgsSelect = $('#pgsId');
-            pgsSelect.empty();
-            pgsSelect.append('<option value="" selected disabled>Select PGS</option>');
-            
-            data.pgs.forEach(function(pgs) {
-                // Display format: "PGS000001 - Height"
-                const displayText = `${pgs.id} - ${pgs.trait}`;
-                pgsSelect.append(`<option value="${pgs.id}">${displayText}</option>`);
-            });
-        }).fail(function() {
-            showAlert('Failed to load PGS list', 'danger');
-        });
     }
 
     ////////// COHORT FUNCTIONS //////////

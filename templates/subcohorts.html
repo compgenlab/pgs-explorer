@@ -38,10 +38,13 @@
             </div>
             <div class="card-body">
                 <div class="mb-3">
-                    <label for="pgsId" class="form-label">PGS ID</label>
-                    <select class="form-select" id="pgsId" required>
-                        <option value="" selected disabled>Select PGS ID</option>
-                    </select>
+                    <label for="pgsIdSearch" class="form-label">PGS ID</label>
+                    <div class="pgs-autocomplete-wrap">
+                        <input type="text" class="form-control" id="pgsIdSearch"
+                               placeholder="Search by PGS ID or name..." autocomplete="off">
+                        <input type="hidden" id="pgsId">
+                        <div class="pgs-autocomplete-dropdown" id="pgsIdDropdown"></div>
+                    </div>
                 </div>
 <!-- 2025-09-18 - mbreese - Hard code znorm2 for now until a better mechanism can be found. -->
                 <input type="hidden" id="scoreType" value="Z_norm2"/>

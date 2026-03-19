@@ -29,9 +29,15 @@ $(document).ready(function() {
         "#999999"   // Gray
     ];
 
-    // 3. Fetch PGS IDs and permanent cohorts on page load
-    fetchPgsList();
-    loadPermanentCohorts(); 
+    // 3. Initialize PGS autocomplete and load permanent cohorts
+    const pgsAc = initPgsAutocomplete({
+        inputId:    'pgsIdSearch',
+        hiddenId:   'pgsId',
+        dropdownId: 'pgsIdDropdown'
+    });
+    // Expose refresh so base.html's reloadPageData() can call it after DB switch
+    window.fetchPgsList = function() { pgsAc.refresh(); };
+    loadPermanentCohorts();
     setupCohortAutoRefresh();
 
     ////////// EVENT LISTENERS //////////
@@ -435,24 +441,6 @@ $(document).ready(function() {
         });
     }
 
-    // Gets list of all PGS
-    function fetchPgsList() {
-        $.get('/api/pgs_and_trait_list', function(data) {
-            const pgsSelect = $('#pgsId');
-            pgsSelect.empty();
-            pgsSelect.append('<option value="" selected disabled>Select PGS</option>');
-            
-            data.pgs.forEach(function(pgs) {
-                // Display format: "PGS000001 - Height"
-                const displayText = `${pgs.id} - ${pgs.trait}`;
-                pgsSelect.append(`<option value="${pgs.id}">${displayText}</option>`);
-            });
-        }).fail(function() {
-            showAlert('Failed to load PGS list', 'danger');
-        });
-    }
-
-    
     // Gets score types for a single PGS ID
     function fetchScoreTypes(pgsId) {
         $.get(`/api/score_types/${pgsId}`, function(data) {
