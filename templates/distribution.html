@@ -53,11 +53,13 @@
                         </select>
                     </div>
                     <div id="pgsSelectionDiv" class="mb-3">
-                        <label for="pgsId" class="form-label">PGS ID</label>
-                        <select class="form-select" id="pgsId">
-                            <option value="" selected disabled>Select PGS ID</option>
-                            <!-- Will be populated by API -->
-                        </select>
+                        <label for="pgsIdSearch" class="form-label">PGS ID</label>
+                        <div class="pgs-autocomplete-wrap">
+                            <input type="text" class="form-control" id="pgsIdSearch"
+                                   placeholder="Search by PGS ID or name..." autocomplete="off">
+                            <input type="hidden" id="pgsId">
+                            <div class="pgs-autocomplete-dropdown" id="pgsIdDropdown"></div>
+                        </div>
                     </div>
                     
                     <div class="mb-3">
