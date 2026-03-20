@@ -1,3 +1,4 @@
+import os
 import uuid
 from typing import Optional
 from datetime import datetime
@@ -5,6 +6,10 @@ from fastapi import BackgroundTasks, Request
 from database import db
 from apps.core.models import TaskResponse
 from apps.session.service import SessionManager
+
+# When running with a dedicated worker pod, set DISABLE_INLINE_TASKS=true
+# so the web server only queues tasks and the worker executes them.
+DISABLE_INLINE_TASKS = os.environ.get("DISABLE_INLINE_TASKS", "false").lower() == "true"
 
 def process_background_task(task_id: str, request_data: dict, processing_function):
     """
@@ -101,13 +106,14 @@ async def process_image_request(
         }
     )
     
-    # Add task to background tasks
-    background_tasks.add_task(
-        process_background_task, 
-        task_id, 
-        request_data, 
-        processing_function
-    )
+    # Add task to background tasks (skipped when a dedicated worker pod is running)
+    if not DISABLE_INLINE_TASKS:
+        background_tasks.add_task(
+            process_background_task,
+            task_id,
+            request_data,
+            processing_function
+        )
     
     # Return task ID and initial status to client
     return TaskResponse(
