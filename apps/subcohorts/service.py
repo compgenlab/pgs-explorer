@@ -343,7 +343,7 @@ def configure_plot_layout(fig: go.Figure, plot_params: Dict[str, Any]) -> None:
     cohort1 = db.active_db.get_omni_cohort(plot_params["cohort_1"], plot_params["user_id"])
     cohort2 = db.active_db.get_omni_cohort(plot_params["cohort_2"], plot_params["user_id"])
 
-    title = plot_params["plot_title"] or f"{cohort1["cohort_name"]} vs {cohort2["cohort_name"]} - {plot_params['pgs_id']}"
+    title = plot_params["plot_title"] or f"{cohort1['cohort_name']} vs {cohort2['cohort_name']} - {plot_params['pgs_id']}"
     print(f"Using title => {title}")
     fig.update_layout(
         title=title,
