@@ -733,11 +733,12 @@ $(document).ready(function() {
                         </div>
                         <div class="toast-body">
                             <div class="d-flex align-items-center mb-2">
-                                <div class="spinner-border spinner-border-sm text-primary me-2" id="taskSpinner" role="status">
+                                <div class="spinner-border spinner-border-sm text-primary me-2 flex-shrink-0" id="taskSpinner" role="status">
                                     <span class="visually-hidden">Processing...</span>
                                 </div>
-                                <div>Task ID: <span id="taskIdLabel">${taskId}</span></div>
+                                <div>Processing...</div>
                             </div>
+                            <div class="text-muted small mb-2">Task ID: <span id="taskIdLabel">${taskId}</span></div>
                             <div class="progress" style="height: 5px;">
                                 <div class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 100%"></div>
                             </div>
