@@ -389,6 +389,7 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
      {ref, lease_token, slurm_id, submitted_at} to the state dir
 </code></pre>
 <ul>
+  <li><strong>SDK use:</strong> the proxy-runner (<code>pgsx proxy-runner --once</code>) uses <code>muranoq-go/client</code> directly, not the <code>worker</code> package. <code>worker.Run</code> and <code>Close</code> deregister the worker on exit, and muranoq hands a deregistered worker's tasks straight back to <code>ready</code>, which would undo every tick. Instead each tick calls <code>RegisterWorker</code> (idempotent) and never deregisters. It saves each <code>client.Claimed</code> (ref and lease token) to the state file and passes it back to <code>Heartbeat</code>, <code>Complete</code> or <code>Fail</code> on later ticks. <code>client.IsLeaseLost</code> tells it when a saved claim has expired.</li>
   <li><strong>Leases:</strong> the <code>pgsx-slurm</code> queue's namespace gets <code>lease_ttl ≥ 3 × cron interval</code> (30 minutes), so two missed ticks don't lose the lease.</li>
   <li><strong>Idempotency:</strong> the task ref names the S3 output prefix and the Slurm job name. A re-run finds and reuses a completed prefix instead of computing again.</li>
   <li><strong>pgsc_calc on Slurm:</strong> the sbatch job runs a Nextflow head process with <code>-profile slurm</code>, which fans out its own Slurm jobs. The proxy-runner tracks the head job, and progress comes from Nextflow's trace file.</li>
