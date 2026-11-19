@@ -153,6 +153,8 @@ html { scroll-behavior: smooth; }
   <div class="decision"><div class="k">Admin role</div><p>Admins mainly define datasets: a declarative YAML file per dataset covering build, pinned pgsc_calc version and reference panel, privacy, access, and user-score policy. Releases, scoring and ancestry groups follow from that file.</p></div>
   <div class="decision"><div class="k">User scores</div><p>Admin approval for now. Once approved, a request is submitted to the cluster immediately, with no waiting for a batch. Overnight turnaround is fine, since Slurm queue time varies.</p></div>
   <div class="decision"><div class="k">Core workflow</div><p>Score a dataset, then form smaller cohorts from sample lists users bring (usually from the biobank). Compare different PGS between cohorts, or the same PGS between cohorts. The public 1KG side is a demo.</p></div>
+  <div class="decision"><div class="k">Score everything</div><p>Every PGS Catalog score is run on every dataset. Low match rates are filtered when viewing (a match-rate threshold in search and in analysis pickers, with a site default), not at scoring time.</p></div>
+  <div class="decision"><div class="k">User-score minimum</div><p>At least 3 variants. Sample IDs are never reported for protected datasets, so no score can be tied to a sample.</p></div>
   <div class="decision"><div class="k">Refresh cadence</div><p>Latest PGS Catalog and latest pgsc_calc, refreshed at least every 6 months. Each refresh is a new release of every dataset, scored through the normal pipeline.</p></div>
   <div class="decision"><div class="k">Deferred</div><p>Biobank JWT details (issuer, JWKS, audience, login start) and the return credential flow are settled later. Until then, development uses local and CILogon logins with admin grants.</p></div>
   <div class="decision"><div class="k">Scope v1</div><p>Feature parity, the score pipeline including user uploads, and packaging another site can install.</p></div>
@@ -399,13 +401,7 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
   <li><strong>No dataset-wide views on protected datasets.</strong> There is no "ALL" cohort and there are no built-in ancestry cohorts there. A dataset can also set <code>max_cohort_fraction</code> (for example 0.5) so an imported list can't stand in for the whole dataset. Ancestry is still available inside a cohort, to stratify or filter it, subject to the minimum cell size.</li>
   <li><strong>The cache key includes the privacy profile</strong>, so a result computed under <code>open</code> rules can never be served for a protected dataset.</li>
   <li><strong>User-uploaded scores</strong> get <code>visibility: owner</code>. Only the uploader and admins see them, under the dataset's normal privacy profile.</li>
-  <li><strong>Rules for user scores on protected datasets.</strong> A crafted score is a genotype query in disguise. A score that puts its weight on one or a few variants turns a distribution into genotype counts, and differencing between groups could then point to individuals, as in beacon attacks. So <code>score.validate</code> rejects a user score unless all of the following hold, with thresholds configurable per dataset:
-    <ul>
-      <li>It has at least a minimum number of variants (for example 50).</li>
-      <li>Its effective number of variants, n<sub>eff</sub> = (Σ|w|)² / Σw², is above a floor.</li>
-      <li>No single variant carries more than a set share of the total absolute weight.</li>
-    </ul>
-    Quotas, approval and the audit log back this up. Catalog scores with very few variants are public, but the minimum group size and bin suppression still apply to them.</li>
+  <li><strong>Rules for user scores.</strong> <code>score.validate</code> requires at least 3 variants (<code>min_variants</code>, configurable per dataset). Sample IDs are never reported for protected datasets, so a user can't tie any score to a sample. Together with the minimum cell size, disjoint case/control cohorts, admin approval and the audit log, that covers single-variant probing. Two stricter checks exist as dataset settings, off by default: a floor on the effective number of variants, n<sub>eff</sub> = (Σ|w|)² / Σw², and a cap on any single variant's share of the total absolute weight. A dataset can turn them on if its policy changes.</li>
 </ul>
 </section>
 
@@ -418,7 +414,7 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 <tr><td><code>POST /api/v1/analyses/distribution</code></td><td>For each series: n, mean, sd, quantiles, a histogram (shared edges) and a KDE grid. A series is (cohort, PGS, score type): one PGS across several cohorts, or several PGS in one cohort.</td><td>Every score type, including percentile. Bandwidth choice (Scott or Silverman). Optional stratification by ancestry within a cohort. Cached; a miss runs on an analysis worker.</td></tr>
 <tr><td><code>POST /api/v1/analyses/case-control</code></td><td>Both histograms, an OR table by threshold, quantile or decile (baseline or cumulative) with CIs, AUC, OR per SD, Cohen's d, Mann-Whitney and KS p-values</td><td>Score type is selectable, the overlap is reported, all OR modes are exposed, and it runs in milliseconds rather than minutes.</td></tr>
 <tr><td><code>GET /api/v1/datasets</code></td><td>Datasets visible to the caller, with their privacy profile and releases</td><td>Open datasets for everyone. Protected ones only for granted callers; others get 404.</td></tr>
-<tr><td><code>GET /api/v1/datasets/{c}/pgs?q=</code></td><td>PGS search by ID, trait or EFO, with QC</td><td>Server-side search replaces sending all 3,479 entries to the browser.</td></tr>
+<tr><td><code>GET /api/v1/datasets/{d}/scores?q=&amp;min_match=</code></td><td>Score search by ID, trait or EFO, with QC. Includes the caller's own user scores.</td><td>Server-side search replaces sending every entry to the browser. A match-rate filter defaults to the site setting.</td></tr>
 <tr><td><code>GET /api/v1/pgs/{id}</code></td><td>Full Catalog metadata, QC, and per-ancestry summaries</td><td>A new score detail page.</td></tr>
 <tr><td><code>/api/v1/datasets/{d}/cohorts</code></td><td>List, import from the biobank, delete</td><td>Sizes only on protected datasets. No member IDs are ever returned there.</td></tr>
 <tr><td><code>POST /api/v1/cohorts/{id}/return</code></td><td>Send the top X% of a cohort for one PGS and score type to the biobank, as participant IDs</td><td>A bulk job. The user sees the count sent and the cut-off percentile, not the IDs. Audit-logged.</td></tr>
@@ -467,7 +463,7 @@ genome_build: GRCh38
 scoring:
   pgsc_calc_version: "2.x.y"      # pinned per release
   ref_panel: "pgsc_HGDP+1kGP_v1"   # pinned per release
-  catalog: all                     # or a filter (min match rate, traits, list)
+  catalog: all                     # score everything; filter by match rate when viewing
 privacy:
   profile: protected               # open | protected
   min_cell: 10
@@ -477,9 +473,9 @@ access:
 user_scores:
   accepted: true
   need_approval: true
-  min_variants: 50
-  min_n_eff: 20
-  max_variant_weight_share: 0.05
+  min_variants: 3
+  # min_n_eff: off by default
+  # max_variant_weight_share: off by default
   quota: { scores_per_request: 20, runs_per_month: 10 }
 biobank_return: true               # top-X% participant lists may go back to the biobank
 max_cohort_fraction: 0.5           # protected: no cohort may cover more than half the dataset
@@ -652,8 +648,6 @@ samples: s3://…/datasets/biobank-a/samples.tsv   # sample_id, participant_id, 
 <section id="questions">
 <h2>Open questions</h2>
 <ol class="q">
-  <li><strong>PGS Catalog filter:</strong> score every Catalog score, or drop ones with low variant match rates after a first pass? (Decided: the latest Catalog and the latest pgsc_calc, refreshed at least every 6 months, with each refresh as a new release.)</li>
-  <li><strong>User score limits on the biobank datasets:</strong> which quotas (scores per request, runs per month) and which thresholds for minimum variants, n<sub>eff</sub> and maximum single-variant weight? (Aggregate results don't need governance sign-off.)</li>
   <li><strong>A second site:</strong> possible but not confirmed. If none materialises before the paper, the fallback evidence is a clean install of a second, 1KG-only site from the operator docs alone, on separate infrastructure, plus the per-dataset issuer model shown with two issuers.</li>
 </ol>
 </section>
