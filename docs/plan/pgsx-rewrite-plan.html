@@ -653,7 +653,7 @@ samples: s3://…/datasets/biobank-a/samples.tsv   # sample_id, participant_id, 
 <h2>Open questions</h2>
 <ol class="q">
   <li><strong>PGS Catalog filter:</strong> score every Catalog score, or drop ones with low variant match rates after a first pass? (Decided: the latest Catalog and the latest pgsc_calc, refreshed at least every 6 months, with each refresh as a new release.)</li>
-  <li><strong>User score limits on the biobank datasets:</strong> which quotas (scores per request, runs per month) and which thresholds for minimum variants, n<sub>eff</sub> and maximum single-variant weight? Does the biobank's governance need to sign off on aggregate results from user scores?</li>
+  <li><strong>User score limits on the biobank datasets:</strong> which quotas (scores per request, runs per month) and which thresholds for minimum variants, n<sub>eff</sub> and maximum single-variant weight? (Aggregate results don't need governance sign-off.)</li>
   <li><strong>A second site:</strong> possible but not confirmed. If none materialises before the paper, the fallback evidence is a clean install of a second, 1KG-only site from the operator docs alone, on separate infrastructure, plus the per-dataset issuer model shown with two issuers.</li>
 </ol>
 </section>
