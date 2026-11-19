@@ -125,7 +125,7 @@ html { scroll-behavior: smooth; }
     <li><a href="#privacy">Privacy rules</a></li>
     <li><a href="#analyses">Analyses and API</a></li>
     <li><a href="#jobs">Jobs and the queue</a></li>
-    <li><a href="#slurm">Slurm proxy-runner</a></li>
+    <li><a href="#slurm">Slurm delegate</a></li>
     <li><a href="#milestones">Milestones</a></li>
     <li><a href="#questions">Open questions</a></li>
   </ol>
@@ -143,7 +143,7 @@ html { scroll-behavior: smooth; }
   <div class="decision"><div class="k">No other IdPs</div><p>No IU CAS and no CILogon. Admins use local accounts or API keys, and data loading is CLI-first.</p></div>
   <div class="decision"><div class="k">Privacy floor</div><p>The minimum cohort or cell size is 10 by default and can be configured.</p></div>
   <div class="decision"><div class="k">Scope v1</div><p>Feature parity, plus a way to add and manage new data: pgsc_calc runs and ingestion.</p></div>
-  <div class="decision"><div class="k">Compute</div><p>pgsc_calc runs on Slurm through a cron-driven proxy-runner. Our own workers handle light jobs.</p></div>
+  <div class="decision"><div class="k">Compute</div><p>Two kinds of worker. One or two always-on <strong>analysis workers</strong> run queries and analyses and return results to the web. A <strong>Slurm delegate</strong> submits HPC jobs such as pgsc_calc on a VCF with a set of scoring files.</p></div>
   <div class="decision"><div class="k">Config</div><p>YAML (<code>pgsx.yaml</code>). Precedence is flag, then env, then file.</p></div>
   <div class="decision"><div class="k">Hosting</div><p>Jetstream2 at IU. Compute nodes can reach the S3 buckets with the operator's credentials on that server.</p></div>
 </div>
@@ -201,7 +201,17 @@ html { scroll-behavior: smooth; }
 
 <section id="arch">
 <h2>Target architecture</h2>
-<p>Every interactive analysis becomes a synchronous API call. With scores stored as vectors, a histogram, KDE or odds ratio over 38k values takes milliseconds in Go, so the queue is kept for work that is actually heavy: ingest, precompute, pgsc_calc and exports.</p>
+<p>The API server does no computation. It authenticates, checks the results cache, and submits work. All computation runs on one of two kinds of worker, both fed by muranoq:</p>
+<div class="tbl"><table>
+<thead><tr><th></th><th>Analysis workers</th><th>Slurm delegate</th></tr></thead>
+<tbody>
+<tr><td>Command</td><td><code>pgsx worker</code>, always on, 1–2 instances</td><td><code>pgsx slurm-delegate --once</code>, run from cron on the cluster</td></tr>
+<tr><td>Job types</td><td><code>pgsx.analysis.*</code> (interactive), then ingest, summarize, catalog sync and export (bulk)</td><td><code>pgsx.hpc.*</code>, starting with <code>pgsx.hpc.pgsc_calc</code></td></tr>
+<tr><td>Latency</td><td>Milliseconds to seconds, while the user waits</td><td>Minutes to hours, with status every 10 minutes</td></tr>
+<tr><td>Built on</td><td>muranoq-go <code>worker</code> package (<code>Run</code>)</td><td>muranoq-go <code>client</code> calls with a state file</td></tr>
+<tr><td>Data access</td><td>Postgres (score vectors, results) and S3</td><td>S3 only, using the operator's credentials on the cluster</td></tr>
+</tbody></table></div>
+<p>With scores stored as vectors, a histogram, KDE or odds ratio over 38k values takes milliseconds. So an always-on worker can answer an interactive request almost as fast as the API could do it in-process, and the compute stays out of the web tier.</p>
 <div class="diagram">
 <pre class="mermaid">
 flowchart LR
@@ -212,11 +222,11 @@ flowchart LR
   G --> P[(Postgres<br/>app schema)]
   G -->|submit / poll jobs| Q[muranoq server]
   Q --> PQ[(Postgres<br/>muranoq schema)]
-  W[pgsx worker<br/>ingest · summarize · export] -->|claim / complete| Q
+  W[pgsx worker ×1–2<br/>analyses · ingest · summarize] -->|claim / complete| Q
   W --> P
   W --> S3[(S3<br/>Jetstream2)]
   subgraph HPC[Slurm cluster]
-    CR[cron: proxy-runner<br/>every 10 min] -->|sbatch / sacct| SL[Slurm<br/>nextflow pgsc_calc]
+    CR[cron: slurm-delegate<br/>every 10 min] -->|sbatch / sacct| SL[Slurm<br/>nextflow pgsc_calc]
   end
   CR -->|claim / heartbeat / complete| Q
   SL --> S3
@@ -224,7 +234,7 @@ flowchart LR
 </pre>
 </div>
 <ul>
-  <li><strong>One Go binary, <code>pgsx</code></strong>, with subcommands: <code>serve</code>, <code>worker</code>, <code>initdb</code>, <code>migratedb</code>, <code>dataset</code>, <code>ingest</code>, <code>pgs</code>, <code>user</code>, <code>apikey</code> and <code>job</code>. This matches the shape of <code>cmd/paperkb</code>.</li>
+  <li><strong>One Go binary, <code>pgsx</code></strong>, with subcommands: <code>serve</code>, <code>worker</code>, <code>slurm-delegate</code>, <code>initdb</code>, <code>migratedb</code>, <code>dataset</code>, <code>ingest</code>, <code>pgs</code>, <code>user</code>, <code>apikey</code> and <code>job</code>. This matches the shape of <code>cmd/paperkb</code>.</li>
   <li><strong>Separate frontend service</strong> (<code>frontend/</code>), on React Router v7 SSR. Loaders call <code>/api/v1</code> and forward the session cookie, and Caddy keeps everything same-origin.</li>
   <li><strong>muranoq is a separate service</strong> in its own Postgres schema or database. The app keeps a <code>jobs</code> row that mirrors each muranoq job ID, so the UI can list a user's work without asking muranoq for it.</li>
   <li><strong>S3 holds bulk data:</strong> pgsc_calc inputs and outputs, ingest staging files, exports and large precomputed artifacts. Postgres holds everything the API reads.</li>
@@ -250,7 +260,7 @@ internal/storage/         S3 (aws-sdk-go-v2, as paperKB) + local fs for dev
 db/migrations/            goose NNNN_name.sql, embedded
 frontend/                 React Router v7 SSR app
 deploy/                   Caddyfile, docker-compose (pg, muranoq, api, worker, frontend)
-hpc/                      proxy-runner cron script, sbatch template, nextflow config for Slurm
+hpc/                      slurm-delegate cron entry, sbatch templates, nextflow config for Slurm
 </code></pre>
 </section>
 
@@ -327,7 +337,7 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
 <div class="tbl"><table>
 <thead><tr><th>Endpoint</th><th>Returns</th><th>Improvements over today</th></tr></thead>
 <tbody>
-<tr><td><code>POST /api/v1/analyses/distribution</code></td><td>For each series: n, mean, sd, quantiles, a histogram (shared edges) and a KDE grid</td><td>Every score type, including percentile. Bandwidth choice (Scott or Silverman). Synchronous and cached.</td></tr>
+<tr><td><code>POST /api/v1/analyses/distribution</code></td><td>For each series: n, mean, sd, quantiles, a histogram (shared edges) and a KDE grid</td><td>Every score type, including percentile. Bandwidth choice (Scott or Silverman). Cached; a miss runs on an analysis worker.</td></tr>
 <tr><td><code>POST /api/v1/analyses/case-control</code></td><td>Both histograms, an OR table by threshold, quantile or decile (baseline or cumulative) with CIs, AUC, OR per SD, Cohen's d, Mann-Whitney and KS p-values</td><td>Score type is selectable, the overlap is reported, all OR modes are exposed, and it runs in milliseconds rather than minutes.</td></tr>
 <tr><td><code>GET /api/v1/datasets/{ds}/pgs?q=</code></td><td>PGS search by ID, trait or EFO, with QC</td><td>Server-side search replaces sending all 3,479 entries to the browser.</td></tr>
 <tr><td><code>GET /api/v1/pgs/{id}</code></td><td>Full Catalog metadata, QC, and per-ancestry summaries</td><td>A new score detail page.</td></tr>
@@ -347,18 +357,35 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
 
 <section id="jobs">
 <h2>Jobs and the queue</h2>
-<p>Everything runs in one muranoq namespace, <code>pgsx</code>. The app submits jobs with a <code>submit</code> account. Our Go workers and the cluster's proxy-runner each use their own <code>work</code> account. Every job is tagged <code>user:&lt;id&gt;</code> and <code>dataset:&lt;slug&gt;</code>.</p>
+<p>Everything runs in one muranoq namespace, <code>pgsx</code>. The app submits jobs with a <code>submit</code> account. The analysis workers and the Slurm delegate each use their own <code>work</code> account. Every job is tagged <code>user:&lt;id&gt;</code> and <code>dataset:&lt;slug&gt;</code>.</p>
 <div class="tbl"><table>
-<thead><tr><th>Type</th><th>Runs on</th><th>Input → output</th></tr></thead>
+<thead><tr><th>Queue</th><th>Weight</th><th>Served by</th><th>Limits</th></tr></thead>
 <tbody>
-<tr><td><code>pgsx.pgsc_calc</code></td><td>Slurm (proxy-runner)</td><td>{dataset version, PGS IDs or uploaded scoring files, genotype location, ref panel} → pgsc_calc outputs under <code>s3://…/runs/{task ref}/</code></td></tr>
-<tr><td><code>pgsx.ingest</code></td><td>Go worker</td><td>An S3 prefix of pgsc_calc output or a wide file → validated <code>score_vectors</code>, <code>pgs_qc</code> and a <code>score_set</code>. Idempotent by task ref.</td></tr>
-<tr><td><code>pgsx.summarize</code></td><td>Go worker</td><td>A score set → <code>pgs_summaries</code> for each system cohort. One task per PGS block.</td></tr>
-<tr><td><code>pgsx.catalog_sync</code></td><td>Go worker</td><td>The PGS Catalog REST API → the <code>pgs</code> table. Runs on a schedule and on demand.</td></tr>
-<tr><td><code>pgsx.biobank_export</code></td><td>Go worker</td><td>A cohort and score selection → a push to the biobank over OAuth2</td></tr>
-<tr><td><code>pgsx.multivariate</code></td><td>Go worker (later)</td><td>Correlation and clustering over many PGS. Only this one is heavy enough to need the queue.</td></tr>
+<tr><td><code>interactive</code></td><td class="num">80</td><td>Analysis workers</td><td><code>time_limit</code> 60 s, no retries beyond 1</td></tr>
+<tr><td><code>bulk</code></td><td class="num">20</td><td>Analysis workers</td><td>Every bulk job shares <code>concurrency_key: pgsx-bulk</code> with a limit of 1</td></tr>
+<tr><td><code>hpc</code></td><td>(own workers)</td><td>Slurm delegate only</td><td>Long <code>time_limit</code>, lease TTL 30 min</td></tr>
 </tbody></table></div>
-<p><strong>The worker.</strong> <code>pgsx worker</code> is built on the <code>muranoq-go</code> <code>worker</code> package. It creates a <code>worker.New(client, worker.Config{Name, Concurrency, Capacity})</code>, registers a handler for each type with <code>w.Handle("pgsx.ingest", …)</code>, and runs <code>w.Run(ctx)</code>. The SDK handles registration, claiming within free capacity, lease heartbeats, stop/cancel signals, and deregistration on SIGTERM. Handlers just decode the payload, use the task ref as their idempotency key, report progress with <code>t.Progress(…)</code>, and return either a result or an error: <code>worker.Terminal(err)</code> for bad input, <code>worker.Retry(err, d)</code> for a retry after a delay. The API server uses <code>muranoq-go/client</code> to submit jobs (with an idempotency key and tags) and to read their state. Connection settings come from <code>MURANOQ_URL</code> and <code>MURANOQ_TOKEN_FILE</code>, or from the <code>muranoq:</code> block in <code>pgsx.yaml</code>.</p>
+<p>muranoq never preempts a running task. So each analysis worker runs with <code>Concurrency</code> of 4 or more, and the <code>pgsx-bulk</code> concurrency key caps bulk work at one slot across the whole pool. An ingest therefore can't take every slot, and interactive requests always find a free one.</p>
+<div class="tbl"><table>
+<thead><tr><th>Type</th><th>Queue · worker</th><th>Input → output</th></tr></thead>
+<tbody>
+<tr><td><code>pgsx.analysis.distribution</code>, <code>pgsx.analysis.case_control</code></td><td>interactive · analysis</td><td>Normalized request → privacy-gated aggregates written to <code>results</code>. The task result is just the result key.</td></tr>
+<tr><td><code>pgsx.hpc.pgsc_calc</code></td><td>hpc · Slurm delegate</td><td>{target: VCF(s) on S3 or a dataset version, genome build; scores: PGS Catalog IDs and/or a PGS score matrix on S3; ref panel; run_ancestry} → pgsc_calc outputs under <code>s3://…/runs/{task ref}/</code></td></tr>
+<tr><td><code>pgsx.ingest</code></td><td>bulk · analysis</td><td>An S3 prefix of pgsc_calc output or a wide file → validated <code>score_vectors</code>, <code>pgs_qc</code> and a <code>score_set</code>. Idempotent by task ref.</td></tr>
+<tr><td><code>pgsx.summarize</code></td><td>bulk · analysis</td><td>A score set → <code>pgs_summaries</code> for each system cohort. One task per PGS block.</td></tr>
+<tr><td><code>pgsx.catalog_sync</code></td><td>bulk · analysis</td><td>The PGS Catalog REST API → the <code>pgs</code> table. Runs on a schedule and on demand.</td></tr>
+<tr><td><code>pgsx.biobank_export</code></td><td>bulk · analysis</td><td>A cohort and score selection → a push to the biobank over OAuth2</td></tr>
+<tr><td><code>pgsx.analysis.multivariate</code></td><td>interactive or bulk · analysis (later)</td><td>Correlation and clustering over many PGS. It goes to bulk when the PGS set is large.</td></tr>
+</tbody></table></div>
+<p><strong>An analysis request, end to end.</strong></p>
+<ol>
+  <li>The API normalizes the request and computes its cache key (request, dataset version, cohort member hashes).</li>
+  <li>On a hit, it returns the cached result straight away.</li>
+  <li>On a miss, it submits <code>pgsx.analysis.*</code> to <code>interactive</code> with <code>idempotency_key</code> set to the cache key, so identical concurrent requests share one job. It then waits up to about 3 s with <code>client.Wait</code>.</li>
+  <li>If the job finishes in that time, the API returns the result inline. Otherwise it answers <code>202</code> with the job ID, and the page polls <code>/api/v1/jobs/{id}</code> (SSE later).</li>
+  <li>The worker applies <code>internal/privacy</code> before writing the result, so nothing below the minimum cell size reaches the cache, muranoq or the browser.</li>
+</ol>
+<p><strong>The analysis worker.</strong> <code>pgsx worker</code> is built on the <code>muranoq-go</code> <code>worker</code> package. It creates a <code>worker.New(client, worker.Config{Name, Concurrency, Capacity})</code>, registers a handler for each type with <code>w.Handle("pgsx.ingest", …)</code>, and runs <code>w.Run(ctx)</code>. The SDK handles registration, claiming within free capacity, lease heartbeats, stop/cancel signals, and deregistration on SIGTERM. Handlers just decode the payload, use the task ref as their idempotency key, report progress with <code>t.Progress(…)</code>, and return either a result or an error: <code>worker.Terminal(err)</code> for bad input, <code>worker.Retry(err, d)</code> for a retry after a delay. The API server uses <code>muranoq-go/client</code> to submit jobs (with an idempotency key and tags) and to read their state. Connection settings come from <code>MURANOQ_URL</code> and <code>MURANOQ_TOKEN_FILE</code>, or from the <code>muranoq:</code> block in <code>pgsx.yaml</code>.</p>
 <p><strong>Chaining.</strong> pgsc_calc → ingest → summarize runs as a dependency chain, or as follow-on jobs if muranoq's M2 lands first. Until then, a reconciler loop in <code>pgsx worker</code> watches the app's <code>jobs</code> rows and submits the next step. The same loop mirrors muranoq state into <code>jobs</code> for the UI, using events or SSE once muranoq has them and polling until then.</p>
 <p><strong>Adding new data (the new v1 feature):</strong></p>
 <ol>
@@ -371,11 +398,11 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
 </section>
 
 <section id="slurm">
-<h2>Slurm proxy-runner</h2>
+<h2>Slurm delegate</h2>
 <p>A cron job on the cluster polls muranoq, submits work to Slurm, and reports status at least every 10 minutes. There is no live heartbeat. Compute nodes never talk to muranoq; they only read and write S3.</p>
 
 <h3>One cron tick</h3>
-<pre><code># */10 * * * *  flock -n ~/.pgsx-runner.lock pgsx-proxy-runner
+<pre><code># */10 * * * *  flock -n ~/.pgsx-delegate.lock pgsx slurm-delegate --once
 1. register worker (idempotent by name+host)          POST /v1/workers
 2. for each tracked task in state dir:
      sacct -j &lt;slurm_id&gt; → PENDING | RUNNING | COMPLETED | FAILED | CANCELLED | TIMEOUT
@@ -389,23 +416,32 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
      {ref, lease_token, slurm_id, submitted_at} to the state dir
 </code></pre>
 <ul>
-  <li><strong>SDK use:</strong> the proxy-runner (<code>pgsx proxy-runner --once</code>) uses <code>muranoq-go/client</code> directly, not the <code>worker</code> package. <code>worker.Run</code> and <code>Close</code> deregister the worker on exit, and muranoq hands a deregistered worker's tasks straight back to <code>ready</code>, which would undo every tick. Instead each tick calls <code>RegisterWorker</code> (idempotent) and never deregisters. It saves each <code>client.Claimed</code> (ref and lease token) to the state file and passes it back to <code>Heartbeat</code>, <code>Complete</code> or <code>Fail</code> on later ticks. <code>client.IsLeaseLost</code> tells it when a saved claim has expired.</li>
+  <li><strong>SDK use:</strong> the delegate (<code>pgsx slurm-delegate --once</code>) uses <code>muranoq-go/client</code> directly, not the <code>worker</code> package. <code>worker.Run</code> and <code>Close</code> deregister the worker on exit, and muranoq hands a deregistered worker's tasks straight back to <code>ready</code>, which would undo every tick. Instead each tick calls <code>RegisterWorker</code> (idempotent) and never deregisters. It saves each <code>client.Claimed</code> (ref and lease token) to the state file and passes it back to <code>Heartbeat</code>, <code>Complete</code> or <code>Fail</code> on later ticks. <code>client.IsLeaseLost</code> tells it when a saved claim has expired.</li>
   <li><strong>Leases:</strong> the <code>pgsx-slurm</code> queue's namespace gets <code>lease_ttl ≥ 3 × cron interval</code> (30 minutes), so two missed ticks don't lose the lease.</li>
   <li><strong>Idempotency:</strong> the task ref names the S3 output prefix and the Slurm job name. A re-run finds and reuses a completed prefix instead of computing again.</li>
-  <li><strong>pgsc_calc on Slurm:</strong> the sbatch job runs a Nextflow head process with <code>-profile slurm</code>, which fans out its own Slurm jobs. The proxy-runner tracks the head job, and progress comes from Nextflow's trace file.</li>
+  <li><strong>pgsc_calc on Slurm:</strong> the sbatch job runs a Nextflow head process with <code>-profile slurm</code>, which fans out its own Slurm jobs. The delegate tracks the head job, and progress comes from Nextflow's trace file.</li>
+  <li><strong>The pgsc_calc batch script</strong> (<code>hpc/pgsc_calc.sbatch</code>):
+    <ol>
+      <li>Stages the VCF(s) and scoring inputs from S3 to scratch.</li>
+      <li>Writes the pgsc_calc samplesheet.</li>
+      <li>Turns a PGS score matrix into PGS Catalog-format scoring files, if one was given.</li>
+      <li>Runs <code>pgscatalog/pgsc_calc</code> with <code>--target_build</code>, <code>--pgs_id</code> and/or <code>--scorefile</code>, plus <code>--run_ancestry</code> with the reference panel.</li>
+      <li>Uploads <code>results/</code> and a <code>_SUCCESS</code> marker to the run prefix, then cleans up scratch.</li>
+    </ol>
+  </li>
   <li><strong>S3 credentials:</strong> the operator's credentials stay on the cluster, as now. Payloads carry only S3 URIs, which muranoq requires anyway.</li>
 </ul>
 
-<h3>What a muranoq <code>proxy-runner</code> mode would add</h3>
+<h3>What a muranoq <code>delegate</code> mode would add</h3>
 <p>The tick above works against muranoq as it is. These are the gaps that make a built-in mode worth adding once the cron script has settled the rules.</p>
 <div class="tbl"><table>
-<thead><tr><th>Gap with plain leases</th><th>Proposed proxy-runner behaviour</th></tr></thead>
+<thead><tr><th>Gap with plain leases</th><th>Proposed delegate behaviour</th></tr></thead>
 <tbody>
-<tr><td>Lease TTL is set per namespace, so long TTLs also apply to ordinary workers.</td><td>A worker registers with <code>mode: proxy</code> and a <code>report_interval</code>. The server sets that worker's lease TTL to about 3× the interval.</td></tr>
+<tr><td>Lease TTL is set per namespace, so long TTLs also apply to ordinary workers.</td><td>A worker registers with <code>mode: delegate</code> and a <code>report_interval</code>. The server sets that worker's lease TTL to about 3× the interval.</td></tr>
 <tr><td><code>time_limit</code> counts time spent waiting in Slurm's queue.</td><td>Heartbeats carry an <code>external_state</code> of <code>submitted</code> or <code>running</code>, and the time limit clock starts at <code>running</code>. Queue wait gets its own optional limit.</td></tr>
-<tr><td>If the cron dies, the lease expires and the task is retried while the Slurm job may still be running, so it can run twice.</td><td>An expired proxy lease moves the task to <code>orphaned</code> instead of <code>ready</code>. The next tick from the same worker can adopt it again with the saved <code>external_id</code>; otherwise an operator releases it.</td></tr>
+<tr><td>If the cron dies, the lease expires and the task is retried while the Slurm job may still be running, so it can run twice.</td><td>An expired delegate lease moves the task to <code>orphaned</code> instead of <code>ready</code>. The next tick from the same worker can adopt it again with the saved <code>external_id</code>; otherwise an operator releases it.</td></tr>
 <tr><td>The Slurm job ID is invisible in <code>muranoq status</code>.</td><td>The task records <code>external_id</code> and <code>external_state</code>, and status shows them.</td></tr>
-<tr><td>Every site would write its own state-file glue.</td><td><code>muranoq proxy-runner --once --type … --submit 'sbatch …' --status 'sacct …' --cancel 'scancel {id}' --state-dir …</code>. The same shape would work for PBS, LSF or Kubernetes Jobs.</td></tr>
+<tr><td>Every site would write its own state-file glue.</td><td><code>muranoq delegate --once --type … --submit 'sbatch …' --status 'sacct …' --cancel 'scancel {id}' --state-dir …</code>. The same shape would work for PBS, LSF or Kubernetes Jobs.</td></tr>
 </tbody></table></div>
 </section>
 
@@ -442,7 +478,7 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
   <div class="ms"><div class="id">P4</div><div><h4>Queue and Slurm</h4>
     <ul>
       <li><code>pgsx worker</code> on the muranoq-go <code>worker</code> package, the ingest and summarize handlers, and the reconciler.</li>
-      <li>The proxy-runner cron script and sbatch template.</li>
+      <li>The <code>pgsx slurm-delegate</code> cron job and the pgsc_calc sbatch template.</li>
       <li>pgsc_calc → S3 → ingest. Admin pages for jobs and datasets.</li>
     </ul>
     <p class="exit">Exit: an admin adds 100 new PGS from the CLI and they appear after promotion.</p></div></div>
@@ -455,7 +491,7 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
   <div class="ms"><div class="id">P6</div><div><h4>Beyond parity</h4>
     <ul>
       <li>Trait comparison, portability, aggregate multivariate views, and OAuth2 data return to the biobank.</li>
-      <li>A muranoq proxy-runner mode, if the cron script shows the need.</li>
+      <li>A muranoq <code>delegate</code> mode, if the cron job shows the need.</li>
     </ul>
     <p class="exit">Exit: scoped separately.</p></div></div>
 </div>
