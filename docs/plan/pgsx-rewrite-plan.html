@@ -1,0 +1,480 @@
+<title>PGS Explorer Rewrite Plan</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Serif:wght@500;600&display=swap">
+<style>
+/* Layout: sticky table of contents on the left at desktop width, one reading column (~68ch) on the right; stacks to a single column on phones. */
+:root {
+  --bg: #f6f7f6;
+  --surface: #ffffff;
+  --fg: #1b2420;
+  --muted: #5b6862;
+  --line: #d9dfdb;
+  --accent: #1f6f5c;      /* deep teal: links, headings rules */
+  --accent-soft: #e2efea;
+  --warn: #9a5b00;        /* risk / open-question markers */
+  --warn-soft: #f6ead6;
+  --bad: #a3322a;
+  --bad-soft: #f6e1de;
+  --code-bg: #eef1ef;
+  --font-display: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --s-1: 0.8125rem; --s0: 1rem; --s1: 1.1875rem; --s2: 1.5rem; --s3: 2.125rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121715; --surface: #18201d; --fg: #e3e9e6; --muted: #9aa8a1; --line: #2b3632;
+    --accent: #6cc4aa; --accent-soft: #1d3029; --warn: #e2a64a; --warn-soft: #2f2716;
+    --bad: #ec8a80; --bad-soft: #321d1b; --code-bg: #1f2925; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #121715; --surface: #18201d; --fg: #e3e9e6; --muted: #9aa8a1; --line: #2b3632;
+  --accent: #6cc4aa; --accent-soft: #1d3029; --warn: #e2a64a; --warn-soft: #2f2716;
+  --bad: #ec8a80; --bad-soft: #321d1b; --code-bg: #1f2925; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body);
+  font-size: var(--s0); line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 0 4rem;
+}
+a { color: var(--accent); text-underline-offset: 2px; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.wrap { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 3rem; }
+header.top { max-width: 1180px; margin: 0 auto; padding-block: 2.5rem 1.5rem; border-bottom: 1px solid var(--line); margin-bottom: 2rem; }
+.eyebrow { font-family: var(--font-mono); font-size: var(--s-1); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-size: var(--s3); line-height: 1.15; margin: 0.4rem 0 0.6rem; text-wrap: balance; font-weight: 600; }
+h2 { font-family: var(--font-display); font-size: var(--s2); line-height: 1.25; margin: 3rem 0 0.75rem; padding-top: 0.75rem; border-top: 2px solid var(--accent); text-wrap: balance; font-weight: 600; }
+h3 { font-size: var(--s1); margin: 2rem 0 0.5rem; font-weight: 600; text-wrap: balance; }
+h4 { font-size: var(--s0); margin: 1.5rem 0 0.4rem; font-weight: 600; }
+.lede { font-size: var(--s1); color: var(--muted); max-width: 68ch; margin: 0; }
+.meta { display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; margin-top: 1rem; font-size: var(--s-1); color: var(--muted); font-family: var(--font-mono); }
+main { min-width: 0; }
+main p, main li { max-width: 72ch; }
+main ul, main ol { padding-left: 1.25rem; }
+main li + li { margin-top: 0.3rem; }
+nav.toc { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 1.5rem); align-self: start; font-size: var(--s-1); }
+nav.toc ol { list-style: none; padding: 0; margin: 0; display: grid; gap: 0.15rem; counter-reset: toc; }
+nav.toc li { counter-increment: toc; }
+nav.toc a { display: block; padding: 0.25rem 0.5rem; border-left: 2px solid var(--line); color: var(--muted); text-decoration: none; }
+nav.toc a::before { content: counter(toc) ". "; font-family: var(--font-mono); }
+nav.toc a:hover { color: var(--fg); border-left-color: var(--accent); }
+code, .mono { font-family: var(--font-mono); font-size: 0.875em; }
+code { background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; overflow-wrap: anywhere; }
+pre { background: var(--code-bg); padding: 0.9rem 1rem; border-radius: 4px; overflow-x: auto; font-size: var(--s-1); line-height: 1.5; }
+pre code { background: none; padding: 0; overflow-wrap: normal; }
+.tbl { overflow-x: auto; margin: 1rem 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); }
+table { border-collapse: collapse; width: 100%; font-size: var(--s-1); }
+th, td { text-align: left; vertical-align: top; padding: 0.55rem 0.75rem; border-bottom: 1px solid var(--line); }
+th { font-weight: 600; background: var(--accent-soft); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.decisions { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 0.75rem; margin: 1rem 0; }
+.decision { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0.8rem 0.95rem; }
+.decision .k { font-family: var(--font-mono); font-size: var(--s-1); color: var(--accent); text-transform: uppercase; letter-spacing: 0.05em; }
+.decision p { margin: 0.25rem 0 0; font-size: var(--s-1); }
+.pill { display: inline-block; font-family: var(--font-mono); font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; padding: 0.1rem 0.45rem; border-radius: 999px; white-space: nowrap; }
+.p-crit { background: var(--bad-soft); color: var(--bad); }
+.p-high { background: var(--warn-soft); color: var(--warn); }
+.p-med { background: var(--accent-soft); color: var(--accent); }
+.note { border-left: 3px solid var(--warn); background: var(--warn-soft); padding: 0.7rem 0.95rem; margin: 1rem 0; border-radius: 0 4px 4px 0; max-width: 72ch; }
+.note p { margin: 0.2rem 0; }
+.note strong { color: var(--warn); }
+.evidence { border-left: 3px solid var(--accent); background: var(--accent-soft); padding: 0.7rem 0.95rem; margin: 1rem 0; border-radius: 0 4px 4px 0; max-width: 72ch; }
+.evidence p { margin: 0.2rem 0; }
+.diagram { background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 1rem; overflow-x: auto; margin: 1rem 0; }
+.milestones { display: grid; gap: 0.75rem; margin: 1rem 0; }
+.ms { display: grid; grid-template-columns: 4.5rem minmax(0, 1fr); gap: 1rem; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0.9rem 1rem; }
+.ms .id { font-family: var(--font-mono); font-weight: 500; color: var(--accent); font-size: var(--s1); }
+.ms h4 { margin: 0 0 0.25rem; }
+.ms p, .ms ul { margin: 0.25rem 0; font-size: var(--s-1); }
+.ms .exit { color: var(--muted); }
+ol.q > li { margin-bottom: 0.6rem; }
+footer { max-width: 1180px; margin: 4rem auto 0; padding-top: 1rem; border-top: 1px solid var(--line); color: var(--muted); font-size: var(--s-1); }
+@media (max-width: 860px) {
+  .wrap { grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+  nav.toc { position: static; border: 1px solid var(--line); border-radius: 4px; padding: 0.75rem; background: var(--surface); }
+  nav.toc ol { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  h1 { font-size: 1.75rem; }
+  .ms { grid-template-columns: minmax(0, 1fr); gap: 0.25rem; }
+}
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+
+<header class="top">
+  <div class="eyebrow">compgenlab / pgs-explorer · planning draft</div>
+  <h1>PGS Explorer rewrite: Go, React, Postgres, muranoq</h1>
+  <p class="lede">A plan to rebuild pgsviz.compgenlab.org on the paperKB stack. It reaches feature parity, keeps sample-level data on the server, and adds a managed way to compute and load new scores with pgsc_calc on Slurm.</p>
+  <div class="meta"><span>Status: draft for discussion</span><span>Updated 2026-11-19</span><span>Repo: public</span></div>
+</header>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <ol>
+    <li><a href="#decisions">Decisions so far</a></li>
+    <li><a href="#today">What the site does today</a></li>
+    <li><a href="#fixes">Design mistakes to fix</a></li>
+    <li><a href="#arch">Target architecture</a></li>
+    <li><a href="#layout">Repo layout</a></li>
+    <li><a href="#data">Data model</a></li>
+    <li><a href="#auth">Auth and access</a></li>
+    <li><a href="#privacy">Privacy rules</a></li>
+    <li><a href="#analyses">Analyses and API</a></li>
+    <li><a href="#jobs">Jobs and the queue</a></li>
+    <li><a href="#slurm">Slurm proxy-runner</a></li>
+    <li><a href="#milestones">Milestones</a></li>
+    <li><a href="#questions">Open questions</a></li>
+  </ol>
+</nav>
+
+<main>
+
+<section id="decisions">
+<h2>Decisions so far</h2>
+<div class="decisions">
+  <div class="decision"><div class="k">Stack</div><p>Go API with a React Router v7 SSR frontend, following paperKB's conventions. Postgres for application data.</p></div>
+  <div class="decision"><div class="k">Queue</div><p>muranoq, on its Postgres backend (assumed done). Async site work and Slurm jobs both go through it.</p></div>
+  <div class="decision"><div class="k">Anonymous mode</div><p>A public demo on 1000 Genomes data, with no login.</p></div>
+  <div class="decision"><div class="k">Biobank login</div><p>Users sign in with a JWT issued by the biobank site. Sending data back to the biobank uses an OAuth2 token flow, which is already planned on the biobank side.</p></div>
+  <div class="decision"><div class="k">No other IdPs</div><p>No IU CAS and no CILogon. Admins use local accounts or API keys, and data loading is CLI-first.</p></div>
+  <div class="decision"><div class="k">Privacy floor</div><p>The minimum cohort or cell size is 10 by default and can be configured.</p></div>
+  <div class="decision"><div class="k">Scope v1</div><p>Feature parity, plus a way to add and manage new data: pgsc_calc runs and ingestion.</p></div>
+  <div class="decision"><div class="k">Compute</div><p>pgsc_calc runs on Slurm through a cron-driven proxy-runner. Our own workers handle light jobs.</p></div>
+  <div class="decision"><div class="k">Config</div><p>YAML (<code>pgsx.yaml</code>). Precedence is flag, then env, then file.</p></div>
+  <div class="decision"><div class="k">Hosting</div><p>Jetstream2 at IU. Compute nodes can reach the S3 buckets with the operator's credentials on that server.</p></div>
+</div>
+</section>
+
+<section id="today">
+<h2>What the site does today</h2>
+<p>Researchers use PGS Visualizer to explore polygenic scores in the Indiana Biobank / AnalytiXIN cohort without seeing individual-level data. With it they can check how a published score behaves here before relying on it. They can see how its distribution shifts across ancestry groups, and get a first look at whether it separates their cases from controls.</p>
+
+<div class="tbl"><table>
+<thead><tr><th>Data</th><th>Value</th></tr></thead>
+<tbody>
+<tr><td>Samples</td><td class="num">37,948</td></tr>
+<tr><td>Scores kept / PGS Catalog files run</td><td class="num">3,479 / 5,088</td></tr>
+<tr><td>Score types</td><td>SUM, Z_MostSimilarPop, Z_norm1, Z_norm2, percentile_MostSimilarPop</td></tr>
+<tr><td>Ancestry cohorts (inferred)</td><td class="num">EUR 28,799 · AFR 5,207 · AMR 1,637 · EAS 1,129 · CSA 896 · MID 280</td></tr>
+<tr><td>Scores table</td><td class="num">≈ 600M rows, long format, SQLite</td></tr>
+</tbody></table></div>
+
+<div class="tbl"><table>
+<thead><tr><th>Page</th><th>What it does</th><th>State</th></tr></thead>
+<tbody>
+<tr><td>Distributions</td><td>Density, histogram or box plot of one PGS across several cohorts, or of several PGS in one cohort.</td><td>Live</td></tr>
+<tr><td>Case vs Control</td><td>Overlaid histograms for two cohorts, with an optional odds ratio by threshold, quantile or decile. The score type is fixed to Z_norm2 by a hidden input.</td><td>Live, slow</td></tr>
+<tr><td>Cohorts</td><td>Imports cohorts from the AnalytiXIN API, then lists and deletes them. Temporary uploads of pgsc_calc output.</td><td>Live</td></tr>
+<tr><td>Tasks</td><td>History of past plot requests, polled every 10 s.</td><td>Live</td></tr>
+<tr><td>Multivariate</td><td>Heatmap, PCA, SVD, UMAP and t-SNE.</td><td>Returns 404. Disabled because it exposes sample IDs.</td></tr>
+</tbody></table></div>
+
+<div class="evidence">
+<p><strong>Probed on the live site on 2026-11-19.</strong></p>
+<p>A 3-cohort density plot of PGS000001 finished in about 1 s. The result is a 4.8 MB HTML file with the raw values embedded, and it downloads <em>without a session cookie</em>.</p>
+<p>A case-vs-control run (AFR vs EUR, quantile OR) was still "processing" after more than 2 minutes, because of the O(n²) percentile step on the 28.8k EUR samples.</p>
+</div>
+</section>
+
+<section id="fixes">
+<h2>Design mistakes to fix</h2>
+<p>The full list comes from reading the code; the table below groups it by what the rewrite has to do differently. Severity is relative to a public repo that serves biobank data.</p>
+<div class="tbl"><table>
+<thead><tr><th>Area</th><th>Problem today</th><th>Rewrite answer</th><th>Severity</th></tr></thead>
+<tbody>
+<tr><td>Privacy</td><td>Raw per-sample scores are embedded in Plotly HTML, served from an unauthenticated <code>/temp</code>.</td><td>Only aggregates leave the server. Charts are drawn in the browser from small JSON.</td><td><span class="pill p-crit">critical</span></td></tr>
+<tr><td>Privacy</td><td><code>POST /api/cohorts</code> accepts any list of sample IDs. That makes it an oracle for which IDs exist, and it allows n=1 cohorts.</td><td>Cohorts come only from the biobank or from admins. A minimum size is enforced on every query.</td><td><span class="pill p-crit">critical</span></td></tr>
+<tr><td>Security</td><td>Biobank import is a GET with side effects, the token rides in the query string, the base URL is chosen by the user (SSRF), and TLS checking is off (<code>verify=False</code>).</td><td>A server-to-server POST to a configured base URL, with TLS, using the user's own biobank token.</td><td><span class="pill p-crit">critical</span></td></tr>
+<tr><td>Security</td><td>Placeholder session secret, CORS <code>*</code> with credentials, a <code>/api/session/debug</code> cookie dump, tracebacks sent to clients, several XSS holes.</td><td>Same-origin behind Caddy, CSP, a required secret, structured errors, and React escaping by default.</td><td><span class="pill p-high">high</span></td></tr>
+<tr><td>Data model</td><td>About 600M long rows with no composite index. <code>IN (…38k…)</code> filters. Sample lists stored as JSON text.</td><td>One score vector per (dataset, PGS, type), with cohorts as sample-index sets. See <a href="#data">Data model</a>.</td><td><span class="pill p-high">high</span></td></tr>
+<tr><td>Identity</td><td>Session and user identities are conflated through two creation paths. Users and cohorts live in a SQLite file per scores database.</td><td>One <code>users</code> table and a JWT cookie session, as in paperKB. Datasets are rows, not files.</td><td><span class="pill p-high">high</span></td></tr>
+<tr><td>Jobs</td><td>No atomic claim, so a task can run twice. Web startup fails in-flight tasks. No cleanup, despite the promised two-week expiry.</td><td>muranoq leases. Results go to S3 with a lifecycle rule, and a cache keyed by content hash.</td><td><span class="pill p-high">high</span></td></tr>
+<tr><td>Stats</td><td>O(n²) percentile pass whose result is discarded. Case and control samples can overlap and are then counted on both sides of the OR. "ALL" crashes case-vs-control. A "Density" axis label on bars that show counts.</td><td>Stats in a pure-Go package, tested against scipy fixtures. Disjoint cohorts are enforced or reported.</td><td><span class="pill p-med">medium</span></td></tr>
+<tr><td>Cache</td><td>Four separate file caches keyed on user ID and task name, so they almost never hit.</td><td>One <code>results</code> table keyed on the normalized request plus data versions.</td><td><span class="pill p-med">medium</span></td></tr>
+<tr><td>Content</td><td>The home page credits pgsc_calc to the wrong authors and promises an auto-delete that doesn't exist.</td><td>Correct citation: Lambert et al., <em>Nat Genet</em> 2024.</td><td><span class="pill p-med">medium</span></td></tr>
+</tbody></table></div>
+</section>
+
+<section id="arch">
+<h2>Target architecture</h2>
+<p>Every interactive analysis becomes a synchronous API call. With scores stored as vectors, a histogram, KDE or odds ratio over 38k values takes milliseconds in Go, so the queue is kept for work that is actually heavy: ingest, precompute, pgsc_calc and exports.</p>
+<div class="diagram">
+<pre class="mermaid">
+flowchart LR
+  B[Browser] -->|same origin| C[Caddy]
+  C --> F[React Router SSR<br/>frontend/]
+  C --> G[pgsx serve<br/>Go API /api/v1]
+  F -->|loaders, cookie forwarded| G
+  G --> P[(Postgres<br/>app schema)]
+  G -->|submit / poll jobs| Q[muranoq server]
+  Q --> PQ[(Postgres<br/>muranoq schema)]
+  W[pgsx worker<br/>ingest · summarize · export] -->|claim / complete| Q
+  W --> P
+  W --> S3[(S3<br/>Jetstream2)]
+  subgraph HPC[Slurm cluster]
+    CR[cron: proxy-runner<br/>every 10 min] -->|sbatch / sacct| SL[Slurm<br/>nextflow pgsc_calc]
+  end
+  CR -->|claim / heartbeat / complete| Q
+  SL --> S3
+  G -->|JWKS, cohort API, OAuth2| BB[Biobank site]
+</pre>
+</div>
+<ul>
+  <li><strong>One Go binary, <code>pgsx</code></strong>, with subcommands: <code>serve</code>, <code>worker</code>, <code>initdb</code>, <code>migratedb</code>, <code>dataset</code>, <code>ingest</code>, <code>pgs</code>, <code>user</code>, <code>apikey</code> and <code>job</code>. This matches the shape of <code>cmd/paperkb</code>.</li>
+  <li><strong>Separate frontend service</strong> (<code>frontend/</code>), on React Router v7 SSR. Loaders call <code>/api/v1</code> and forward the session cookie, and Caddy keeps everything same-origin.</li>
+  <li><strong>muranoq is a separate service</strong> in its own Postgres schema or database. The app keeps a <code>jobs</code> row that mirrors each muranoq job ID, so the UI can list a user's work without asking muranoq for it.</li>
+  <li><strong>S3 holds bulk data:</strong> pgsc_calc inputs and outputs, ingest staging files, exports and large precomputed artifacts. Postgres holds everything the API reads.</li>
+</ul>
+</section>
+
+<section id="layout">
+<h2>Repo layout</h2>
+<p>The layout follows paperkb/paperkb, with one change: configuration is YAML (<code>pgsx.yaml</code>) instead of paperKB's TOML. Precedence stays flag, then env, then file. Its other CLAUDE.md conventions carry over: goose migrations that are never edited once merged, snake_case DTOs with a contract test, store files split by concern, and CI running gofmt, vet, golangci-lint, build and test. paperKB's navy, brass and parchment look is its own brand, so PGS Explorer gets a separate identity.</p>
+<pre><code>cmd/pgsx/                 one file per subcommand (cobra)
+internal/config/          YAML config (pgsx.yaml, gopkg.in/yaml.v3), env + flag overrides
+internal/store/           pgx pool; datasets.go, scores.go, cohorts.go, users.go, jobs.go, results.go
+internal/web/             gorilla/mux; api_*.go per route group; api_dto.go + api_dto_test.go
+internal/auth/            session JWT (HS256, as paperKB) · biobank JWT verify (JWKS) · OAuth2 client
+internal/stats/           pure Go: histogram, KDE, quantiles, box stats, OR + CI, AUC, KS, Cohen's d
+internal/privacy/         the single aggregate gate: min-n, bin suppression, no extremes
+internal/ingest/          pgsc_calc parsers (aggregated_scores, info, matching), wide-file importer
+internal/pgscat/          PGS Catalog REST client + metadata sync
+internal/biobank/         biobank API client (cohorts, participant IDs, data return)
+internal/queue/           muranoq REST client + worker loop (see the public-repo question)
+internal/storage/         S3 (aws-sdk-go-v2, as paperKB) + local fs for dev
+db/migrations/            goose NNNN_name.sql, embedded
+frontend/                 React Router v7 SSR app
+deploy/                   Caddyfile, docker-compose (pg, muranoq, api, worker, frontend)
+hpc/                      proxy-runner cron script, sbatch template, nextflow config for Slurm
+</code></pre>
+</section>
+
+<section id="data">
+<h2>Data model</h2>
+
+<h3>Scores as vectors, not rows</h3>
+<p>Each sample in a dataset gets a fixed index. Each (dataset version, PGS, score type) is one row holding a <code>real[]</code> of length N, aligned to that index, with NaN for missing values. Cohorts become sorted sets of sample indexes.</p>
+<div class="tbl"><table>
+<thead><tr><th>Layout</th><th>Rows</th><th>Size (approx.)</th><th>Read one PGS for 3 cohorts</th></tr></thead>
+<tbody>
+<tr><td>Today: long table</td><td class="num">≈ 660M</td><td class="num">40–60 GB with indexes</td><td>Index scan of 38k rows plus an <code>IN</code> filter</td></tr>
+<tr><td>Proposed: vectors</td><td class="num">≈ 17k</td><td class="num">≈ 2.6 GB (38k × 4 B × 17k)</td><td>One 150 KB row, then gather by index in Go</td></tr>
+</tbody></table></div>
+<p>Each row is TOASTed and compressed once. The API caches hot vectors in memory with an LRU keyed by row ID and version. Writes only happen at ingest, so caching is simple.</p>
+
+<h3>Tables</h3>
+<div class="tbl"><table>
+<thead><tr><th>Table</th><th>Purpose</th><th>Key columns</th></tr></thead>
+<tbody>
+<tr><td><code>datasets</code></td><td>A cohort of genotyped people, e.g. <code>iubb</code> or <code>1kg-demo</code></td><td>slug, name, visibility (<code>public</code> | <code>biobank</code>), min_cell_override</td></tr>
+<tr><td><code>dataset_versions</code></td><td>An immutable data release. Analyses pin to a version.</td><td>dataset_id, version, status (<code>loading</code> | <code>active</code> | <code>retired</code>), genome_build, created_by</td></tr>
+<tr><td><code>samples</code></td><td>Sample index within a version. Never exposed through the API.</td><td>(version_id, idx) PK, sample_id, sex, inferred_ancestry</td></tr>
+<tr><td><code>pgs</code></td><td>Full PGS Catalog metadata, synced from the Catalog REST API</td><td>pgs_id, name, trait_reported, trait_efo[], method, n_variants, publication, dev_ancestry jsonb, license</td></tr>
+<tr><td><code>score_sets</code></td><td>One pgsc_calc run or import into a version</td><td>version_id, source (<code>pgsc_calc</code> | <code>import</code>), pgsc_calc_version, s3_prefix, job_id</td></tr>
+<tr><td><code>score_vectors</code></td><td>The vectors themselves</td><td>(version_id, pgs_id, score_type) PK, score_set_id, values real[], n_present</td></tr>
+<tr><td><code>pgs_qc</code></td><td>Per-score QC from pgsc_calc: variant match rate, pass/fail, reason</td><td>version_id, pgs_id, match_rate, passed, reason</td></tr>
+<tr><td><code>cohorts</code></td><td>Ancestry (system), biobank-imported, or admin-defined cohorts</td><td>id, version_id, kind, owner_user_id, name, external_id, members int[] (sample idx), size, members_hash</td></tr>
+<tr><td><code>pgs_summaries</code></td><td>Precomputed stats per (PGS, type, system cohort)</td><td>n, mean, sd, quantiles real[], hist jsonb</td></tr>
+<tr><td><code>users</code>, <code>sessions</code>, <code>api_keys</code></td><td>Identity, following paperKB</td><td>users.biobank_sub, role (<code>user</code> | <code>admin</code>), sessions revocable</td></tr>
+<tr><td><code>oauth_tokens</code></td><td>Biobank OAuth2 tokens for returning data</td><td>user_id, refresh_token (encrypted), scope, expires_at</td></tr>
+<tr><td><code>jobs</code></td><td>The app's mirror of muranoq jobs</td><td>id, muranoq_job_id, type, user_id, dataset_version_id, state, progress jsonb, result jsonb</td></tr>
+<tr><td><code>results</code></td><td>Cache of analysis outputs, keyed by content</td><td>key (sha256 of the normalized request, data version and cohort member hashes), body jsonb, created_at</td></tr>
+<tr><td><code>audit_log</code></td><td>Who queried what, for biobank-visibility datasets</td><td>user_id, action, dataset_version_id, cohort_ids, at</td></tr>
+</tbody></table></div>
+<p>Moving off the current site: the existing wide scores file plus <code>ancestry_groups</code> become dataset <code>iubb</code> v1 through <code>pgsx ingest wide</code>. Existing anonymous sessions, tasks and temporary uploads are not migrated.</p>
+</section>
+
+<section id="auth">
+<h2>Auth and access</h2>
+<div class="tbl"><table>
+<thead><tr><th>Mode</th><th>Who</th><th>How</th><th>Sees</th></tr></thead>
+<tbody>
+<tr><td>Anonymous demo</td><td>Anyone</td><td>No login. A rate-limited, read-only API.</td><td>Only <code>public</code> datasets (1000 Genomes) and their system cohorts, plus demo case/control cohorts.</td></tr>
+<tr><td>Biobank user</td><td>Biobank researchers</td><td>The biobank site issues a JWT. <code>POST /api/v1/auth/biobank</code> checks it against the biobank's JWKS (iss, aud, exp, nonce/jti replay) and sets our own HS256 session cookie, as paperKB does.</td><td>Biobank datasets they are entitled to, according to JWT claims. Their own imported cohorts.</td></tr>
+<tr><td>Data return</td><td>Biobank user</td><td>OAuth2 authorization code with PKCE against the biobank. Refresh tokens are encrypted at rest, and the export job runs server-to-server.</td><td>Not applicable. This is the one path where per-sample values can leave the system, and they go only to the biobank.</td></tr>
+<tr><td>Admin</td><td>Lab staff</td><td><code>pgsx user create --admin</code> creates the account. Admins sign in with a local password and use API keys for the CLI against <code>/api/v1/admin</code>.</td><td>Dataset and score management, job controls, the audit log.</td></tr>
+</tbody></table></div>
+<p>Cohort import uses the signed-in user's biobank token, server to server, against the configured biobank base URL. Nothing about the API location comes from the request.</p>
+</section>
+
+<section id="privacy">
+<h2>Privacy rules</h2>
+<p>Every response that touches score values goes through <code>internal/privacy</code>. Handlers never serialize raw vectors. The default minimum is <code>min_cell = 10</code>, configurable per deployment and per dataset. A public dataset such as 1000 Genomes can lower it, but it still goes through the same code path.</p>
+<ul>
+  <li><strong>Cohorts:</strong> any cohort with fewer than <code>min_cell</code> members present for the score is refused with a clear message.</li>
+  <li><strong>Histograms and odds-ratio bins:</strong> bins below <code>min_cell</code> are merged into a neighbouring bin, or suppressed and labelled as such. Every 2×2 cell in an OR must meet the minimum.</li>
+  <li><strong>No individual values:</strong> box plots draw no outlier points and use p1/p99 as whiskers rather than min and max. KDEs are evaluated on a grid and are only returned when n meets the minimum.</li>
+  <li><strong>Differencing:</strong> two cohorts that differ by only a few people can reveal those people's scores. Mitigations:
+    <ul>
+      <li>Users cannot create cohorts from arbitrary ID lists.</li>
+      <li>Case and control cohorts must be disjoint (or the overlap is reported and dropped).</li>
+      <li>Requests are audit-logged.</li>
+      <li>We could also refuse a cohort whose symmetric difference with another of the user's cohorts is below <code>min_cell</code>.</li>
+    </ul>
+  </li>
+  <li><strong>No raw data in caches:</strong> cached results hold aggregates only, so a cache hit can never leak more than the original response did.</li>
+</ul>
+</section>
+
+<section id="analyses">
+<h2>Analyses and API</h2>
+<h3>Parity</h3>
+<div class="tbl"><table>
+<thead><tr><th>Endpoint</th><th>Returns</th><th>Improvements over today</th></tr></thead>
+<tbody>
+<tr><td><code>POST /api/v1/analyses/distribution</code></td><td>For each series: n, mean, sd, quantiles, a histogram (shared edges) and a KDE grid</td><td>Every score type, including percentile. Bandwidth choice (Scott or Silverman). Synchronous and cached.</td></tr>
+<tr><td><code>POST /api/v1/analyses/case-control</code></td><td>Both histograms, an OR table by threshold, quantile or decile (baseline or cumulative) with CIs, AUC, OR per SD, Cohen's d, Mann-Whitney and KS p-values</td><td>Score type is selectable, the overlap is reported, all OR modes are exposed, and it runs in milliseconds rather than minutes.</td></tr>
+<tr><td><code>GET /api/v1/datasets/{ds}/pgs?q=</code></td><td>PGS search by ID, trait or EFO, with QC</td><td>Server-side search replaces sending all 3,479 entries to the browser.</td></tr>
+<tr><td><code>GET /api/v1/pgs/{id}</code></td><td>Full Catalog metadata, QC, and per-ancestry summaries</td><td>A new score detail page.</td></tr>
+<tr><td><code>/api/v1/cohorts</code></td><td>List, import from the biobank, delete</td><td>Sizes only. No member IDs are ever returned.</td></tr>
+<tr><td><code>/api/v1/jobs</code></td><td>The user's jobs, their states and progress</td><td>Replaces the Tasks page.</td></tr>
+</tbody></table></div>
+<p>Charts are drawn in React with <code>plotly.js-basic-dist</code>, which keeps the current look and its interactivity. PNG and SVG export uses Plotly's own client-side export, and CSV export contains aggregates only.</p>
+
+<h3>Beyond parity (after v1)</h3>
+<ul>
+  <li><strong>Trait view:</strong> all PGS for an EFO trait side by side, with distributions, case/control separation, variant match rate, development ancestry, and the correlation between scores.</li>
+  <li><strong>Portability:</strong> per-ancestry mean and variance shifts for every score, precomputed per dataset version.</li>
+  <li><strong>Multivariate, done safely:</strong> a PGS × PGS correlation matrix per cohort, with clustering and PCA of the scores. These are aggregates, so they bring back much of what the heatmap view offered without sample-level points.</li>
+  <li><strong>Covariate-adjusted models</strong> (age, sex, PCs), if the biobank can supply covariates through the same server-side path.</li>
+</ul>
+</section>
+
+<section id="jobs">
+<h2>Jobs and the queue</h2>
+<p>Everything runs in one muranoq namespace, <code>pgsx</code>. The app submits jobs with a <code>submit</code> account. Our Go workers and the cluster's proxy-runner each use their own <code>work</code> account. Every job is tagged <code>user:&lt;id&gt;</code> and <code>dataset:&lt;slug&gt;</code>.</p>
+<div class="tbl"><table>
+<thead><tr><th>Type</th><th>Runs on</th><th>Input → output</th></tr></thead>
+<tbody>
+<tr><td><code>pgsx.pgsc_calc</code></td><td>Slurm (proxy-runner)</td><td>{dataset version, PGS IDs or uploaded scoring files, genotype location, ref panel} → pgsc_calc outputs under <code>s3://…/runs/{task ref}/</code></td></tr>
+<tr><td><code>pgsx.ingest</code></td><td>Go worker</td><td>An S3 prefix of pgsc_calc output or a wide file → validated <code>score_vectors</code>, <code>pgs_qc</code> and a <code>score_set</code>. Idempotent by task ref.</td></tr>
+<tr><td><code>pgsx.summarize</code></td><td>Go worker</td><td>A score set → <code>pgs_summaries</code> for each system cohort. One task per PGS block.</td></tr>
+<tr><td><code>pgsx.catalog_sync</code></td><td>Go worker</td><td>The PGS Catalog REST API → the <code>pgs</code> table. Runs on a schedule and on demand.</td></tr>
+<tr><td><code>pgsx.biobank_export</code></td><td>Go worker</td><td>A cohort and score selection → a push to the biobank over OAuth2</td></tr>
+<tr><td><code>pgsx.multivariate</code></td><td>Go worker (later)</td><td>Correlation and clustering over many PGS. Only this one is heavy enough to need the queue.</td></tr>
+</tbody></table></div>
+<p><strong>Chaining.</strong> pgsc_calc → ingest → summarize runs as a dependency chain, or as follow-on jobs if muranoq's M2 lands first. Until then, a reconciler loop in <code>pgsx worker</code> watches the app's <code>jobs</code> rows and submits the next step. The same loop mirrors muranoq state into <code>jobs</code> for the UI, using events or SSE once muranoq has them and polling until then.</p>
+<p><strong>Adding new data (the new v1 feature):</strong></p>
+<ol>
+  <li>An admin runs <code>pgsx dataset version create iubb</code>, or picks an existing version.</li>
+  <li><code>pgsx pgs compute --dataset iubb@v2 --pgs PGS005000-PGS005200</code> (or the admin UI) submits <code>pgsx.pgsc_calc</code>.</li>
+  <li>The job gets as far as Slurm, and its progress shows on the admin Jobs page.</li>
+  <li>Ingest and summarize run. The new scores appear in <code>loading</code> state, and an admin promotes them to <code>active</code>.</li>
+  <li>For outputs already on S3 there's a direct path: <code>pgsx ingest pgsc-calc s3://…</code>.</li>
+</ol>
+</section>
+
+<section id="slurm">
+<h2>Slurm proxy-runner</h2>
+<p>A cron job on the cluster polls muranoq, submits work to Slurm, and reports status at least every 10 minutes. There is no live heartbeat. Compute nodes never talk to muranoq; they only read and write S3.</p>
+
+<h3>One cron tick</h3>
+<pre><code># */10 * * * *  flock -n ~/.pgsx-runner.lock pgsx-proxy-runner
+1. register worker (idempotent by name+host)          POST /v1/workers
+2. for each tracked task in state dir:
+     sacct -j &lt;slurm_id&gt; → PENDING | RUNNING | COMPLETED | FAILED | CANCELLED | TIMEOUT
+     PENDING/RUNNING  → heartbeat {progress: {slurm_state, nextflow trace summary}}
+                         if response.stop → scancel; record
+     COMPLETED        → verify s3://…/runs/&lt;ref&gt;/_SUCCESS → complete {result: {s3_prefix, qc}}
+     FAILED/TIMEOUT   → fail {retryable: true|false, error: tail of logs}
+3. free = max_inflight − tracked
+   claim {max: free, wait: 0}
+   for each task: render sbatch from template (time = task.time_limit) → sbatch → save
+     {ref, lease_token, slurm_id, submitted_at} to the state dir
+</code></pre>
+<ul>
+  <li><strong>Leases:</strong> the <code>pgsx-slurm</code> queue's namespace gets <code>lease_ttl ≥ 3 × cron interval</code> (30 minutes), so two missed ticks don't lose the lease.</li>
+  <li><strong>Idempotency:</strong> the task ref names the S3 output prefix and the Slurm job name. A re-run finds and reuses a completed prefix instead of computing again.</li>
+  <li><strong>pgsc_calc on Slurm:</strong> the sbatch job runs a Nextflow head process with <code>-profile slurm</code>, which fans out its own Slurm jobs. The proxy-runner tracks the head job, and progress comes from Nextflow's trace file.</li>
+  <li><strong>S3 credentials:</strong> the operator's credentials stay on the cluster, as now. Payloads carry only S3 URIs, which muranoq requires anyway.</li>
+</ul>
+
+<h3>What a muranoq <code>proxy-runner</code> mode would add</h3>
+<p>The tick above works against muranoq as it is. These are the gaps that make a built-in mode worth adding once the cron script has settled the rules.</p>
+<div class="tbl"><table>
+<thead><tr><th>Gap with plain leases</th><th>Proposed proxy-runner behaviour</th></tr></thead>
+<tbody>
+<tr><td>Lease TTL is set per namespace, so long TTLs also apply to ordinary workers.</td><td>A worker registers with <code>mode: proxy</code> and a <code>report_interval</code>. The server sets that worker's lease TTL to about 3× the interval.</td></tr>
+<tr><td><code>time_limit</code> counts time spent waiting in Slurm's queue.</td><td>Heartbeats carry an <code>external_state</code> of <code>submitted</code> or <code>running</code>, and the time limit clock starts at <code>running</code>. Queue wait gets its own optional limit.</td></tr>
+<tr><td>If the cron dies, the lease expires and the task is retried while the Slurm job may still be running, so it can run twice.</td><td>An expired proxy lease moves the task to <code>orphaned</code> instead of <code>ready</code>. The next tick from the same worker can adopt it again with the saved <code>external_id</code>; otherwise an operator releases it.</td></tr>
+<tr><td>The Slurm job ID is invisible in <code>muranoq status</code>.</td><td>The task records <code>external_id</code> and <code>external_state</code>, and status shows them.</td></tr>
+<tr><td>Every site would write its own state-file glue.</td><td><code>muranoq proxy-runner --once --type … --submit 'sbatch …' --status 'sacct …' --cancel 'scancel {id}' --state-dir …</code>. The same shape would work for PBS, LSF or Kubernetes Jobs.</td></tr>
+</tbody></table></div>
+</section>
+
+<section id="milestones">
+<h2>Milestones</h2>
+<div class="milestones">
+  <div class="ms"><div class="id">P0</div><div><h4>Foundations</h4>
+    <ul>
+      <li>Repo skeleton in the paperKB shape: config, goose baseline, a <code>/api/v1/session</code> endpoint, admin users and API keys.</li>
+      <li>CI: gofmt, vet, lint, test and a migrate-check.</li>
+      <li>docker-compose with Postgres, muranoq, the API, the worker, the frontend and Caddy.</li>
+    </ul>
+    <p class="exit">Exit: an empty app deploys to Jetstream2 and an admin can log in.</p></div></div>
+  <div class="ms"><div class="id">P1</div><div><h4>Data layer</h4>
+    <ul>
+      <li>Datasets, versions, samples and score vectors.</li>
+      <li><code>pgsx ingest wide</code> and <code>pgsx ingest pgsc-calc</code>.</li>
+      <li>PGS Catalog sync, the 1000 Genomes demo dataset, and an import of the current biobank data as <code>iubb@v1</code>.</li>
+    </ul>
+    <p class="exit">Exit: both datasets are loaded, and the vector reads are benchmarked.</p></div></div>
+  <div class="ms"><div class="id">P2</div><div><h4>Analysis parity</h4>
+    <ul>
+      <li><code>internal/stats</code> with scipy-checked fixtures.</li>
+      <li>The privacy gate.</li>
+      <li>Distribution and case-vs-control endpoints and pages, the score detail page, and the results cache.</li>
+    </ul>
+    <p class="exit">Exit: the public demo works end to end with no login.</p></div></div>
+  <div class="ms"><div class="id">P3</div><div><h4>Biobank access</h4>
+    <ul>
+      <li>JWT login via JWKS, entitlement claims mapped to datasets.</li>
+      <li>Server-to-server cohort import, cohort management, and the audit log.</li>
+    </ul>
+    <p class="exit">Exit: a biobank user reproduces today's analyses on iubb.</p></div></div>
+  <div class="ms"><div class="id">P4</div><div><h4>Queue and Slurm</h4>
+    <ul>
+      <li>The muranoq client, the <code>pgsx worker</code>, the ingest and summarize jobs, and the reconciler.</li>
+      <li>The proxy-runner cron script and sbatch template.</li>
+      <li>pgsc_calc → S3 → ingest. Admin pages for jobs and datasets.</li>
+    </ul>
+    <p class="exit">Exit: an admin adds 100 new PGS from the CLI and they appear after promotion.</p></div></div>
+  <div class="ms"><div class="id">P5</div><div><h4>Cutover</h4>
+    <ul>
+      <li>Run the new site side by side with the old one and compare numbers for a fixed set of PGS.</li>
+      <li>Switch DNS and retire the old site.</li>
+    </ul>
+    <p class="exit">Exit: pgsviz.compgenlab.org serves the new app.</p></div></div>
+  <div class="ms"><div class="id">P6</div><div><h4>Beyond parity</h4>
+    <ul>
+      <li>Trait comparison, portability, aggregate multivariate views, and OAuth2 data return to the biobank.</li>
+      <li>A muranoq proxy-runner mode, if the cron script shows the need.</li>
+    </ul>
+    <p class="exit">Exit: scoped separately.</p></div></div>
+</div>
+</section>
+
+<section id="questions">
+<h2>Open questions</h2>
+<ol class="q">
+  <li><strong>muranoq-go is private and this repo is public.</strong> Should we make the Go SDK public, or write a small REST client in <code>internal/queue</code>? The protocol is a handful of calls.</li>
+  <li><strong>Where do the biobank genotypes live for pgsc_calc?</strong> On the cluster filesystem only, or staged in S3? This decides what the <code>pgsx.pgsc_calc</code> payload points at and who can read that bucket.</li>
+  <li><strong>What does the biobank JWT look like?</strong> We need the issuer, the JWKS URL, the audience, and which claims carry dataset entitlements. We also need to know how login starts: a redirect carrying the token, or a token the user pastes.</li>
+  <li><strong>What goes back to the biobank?</strong> Per-sample PGS values for a cohort, or derived flags? This is the only path for sample-level data, so its scope should be explicit.</li>
+  <li><strong>Which demo data?</strong> 1000 Genomes phase 3 (2,504) or high-coverage (3,202)? Which PGS? It has no phenotypes, so the demo case/control cohorts would be synthetic or ancestry-based and labelled as such.</li>
+  <li><strong>Who can request new scores?</strong> In v1, only admins can run pgsc_calc. Should biobank users be able to request specific PGS IDs later, with an approval step?</li>
+  <li><strong>Deployment target on Jetstream2:</strong> docker compose on a VM, as paperKB does, or Kubernetes, as the current pod and volume comments suggest?</li>
+  <li><strong>Names:</strong> the binary and CLI as <code>pgsx</code>, the site title as "PGS Explorer". Keep "PGS Visualizer"?</li>
+</ol>
+</section>
+
+</main>
+</div>
+
+<footer>
+  <p>Sources: the current pgs-explorer code, a read-only probe of pgsviz.compgenlab.org on 2026-11-19, the muranoq specification (docs/SPEC.md, docs/API.md), and paperKB's CLAUDE.md for conventions.</p>
+</footer>
