@@ -370,7 +370,7 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 <thead><tr><th>Type</th><th>Queue · worker</th><th>Input → output</th></tr></thead>
 <tbody>
 <tr><td><code>pgsx.analysis.distribution</code>, <code>pgsx.analysis.case_control</code></td><td>interactive · analysis</td><td>Normalized request → privacy-gated aggregates written to <code>results</code>. The task result is just the result key.</td></tr>
-<tr><td><code>pgsx.hpc.pgsc_calc</code></td><td>hpc · Slurm delegate</td><td>{target: VCF(s) on S3 or a dataset version, genome build; scores: PGS Catalog IDs and/or a PGS score matrix on S3; ref panel; run_ancestry} → pgsc_calc outputs under <code>s3://…/runs/{task ref}/</code></td></tr>
+<tr><td><code>pgsx.hpc.pgsc_calc</code></td><td>hpc · Slurm delegate</td><td>{target: VCF(s) on S3 or a dataset version, genome build; scores: PGS Catalog IDs and/or a score matrix on S3, already in pgsc_calc's scoring-file format; ref panel; run_ancestry} → pgsc_calc outputs under <code>s3://…/runs/{task ref}/</code></td></tr>
 <tr><td><code>pgsx.ingest</code></td><td>bulk · analysis</td><td>An S3 prefix of pgsc_calc output or a wide file → validated <code>score_vectors</code>, <code>pgs_qc</code> and a <code>score_set</code>. Idempotent by task ref.</td></tr>
 <tr><td><code>pgsx.summarize</code></td><td>bulk · analysis</td><td>A score set → <code>pgs_summaries</code> for each system cohort. One task per PGS block.</td></tr>
 <tr><td><code>pgsx.catalog_sync</code></td><td>bulk · analysis</td><td>The PGS Catalog REST API → the <code>pgs</code> table. Runs on a schedule and on demand.</td></tr>
@@ -422,9 +422,8 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
   <li><strong>pgsc_calc on Slurm:</strong> the sbatch job runs a Nextflow head process with <code>-profile slurm</code>, which fans out its own Slurm jobs. The delegate tracks the head job, and progress comes from Nextflow's trace file.</li>
   <li><strong>The pgsc_calc batch script</strong> (<code>hpc/pgsc_calc.sbatch</code>):
     <ol>
-      <li>Stages the VCF(s) and scoring inputs from S3 to scratch.</li>
+      <li>Stages the VCF(s) and scoring inputs from S3 to scratch. A score matrix is already in pgsc_calc's own format and is passed through unchanged with <code>--scorefile</code>.</li>
       <li>Writes the pgsc_calc samplesheet.</li>
-      <li>Turns a PGS score matrix into PGS Catalog-format scoring files, if one was given.</li>
       <li>Runs <code>pgscatalog/pgsc_calc</code> with <code>--target_build</code>, <code>--pgs_id</code> and/or <code>--scorefile</code>, plus <code>--run_ancestry</code> with the reference panel.</li>
       <li>Uploads <code>results/</code> and a <code>_SUCCESS</code> marker to the run prefix, then cleans up scratch.</li>
     </ol>
