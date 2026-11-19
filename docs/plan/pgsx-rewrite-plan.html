@@ -157,6 +157,8 @@ html { scroll-behavior: smooth; }
   <div class="decision"><div class="k">User-score minimum</div><p>At least 3 variants. Sample IDs are never reported for protected datasets, so no score can be tied to a sample.</p></div>
   <div class="decision"><div class="k">Refresh cadence</div><p>Latest PGS Catalog and latest pgsc_calc, refreshed at least every 6 months. Each refresh is a new release of every dataset, scored through the normal pipeline.</p></div>
   <div class="decision"><div class="k">Deferred</div><p>Biobank JWT details (issuer, JWKS, audience, login start) and the return credential flow are settled later. Until then, development uses local and CILogon logins with admin grants.</p></div>
+  <div class="decision"><div class="k">Second site</div><p>If no second biobank joins before the paper, the evidence for "deployable" is a clean, 1KG-only second site installed from the operator docs alone.</p></div>
+  <div class="decision"><div class="k">First step</div><p>Score every Catalog score on every dataset now, by hand, with the scripts in <code>hpc/</code>. They use pgsc_calc v2.3.0 with <code>--min_overlap 0</code> and <code>--run_ancestry</code>, and write results to S3. The Slurm delegate later reuses the same batch script.</p></div>
   <div class="decision"><div class="k">Scope v1</div><p>Feature parity, the score pipeline including user uploads, and packaging another site can install.</p></div>
   <div class="decision"><div class="k">Compute</div><p>Two kinds of worker. One or two always-on <strong>analysis workers</strong> run queries and analyses and return results to the web. A <strong>Slurm delegate</strong> submits HPC jobs, such as pgsc_calc for one dataset's VCFs with a score matrix.</p></div>
   <div class="decision"><div class="k">Genotypes</div><p>Each dataset's VCFs sit in a fixed location on the cluster. Jobs name the dataset, and the delegate's config maps that name to paths. Paths never appear in a payload, and VCFs never go to S3.</p></div>
@@ -605,7 +607,7 @@ samples: s3://…/datasets/biobank-a/samples.tsv   # sample_id, participant_id, 
     <ul>
       <li>Datasets, releases, samples, cohorts, score vectors, and <code>dataset_grants</code>.</li>
       <li><code>pgsatlas ingest pgsc-calc</code> from S3.</li>
-      <li>PGS Catalog sync. The first pgsc_calc runs (1KG 30×, then the three biobank datasets) are started by hand on the cluster with the same sbatch template the delegate will use, so ingestion isn't blocked on P4.</li>
+      <li>PGS Catalog sync. The first pgsc_calc runs (1KG 30×, then the three biobank datasets) are already running by hand on the cluster with <code>hpc/</code> (fetch the Catalog, make batches, submit Slurm arrays). The delegate will reuse the same batch script, so ingestion isn't blocked on P4.</li>
     </ul>
     <p class="exit">Exit: 1KG and the three biobank datasets are freshly scored and loaded, and vector reads are benchmarked.</p></div></div>
   <div class="ms"><div class="id">P2</div><div><h4>Analysis parity</h4>
@@ -647,9 +649,7 @@ samples: s3://…/datasets/biobank-a/samples.tsv   # sample_id, participant_id, 
 
 <section id="questions">
 <h2>Open questions</h2>
-<ol class="q">
-  <li><strong>A second site:</strong> possible but not confirmed. If none materialises before the paper, the fallback evidence is a clean install of a second, 1KG-only site from the operator docs alone, on separate infrastructure, plus the per-dataset issuer model shown with two issuers.</li>
-</ol>
+<p>None right now. Everything raised so far is recorded under <a href="#decisions">Decisions so far</a>.</p>
 </section>
 
 </main>
