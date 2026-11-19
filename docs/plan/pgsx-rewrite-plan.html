@@ -125,6 +125,7 @@ html { scroll-behavior: smooth; }
     <li><a href="#auth">Auth and access</a></li>
     <li><a href="#privacy">Privacy rules</a></li>
     <li><a href="#analyses">Analyses and API</a></li>
+    <li><a href="#scores">One score pipeline</a></li>
     <li><a href="#jobs">Jobs and the queue</a></li>
     <li><a href="#slurm">Slurm delegate</a></li>
     <li><a href="#milestones">Milestones</a></li>
@@ -147,7 +148,10 @@ html { scroll-behavior: smooth; }
   <div class="decision"><div class="k">Within-dataset only</div><p>A sample can only be compared with other samples in the same dataset. Each analysis runs on exactly one dataset.</p></div>
   <div class="decision"><div class="k">Data return</div><p>Per sample, the scores for the requested PGS are sent back to the biobank, server to server, over an OAuth2 token flow. Only biobank datasets can be returned, and only to the biobank.</p></div>
   <div class="decision"><div class="k">Privacy floor</div><p>Private datasets need at least 10 samples per group or cell; the number is configurable per dataset. The open dataset can also show sample-level views.</p></div>
-  <div class="decision"><div class="k">Scope v1</div><p>Feature parity, plus a way to add and manage new data: pgsc_calc runs per dataset, and ingestion. Admins run pgsc_calc in v1. Users uploading their own score matrix comes later.</p></div>
+  <div class="decision"><div class="k">Lead</div><p><strong>Score-to-data, as a deployable service.</strong> Anyone with access can run their own score against private genotypes and get privacy-gated aggregates back. Any biobank can run the service behind its own login.</p></div>
+  <div class="decision"><div class="k">One score pipeline</div><p>New PGS Catalog scores and user-uploaded scores go through the same steps: stage, validate, approve, batch, pgsc_calc, ingest. Only the source and the visibility differ.</p></div>
+  <div class="decision"><div class="k">Admin role</div><p>Admins mainly define datasets: a declarative YAML file per dataset covering build, pinned pgsc_calc version and reference panel, privacy, access, and user-score policy. Releases, scoring and ancestry groups follow from that file.</p></div>
+  <div class="decision"><div class="k">Scope v1</div><p>Feature parity, the score pipeline including user uploads, and packaging another site can install.</p></div>
   <div class="decision"><div class="k">Compute</div><p>Two kinds of worker. One or two always-on <strong>analysis workers</strong> run queries and analyses and return results to the web. A <strong>Slurm delegate</strong> submits HPC jobs, such as pgsc_calc for one dataset's VCFs with a score matrix.</p></div>
   <div class="decision"><div class="k">Genotypes</div><p>Each dataset's VCFs sit in a fixed location on the cluster. Jobs name the dataset, and the delegate's config maps that name to paths. Paths never appear in a payload, and VCFs never go to S3.</p></div>
   <div class="decision"><div class="k">Demo data</div><p>The latest 1000 Genomes 30× WGS release (NYGC high coverage, GRCh38).</p></div>
@@ -176,7 +180,7 @@ html { scroll-behavior: smooth; }
 <tr><td><strong>C. Phenotype loop</strong></td><td>Cohort definitions from the EHR go in, PGS associations come out in seconds, and the per-sample scores go back to the biobank for downstream work. That's a "PGS PheWAS" inside a care-system biobank.</td><td>Case/control import at scale, covariates (age, sex, PCs) server-side, and data return.</td><td>Covariate-adjusted models and data return in v1.</td></tr>
 <tr><td><strong>D. The science, with the tool as its vehicle</strong></td><td>A systematic look at how every current PGS transfers across ancestries in a diverse US biobank, re-scored with the latest pgsc_calc, with 1KG as the open reference anyone can reproduce.</td><td>EHR phenotypes for many traits, precomputed evaluations, and a stats plan.</td><td>Precompute pipelines over interactive features.</td></tr>
 </tbody></table></div>
-<p>A and B fit together (a deployable score-to-data service), and so do C and D. Choosing a primary angle before P2 would settle the open scope questions below.</p>
+<p><strong>Decided: A + B, a deployable score-to-data service.</strong> The biobank deployment is the first proof that it works in a real setting, and 1000 Genomes is the public demo. C and D stay possible later on the same platform. Supporting A costs little extra because of the <a href="#scores">single score pipeline</a>: user scores are the same process as new Catalog scores.</p>
 </section>
 
 <section id="today">
@@ -267,7 +271,7 @@ flowchart LR
 </pre>
 </div>
 <ul>
-  <li><strong>One Go binary, <code>pgsatlas</code></strong>, with subcommands: <code>serve</code>, <code>worker</code>, <code>slurm-delegate</code>, <code>initdb</code>, <code>migratedb</code>, <code>dataset</code>, <code>group</code>, <code>ingest</code>, <code>pgs</code>, <code>user</code>, <code>apikey</code> and <code>job</code>. This matches the shape of <code>cmd/paperkb</code>.</li>
+  <li><strong>One Go binary, <code>pgsatlas</code></strong>, with subcommands: <code>serve</code>, <code>worker</code>, <code>slurm-delegate</code>, <code>initdb</code>, <code>migratedb</code>, <code>dataset</code>, <code>group</code>, <code>score</code>, <code>ingest</code>, <code>user</code>, <code>apikey</code> and <code>job</code>. This matches the shape of <code>cmd/paperkb</code>.</li>
   <li><strong>Separate frontend service</strong> (<code>frontend/</code>), on React Router v7 SSR. Loaders call <code>/api/v1</code> and forward the session cookie. On Kubernetes, the ingress routes <code>/api</code> to the Go service and everything else to the frontend, so the app stays same-origin (Caddy only in local compose).</li>
   <li><strong>muranoq is a separate service</strong> in its own Postgres schema or database. The app keeps a <code>jobs</code> row that mirrors each muranoq job ID, so the UI can list a user's work without asking muranoq for it.</li>
   <li><strong>S3 holds bulk data:</strong> pgsc_calc inputs and outputs, ingest staging files, exports and large precomputed artifacts. Postgres holds everything the API reads.</li>
@@ -326,16 +330,17 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 <div class="tbl"><table>
 <thead><tr><th>Table</th><th>Purpose</th><th>Key columns</th></tr></thead>
 <tbody>
-<tr><td><code>datasets</code></td><td>Genotyped populations</td><td>slug, name, description, privacy_profile (<code>open</code> | <code>protected</code>), min_cell, genome_build, returnable_to_biobank bool</td></tr>
+<tr><td><code>datasets</code></td><td>Genotyped populations</td><td>slug, name, description, privacy_profile (<code>open</code> | <code>protected</code>), min_cell, genome_build, accepts_user_scores, user_scores_need_approval, pgsc_calc_version, ref_panel, returnable_to_biobank bool</td></tr>
 <tr><td><code>dataset_grants</code></td><td>Who may see a dataset other than <code>open</code> ones</td><td>dataset_id, grantee_kind (<code>provider</code> | <code>user</code> | <code>group</code>), grantee (e.g. <code>biobank</code>, a user id), granted_by, expires_at</td></tr>
 <tr><td><code>dataset_releases</code></td><td>Immutable data releases</td><td>dataset_id, version, status (<code>loading</code> | <code>active</code> | <code>retired</code>), created_by</td></tr>
 <tr><td><code>samples</code></td><td>Sample index within a release. Never exposed for protected datasets.</td><td>(release_id, idx) PK, sample_id, participant_id (biobank), sex, inferred_ancestry, population (1KG), related bool</td></tr>
 <tr><td><code>sample_groups</code></td><td>Subsets of one release</td><td>id, release_id, kind (<code>system</code> | <code>biobank_import</code> | <code>admin</code>), owner_user_id, name, external_id, members int[], size, members_hash</td></tr>
-<tr><td><code>pgs</code></td><td>Full PGS Catalog metadata, synced from the Catalog REST API</td><td>pgs_id, name, trait_reported, trait_efo[], method, n_variants, publication, dev_ancestry jsonb, license</td></tr>
+<tr><td><code>scores</code></td><td>Every score, from the Catalog or a user</td><td>id, source (<code>catalog</code> | <code>user</code>), pgs_id (Catalog), owner_user_id (user), visibility (<code>dataset</code> | <code>owner</code>), name, trait_reported, trait_efo[], n_variants, n_eff, genome_build, scorefile_s3, sha256, catalog metadata jsonb (method, publication, dev_ancestry, license)</td></tr>
+<tr><td><code>score_requests</code></td><td>One request to score something on some datasets</td><td>id, requested_by (user or <code>system</code>), score_ids[], dataset_ids[], status (<code>validating</code> | <code>awaiting_approval</code> | <code>queued</code> | <code>running</code> | <code>done</code> | <code>failed</code> | <code>rejected</code>), approved_by, job_ids[]</td></tr>
 <tr><td><code>score_sets</code></td><td>One pgsc_calc run or import into a release</td><td>release_id, source (<code>pgsc_calc</code> | <code>import</code> | <code>user_upload</code>), owner_user_id (user uploads), visibility (<code>dataset</code> | <code>owner</code>), pgsc_calc_version, s3_prefix, job_id</td></tr>
-<tr><td><code>score_vectors</code></td><td>The vectors themselves</td><td>(release_id, score_id, score_type) PK, score_set_id, values real[], n_present. <code>score_id</code> is a PGS ID or a user score's ID.</td></tr>
-<tr><td><code>pgs_qc</code></td><td>Per-score QC from pgsc_calc: variant match rate, pass/fail, reason</td><td>release_id, score_id, match_rate, passed, reason</td></tr>
-<tr><td><code>pgs_summaries</code></td><td>Precomputed stats per (score, type, system group)</td><td>n, mean, sd, quantiles real[], hist jsonb</td></tr>
+<tr><td><code>score_vectors</code></td><td>The vectors themselves</td><td>(release_id, score_id, score_type) PK, score_set_id, values real[], n_present. <code>score_id</code> refers to <code>scores</code>, from either source.</td></tr>
+<tr><td><code>score_qc</code></td><td>Per-score QC from pgsc_calc: variant match rate, pass/fail, reason</td><td>release_id, score_id, match_rate, passed, reason</td></tr>
+<tr><td><code>score_summaries</code></td><td>Precomputed stats per (score, type, system group)</td><td>n, mean, sd, quantiles real[], hist jsonb</td></tr>
 <tr><td><code>users</code>, <code>identities</code>, <code>sessions</code>, <code>api_keys</code></td><td>Identity. One user can have several identities.</td><td>identities(user_id, provider <code>local</code> | <code>cilogon</code> | <code>biobank</code>, subject, password_hash for local). sessions(user_id, provider used at login, expires_at), revocable.</td></tr>
 <tr><td><code>oauth_tokens</code></td><td>Biobank OAuth2 tokens for returning data</td><td>user_id, refresh_token (encrypted), scope, expires_at</td></tr>
 <tr><td><code>jobs</code></td><td>The app's mirror of muranoq jobs</td><td>id, muranoq_job_id, type, user_id, dataset_id, state, progress jsonb, result jsonb</td></tr>
@@ -388,7 +393,14 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 <ul>
   <li><strong>Users cannot create groups from arbitrary ID lists</strong> on protected datasets. Groups come from the biobank import or from admins.</li>
   <li><strong>The cache key includes the privacy profile</strong>, so a result computed under <code>open</code> rules can never be served for a protected dataset.</li>
-  <li><strong>User-uploaded scores</strong> (later) produce a score set with <code>visibility: owner</code>. Only the uploader and admins see it, under the dataset's normal privacy profile.</li>
+  <li><strong>User-uploaded scores</strong> get <code>visibility: owner</code>. Only the uploader and admins see them, under the dataset's normal privacy profile.</li>
+  <li><strong>Rules for user scores on protected datasets.</strong> A crafted score is a genotype query in disguise. A score that puts its weight on one or a few variants turns a distribution into genotype counts, and differencing between groups could then point to individuals, as in beacon attacks. So <code>score.validate</code> rejects a user score unless all of the following hold, with thresholds configurable per dataset:
+    <ul>
+      <li>It has at least a minimum number of variants (for example 50).</li>
+      <li>Its effective number of variants, n<sub>eff</sub> = (Σ|w|)² / Σw², is above a floor.</li>
+      <li>No single variant carries more than a set share of the total absolute weight.</li>
+    </ul>
+    Quotas, approval and the audit log back this up. Catalog scores with very few variants are public, but the minimum group size and bin suppression still apply to them.</li>
 </ul>
 </section>
 
@@ -418,6 +430,79 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 </ul>
 </section>
 
+<section id="scores">
+<h2>One score pipeline</h2>
+<p>Adding a score from the PGS Catalog and a user bringing their own score are the same process. Only two things differ: where the scoring file comes from, and who can see the results. There is one pipeline, one set of job types and one data model for both, so the score-to-data feature isn't a separate system to build and maintain.</p>
+<div class="tbl"><table>
+<thead><tr><th>Step</th><th>PGS Catalog score</th><th>User score</th><th>Runs on</th></tr></thead>
+<tbody>
+<tr><td>1. Request</td><td><code>catalog_sync</code> finds Catalog scores a dataset doesn't have yet and files a request as <code>system</code>. Admins can also request specific IDs.</td><td>A signed-in user uploads a scoring file (S3 presigned PUT) and picks target datasets they can access that accept user scores.</td><td>API</td></tr>
+<tr><td>2. Stage</td><td><code>score.fetch</code> downloads the Catalog scoring file to <code>s3://…/scores/{score_id}/{sha256}</code>.</td><td>The upload is moved to the same layout.</td><td>Analysis worker (bulk)</td></tr>
+<tr><td>3. Validate</td><td colspan="2"><code>score.validate</code> checks the pgsc_calc scoring-file format, genome build, size and variant count. For user scores on protected datasets it also applies the score rules in <a href="#privacy">Privacy</a>.</td><td>Analysis worker (bulk)</td></tr>
+<tr><td>4. Approve</td><td>Automatic</td><td>Automatic or admin approval, depending on each dataset's policy. Per-user quotas apply.</td><td>API / admin UI</td></tr>
+<tr><td>5. Batch</td><td colspan="2">A per-dataset batcher groups approved scores into pgsc_calc runs (for example, up to N scores, or every few hours), since reading genotypes dominates the run time. A user's scores can share a run with Catalog scores, because visibility is assigned per score at ingest.</td><td>Analysis worker (scheduled)</td></tr>
+<tr><td>6. Score</td><td colspan="2"><code>hpc.pgsc_calc</code>, one task per dataset. Every score is passed as <code>--scorefile</code> from the staged S3 copy, so runs are reproducible and compute nodes never call the Catalog.</td><td>Slurm delegate</td></tr>
+<tr><td>7. Load</td><td colspan="2"><code>ingest</code>, then <code>summarize</code>. These write score vectors, QC and summaries.</td><td>Analysis worker (bulk)</td></tr>
+<tr><td>8. Visible to</td><td>Everyone with access to the dataset</td><td>The uploader and admins (sharing with named users later)</td><td>Access layer</td></tr>
+</tbody></table></div>
+<ul>
+  <li><strong>Comparability:</strong> a dataset release pins the pgsc_calc version and the ancestry reference panel, so Z-scores from different runs in the same release are comparable. Changing either one starts a new release and re-scores everything, which is what's happening now with the move to the current PGS set.</li>
+  <li><strong>Provenance:</strong> each score row keeps the scoring file's sha256, its source (Catalog ID and release date, or uploader), and the run that produced each vector. A user can cite exactly what was run.</li>
+  <li><strong>CLI and UI share the API:</strong> <code>pgsatlas score request --catalog PGS005000-PGS005200 --dataset biobank-a</code> and the upload page both create a <code>score_requests</code> row.</li>
+</ul>
+
+<h3>Defining a dataset: the main admin job</h3>
+<p>Because every score goes through the same pipeline, an admin's main job is defining datasets. Everything else (scoring, ancestry groups, summaries) follows from the definition. A dataset is a YAML file applied with <code>pgsatlas dataset apply -f</code>. It's declarative, so it can be kept in version control at each site.</p>
+<pre><code># datasets/biobank-a.yaml
+slug: biobank-a
+name: "Biobank cohort A"
+description: "…"
+genome_build: GRCh38
+scoring:
+  pgsc_calc_version: "2.x.y"      # pinned per release
+  ref_panel: "pgsc_HGDP+1kGP_v1"   # pinned per release
+  catalog: all                     # or a filter (min match rate, traits, list)
+privacy:
+  profile: protected               # open | protected
+  min_cell: 10
+access:
+  providers: [biobank]             # trusted JWT issuers that grant this dataset
+  users: []                        # extra named grants (CILogon, local)
+user_scores:
+  accepted: true
+  need_approval: true
+  min_variants: 50
+  min_n_eff: 20
+  max_variant_weight_share: 0.05
+  quota: { scores_per_request: 20, runs_per_month: 10 }
+biobank_return: true               # per-sample scores may go back to the biobank
+samples: s3://…/datasets/biobank-a/samples.tsv   # sample_id, participant_id, sex
+</code></pre>
+<ul>
+  <li><strong>The cluster half:</strong> the delegate's own config maps <code>biobank-a</code> to its VCF path pattern. The app never sees paths.</li>
+  <li><strong>Ancestry groups come free:</strong> pgsc_calc's <code>--run_ancestry</code> output assigns each sample its most similar reference population. The first ingest of a release turns those assignments into the dataset's system sample groups, so nobody maintains ancestry lists by hand. 1KG adds its own population labels.</li>
+  <li><strong>Lifecycle:</strong>
+    <ol>
+      <li><code>apply</code> creates or updates the definition.</li>
+      <li><code>release create</code> starts a release in <code>loading</code> and files a <code>system</code> score request for every Catalog score matching <code>scoring.catalog</code>.</li>
+      <li>The pipeline runs.</li>
+      <li><code>release promote</code> makes it <code>active</code>, after an admin looks at QC (match rates, failures).</li>
+      <li><code>release retire</code> retires the old one.</li>
+    </ol>
+    Changing <code>pgsc_calc_version</code> or <code>ref_panel</code> requires a new release.</li>
+  <li><strong>The admin UI</strong> is mostly for viewing and approving: datasets and their releases and QC, pending user-score approvals, jobs, and the audit log. Definitions change through the CLI or API, so they stay reviewable.</li>
+</ul>
+
+<h3>What "deployable" means for v1</h3>
+<ul>
+  <li><strong>One install:</strong> a kustomize package (Helm if asked for) with Postgres, muranoq, the API, the frontend, the workers and the ingress. A second site changes only configuration.</li>
+  <li><strong>Site configuration only:</strong> the trusted JWT issuers, the S3 bucket, branding, and one dataset file per dataset (above). No code changes for a new site.</li>
+  <li><strong>The cluster side is one config file:</strong> the delegate's <code>pgsatlas.yaml</code> maps dataset slugs to VCF paths and builds, plus an sbatch template the site edits for its own partitions and modules.</li>
+  <li><strong>1000 Genomes 30× in every install:</strong> a scripted fetch and score of 1KG gives each new site a working open dataset on day one. It's also the reference that results from different sites can be checked against.</li>
+  <li><strong>Docs written for an outside operator,</strong> tested by standing up a clean install from them.</li>
+</ul>
+</section>
+
 <section id="jobs">
 <h2>Jobs and the queue</h2>
 <p>Everything runs in one muranoq namespace, <code>pgsatlas</code>. The app submits jobs with a <code>submit</code> account. The analysis workers and the Slurm delegate each use their own <code>work</code> account. Every job is tagged <code>user:&lt;id&gt;</code> and <code>dataset:&lt;slug&gt;</code>.</p>
@@ -433,10 +518,12 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 <thead><tr><th>Type</th><th>Queue · worker</th><th>Input → output</th></tr></thead>
 <tbody>
 <tr><td><code>pgsatlas.analysis.distribution</code>, <code>pgsatlas.analysis.case_control</code></td><td>interactive · analysis</td><td>Normalized request → privacy-gated aggregates written to <code>results</code>. The task result is just the result key.</td></tr>
-<tr><td><code>pgsatlas.hpc.pgsc_calc</code></td><td>hpc · Slurm delegate</td><td>One task per dataset: {dataset slug, release; scores: PGS Catalog IDs and/or a score matrix on S3, already in pgsc_calc's scoring-file format; run_ancestry}. The delegate maps the slug to that dataset's VCFs and build. Output: pgsc_calc results under <code>s3://…/runs/{task ref}/</code>.</td></tr>
-<tr><td><code>pgsatlas.ingest</code></td><td>bulk · analysis</td><td>An S3 prefix of pgsc_calc output or a wide file → validated <code>score_vectors</code>, <code>pgs_qc</code> and a <code>score_set</code>. Idempotent by task ref.</td></tr>
-<tr><td><code>pgsatlas.summarize</code></td><td>bulk · analysis</td><td>A score set → <code>pgs_summaries</code> for each system sample group. One task per PGS block.</td></tr>
-<tr><td><code>pgsatlas.catalog_sync</code></td><td>bulk · analysis</td><td>The PGS Catalog REST API → the <code>pgs</code> table. Runs on a schedule and on demand.</td></tr>
+<tr><td><code>pgsatlas.hpc.pgsc_calc</code></td><td>hpc · Slurm delegate</td><td>One task per dataset: {dataset slug, release; scoring files staged on S3 by the score pipeline, from the Catalog or uploaded, all in pgsc_calc's format; run_ancestry}. The delegate maps the slug to that dataset's VCFs and build. Output: pgsc_calc results under <code>s3://…/runs/{task ref}/</code>.</td></tr>
+<tr><td><code>pgsatlas.ingest</code></td><td>bulk · analysis</td><td>An S3 prefix of pgsc_calc output or a wide file → validated <code>score_vectors</code>, <code>score_qc</code> and a <code>score_set</code>. Idempotent by task ref.</td></tr>
+<tr><td><code>pgsatlas.summarize</code></td><td>bulk · analysis</td><td>A score set → <code>score_summaries</code> for each system sample group. One task per PGS block.</td></tr>
+<tr><td><code>pgsatlas.catalog_sync</code></td><td>bulk · analysis</td><td>The PGS Catalog REST API → Catalog rows in <code>scores</code>, plus a <code>system</code> score request for anything a dataset hasn't scored yet. Runs on a schedule and on demand.</td></tr>
+<tr><td><code>pgsatlas.score.fetch</code>, <code>pgsatlas.score.validate</code></td><td>bulk · analysis</td><td>Stage a Catalog scoring file, or a user upload, to S3, then check its format, build and limits. See <a href="#scores">One score pipeline</a>.</td></tr>
+<tr><td><code>pgsatlas.score.batch</code></td><td>bulk · analysis (scheduled)</td><td>Approved scores → one <code>hpc.pgsc_calc</code> job per batch, with one task per dataset</td></tr>
 <tr><td><code>pgsatlas.biobank_export</code></td><td>bulk · analysis</td><td>A sample group in a returnable dataset plus a list of PGS → per-sample scores pushed to the biobank over OAuth2. Audit-logged.</td></tr>
 <tr><td><code>pgsatlas.analysis.multivariate</code></td><td>interactive or bulk · analysis (later)</td><td>Correlation and clustering over many PGS. It goes to bulk when the PGS set is large.</td></tr>
 </tbody></table></div>
@@ -450,14 +537,7 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 </ol>
 <p><strong>The analysis worker.</strong> <code>pgsatlas worker</code> is built on the <code>muranoq-go</code> <code>worker</code> package. It creates a <code>worker.New(client, worker.Config{Name, Concurrency, Capacity})</code>, registers a handler for each type with <code>w.Handle("pgsatlas.ingest", …)</code>, and runs <code>w.Run(ctx)</code>. The SDK handles registration, claiming within free capacity, lease heartbeats, stop/cancel signals, and deregistration on SIGTERM. Handlers just decode the payload, use the task ref as their idempotency key, report progress with <code>t.Progress(…)</code>, and return either a result or an error: <code>worker.Terminal(err)</code> for bad input, <code>worker.Retry(err, d)</code> for a retry after a delay. The API server uses <code>muranoq-go/client</code> to submit jobs (with an idempotency key and tags) and to read their state. Connection settings come from <code>MURANOQ_URL</code> and <code>MURANOQ_TOKEN_FILE</code>, or from the <code>muranoq:</code> block in <code>pgsatlas.yaml</code>.</p>
 <p><strong>Chaining.</strong> pgsc_calc → ingest → summarize runs as a dependency chain, or as follow-on jobs if muranoq's M2 lands first. Until then, a reconciler loop in <code>pgsatlas worker</code> watches the app's <code>jobs</code> rows and submits the next step. The same loop mirrors muranoq state into <code>jobs</code> for the UI, using events or SSE once muranoq has them and polling until then.</p>
-<p><strong>Adding new data (the new v1 feature):</strong></p>
-<ol>
-  <li>An admin runs <code>pgsatlas dataset release create biobank-a</code>, or picks an existing release.</li>
-  <li><code>pgsatlas pgs compute --dataset biobank-a,biobank-b,1kg-30x --pgs PGS005000-PGS005200</code> (or the admin UI) submits one <code>pgsatlas.hpc.pgsc_calc</code> job with one task per dataset.</li>
-  <li>The job gets as far as Slurm, and its progress shows on the admin Jobs page.</li>
-  <li>Ingest and summarize run. The new scores appear in <code>loading</code> state, and an admin promotes them to <code>active</code>.</li>
-  <li>For outputs already on S3 there's a direct path: <code>pgsatlas ingest pgsc-calc s3://…</code>.</li>
-</ol>
+<p><strong>Adding scores</strong> (from the Catalog or a user) is described in <a href="#scores">One score pipeline</a>. For pgsc_calc outputs already on S3 there is also a direct admin path: <code>pgsatlas ingest pgsc-calc s3://…</code>.</p>
 </section>
 
 <section id="slurm">
@@ -486,7 +566,7 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
   <li><strong>The pgsc_calc batch script</strong> (<code>hpc/pgsc_calc.sbatch</code>):
     <ol>
       <li>Looks up the task's dataset in the delegate config (<code>datasets.&lt;slug&gt;.vcf</code>, <code>target_build</code>) and writes the pgsc_calc samplesheet pointing at those VCFs in place. Nothing is copied.</li>
-      <li>Stages the score matrix (if any) from S3 to scratch. It's already in pgsc_calc's own format and is passed through unchanged with <code>--scorefile</code>.</li>
+      <li>Stages the batch's scoring files from S3 to scratch. Catalog and user files are both already in pgsc_calc's format and are passed unchanged with <code>--scorefile</code>.</li>
       <li>Runs <code>pgscatalog/pgsc_calc</code> with <code>--target_build</code>, <code>--pgs_id</code> and/or <code>--scorefile</code>, plus <code>--run_ancestry</code> with the reference panel.</li>
       <li>Uploads <code>results/</code> and a <code>_SUCCESS</code> marker to the run prefix, then cleans up scratch.</li>
     </ol>
@@ -539,13 +619,14 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
       <li>Server-to-server sample group import, group management, and the audit log.</li>
     </ul>
     <p class="exit">Exit: a biobank user reproduces today's analyses on a biobank dataset, and an anonymous user can't tell those datasets exist.</p></div></div>
-  <div class="ms"><div class="id">P4</div><div><h4>Queue and Slurm</h4>
+  <div class="ms"><div class="id">P4</div><div><h4>Score pipeline</h4>
     <ul>
       <li><code>pgsatlas worker</code> on the muranoq-go <code>worker</code> package, the ingest and summarize handlers, and the reconciler.</li>
       <li>The <code>pgsatlas slurm-delegate</code> cron job and the pgsc_calc sbatch template.</li>
-      <li>pgsc_calc per dataset → S3 → ingest. Admin pages for jobs and datasets.</li>
+      <li>Score requests, fetch, validate (with the user-score rules), approval, batching, pgsc_calc per dataset, ingest. The upload page, "my scores", and admin pages for requests, jobs and datasets.</li>
+      <li>Kustomize package and operator docs. Tested with a clean install that has only 1KG.</li>
     </ul>
-    <p class="exit">Exit: an admin adds 100 new PGS from the CLI and they appear after promotion.</p></div></div>
+    <p class="exit">Exit: 100 new Catalog scores and one user-uploaded score go through the same path. The user sees their score's distribution and case/control results on a protected dataset; nobody else can see it.</p></div></div>
   <div class="ms"><div class="id">P5</div><div><h4>Cutover</h4>
     <ul>
       <li>Run the new site side by side with the old one. For PGS present in both, compare distributions on the dataset that holds the old samples. Expect small differences from the new pgsc_calc version; the check is for gross errors, not equality.</li>
@@ -555,7 +636,6 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
   <div class="ms"><div class="id">P6</div><div><h4>Beyond parity</h4>
     <ul>
       <li>Trait comparison, portability, aggregate multivariate views (and sample-level ones on 1KG), and OAuth2 data return to the biobank.</li>
-      <li>Users uploading their own score matrix to run against datasets they can access.</li>
       <li>A muranoq <code>delegate</code> mode, if the cron job shows the need.</li>
     </ul>
     <p class="exit">Exit: scoped separately.</p></div></div>
@@ -565,11 +645,12 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 <section id="questions">
 <h2>Open questions</h2>
 <ol class="q">
-  <li><strong>Primary angle:</strong> which claim from <a href="#name">positioning</a> leads (score-to-data, deployable service, phenotype loop, or the science)? This decides whether user score uploads, covariates or packaging move into v1.</li>
   <li><strong>Biobank JWT details:</strong> the issuer, the JWKS URL, the audience, and how login starts (a redirect that carries the token, or a POST from the biobank site).</li>
   <li><strong>Which PGS to score:</strong> every current PGS Catalog score, or a filtered set (by match rate after a first pass, or by trait)? And which pgsc_calc version to pin for the paper?</li>
   <li><strong>Data return format:</strong> which score types per PGS (SUM, Z_norm2, percentile…), keyed by participant and dataset, and what the biobank's ingest endpoint expects.</li>
-  <li><strong>User score uploads:</strong> should a run need admin approval, and what quota applies? This becomes urgent if score-to-data is the lead angle.</li>
+  <li><strong>User score defaults on the biobank datasets:</strong> admin approval or automatic? Which quotas (scores per request, runs per month)? Which thresholds for minimum variants, n<sub>eff</sub> and maximum single-variant weight? And does the biobank's governance need to sign off on aggregate results from user scores?</li>
+  <li><strong>Batching:</strong> how quickly should a user score come back (same day, overnight)? That sets the batch size and interval against Slurm queue time.</li>
+  <li><strong>A second site:</strong> is there a likely second deployment (another biobank or institution) to test "deployable" against before the paper?</li>
   <li><strong>Kubernetes on Jetstream2:</strong> Postgres in the cluster (CloudNativePG) or a managed or VM instance? And which ingress does the cluster use?</li>
 </ol>
 </section>
