@@ -144,6 +144,7 @@ html { scroll-behavior: smooth; }
   <div class="decision"><div class="k">Privacy floor</div><p>The minimum cohort or cell size is 10 by default and can be configured.</p></div>
   <div class="decision"><div class="k">Scope v1</div><p>Feature parity, plus a way to add and manage new data: pgsc_calc runs and ingestion.</p></div>
   <div class="decision"><div class="k">Compute</div><p>Two kinds of worker. One or two always-on <strong>analysis workers</strong> run queries and analyses and return results to the web. A <strong>Slurm delegate</strong> submits HPC jobs such as pgsc_calc on a VCF with a set of scoring files.</p></div>
+  <div class="decision"><div class="k">Queue SDK</div><p>pgsx uses muranoq-go: <code>worker</code> for the analysis workers, <code>client</code> for the API and the Slurm delegate. muranoq-go goes public before pgsx ships. Until then, development builds use <code>GOPRIVATE=github.com/muranohq/*</code>, and CI uses a deploy key.</p></div>
   <div class="decision"><div class="k">Config</div><p>YAML (<code>pgsx.yaml</code>). Precedence is flag, then env, then file.</p></div>
   <div class="decision"><div class="k">Hosting</div><p>Jetstream2 at IU. Compute nodes can reach the S3 buckets with the operator's credentials on that server.</p></div>
 </div>
@@ -499,7 +500,6 @@ hpc/                      slurm-delegate cron entry, sbatch templates, nextflow 
 <section id="questions">
 <h2>Open questions</h2>
 <ol class="q">
-  <li><strong>muranoq-go is private, and this repo is public.</strong> We've decided to use the SDK for <code>pgsx worker</code> and for submitting jobs. Until muranoq-go is public, building pgsx needs read access to it: <code>GOPRIVATE=github.com/muranohq/*</code> and a deploy key in CI, as muranoq-server does. Anyone outside the lab who clones the repo can't build it until then. Will muranoq-go be made public before pgsx is?</li>
   <li><strong>Where do the biobank genotypes live for pgsc_calc?</strong> On the cluster filesystem only, or staged in S3? This decides what the <code>pgsx.pgsc_calc</code> payload points at and who can read that bucket.</li>
   <li><strong>What does the biobank JWT look like?</strong> We need the issuer, the JWKS URL, the audience, and which claims carry dataset entitlements. We also need to know how login starts: a redirect carrying the token, or a token the user pastes.</li>
   <li><strong>What goes back to the biobank?</strong> Per-sample PGS values for a cohort, or derived flags? This is the only path for sample-level data, so its scope should be explicit.</li>
