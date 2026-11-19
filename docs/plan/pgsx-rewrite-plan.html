@@ -244,7 +244,8 @@ internal/privacy/         the single aggregate gate: min-n, bin suppression, no 
 internal/ingest/          pgsc_calc parsers (aggregated_scores, info, matching), wide-file importer
 internal/pgscat/          PGS Catalog REST client + metadata sync
 internal/biobank/         biobank API client (cohorts, participant IDs, data return)
-internal/queue/           muranoq REST client + worker loop (see the public-repo question)
+internal/jobs/            one handler per job type, registered on a muranoq-go worker.Worker
+                          (github.com/muranohq/muranoq-go/worker); submit side uses muranoq-go/client
 internal/storage/         S3 (aws-sdk-go-v2, as paperKB) + local fs for dev
 db/migrations/            goose NNNN_name.sql, embedded
 frontend/                 React Router v7 SSR app
@@ -357,6 +358,7 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
 <tr><td><code>pgsx.biobank_export</code></td><td>Go worker</td><td>A cohort and score selection → a push to the biobank over OAuth2</td></tr>
 <tr><td><code>pgsx.multivariate</code></td><td>Go worker (later)</td><td>Correlation and clustering over many PGS. Only this one is heavy enough to need the queue.</td></tr>
 </tbody></table></div>
+<p><strong>The worker.</strong> <code>pgsx worker</code> is built on the <code>muranoq-go</code> <code>worker</code> package. It creates a <code>worker.New(client, worker.Config{Name, Concurrency, Capacity})</code>, registers a handler for each type with <code>w.Handle("pgsx.ingest", …)</code>, and runs <code>w.Run(ctx)</code>. The SDK handles registration, claiming within free capacity, lease heartbeats, stop/cancel signals, and deregistration on SIGTERM. Handlers just decode the payload, use the task ref as their idempotency key, report progress with <code>t.Progress(…)</code>, and return either a result or an error: <code>worker.Terminal(err)</code> for bad input, <code>worker.Retry(err, d)</code> for a retry after a delay. The API server uses <code>muranoq-go/client</code> to submit jobs (with an idempotency key and tags) and to read their state. Connection settings come from <code>MURANOQ_URL</code> and <code>MURANOQ_TOKEN_FILE</code>, or from the <code>muranoq:</code> block in <code>pgsx.yaml</code>.</p>
 <p><strong>Chaining.</strong> pgsc_calc → ingest → summarize runs as a dependency chain, or as follow-on jobs if muranoq's M2 lands first. Until then, a reconciler loop in <code>pgsx worker</code> watches the app's <code>jobs</code> rows and submits the next step. The same loop mirrors muranoq state into <code>jobs</code> for the UI, using events or SSE once muranoq has them and polling until then.</p>
 <p><strong>Adding new data (the new v1 feature):</strong></p>
 <ol>
@@ -438,7 +440,7 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
     <p class="exit">Exit: a biobank user reproduces today's analyses on iubb.</p></div></div>
   <div class="ms"><div class="id">P4</div><div><h4>Queue and Slurm</h4>
     <ul>
-      <li>The muranoq client, the <code>pgsx worker</code>, the ingest and summarize jobs, and the reconciler.</li>
+      <li><code>pgsx worker</code> on the muranoq-go <code>worker</code> package, the ingest and summarize handlers, and the reconciler.</li>
       <li>The proxy-runner cron script and sbatch template.</li>
       <li>pgsc_calc → S3 → ingest. Admin pages for jobs and datasets.</li>
     </ul>
@@ -461,7 +463,7 @@ hpc/                      proxy-runner cron script, sbatch template, nextflow co
 <section id="questions">
 <h2>Open questions</h2>
 <ol class="q">
-  <li><strong>muranoq-go is private and this repo is public.</strong> Should we make the Go SDK public, or write a small REST client in <code>internal/queue</code>? The protocol is a handful of calls.</li>
+  <li><strong>muranoq-go is private, and this repo is public.</strong> We've decided to use the SDK for <code>pgsx worker</code> and for submitting jobs. Until muranoq-go is public, building pgsx needs read access to it: <code>GOPRIVATE=github.com/muranohq/*</code> and a deploy key in CI, as muranoq-server does. Anyone outside the lab who clones the repo can't build it until then. Will muranoq-go be made public before pgsx is?</li>
   <li><strong>Where do the biobank genotypes live for pgsc_calc?</strong> On the cluster filesystem only, or staged in S3? This decides what the <code>pgsx.pgsc_calc</code> payload points at and who can read that bucket.</li>
   <li><strong>What does the biobank JWT look like?</strong> We need the issuer, the JWKS URL, the audience, and which claims carry dataset entitlements. We also need to know how login starts: a redirect carrying the token, or a token the user pastes.</li>
   <li><strong>What goes back to the biobank?</strong> Per-sample PGS values for a cohort, or derived flags? This is the only path for sample-level data, so its scope should be explicit.</li>
